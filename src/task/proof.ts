@@ -2,22 +2,27 @@ import { groth16 } from 'snarkjs'
 
 import { genMaciInputs } from '../operator/genInputs'
 import { MaciParams, TaskAct } from '../types'
+import { getChain } from '../chain'
 
 const zkeyPath = './zkey/'
 
-export const proof: TaskAct = async (storage, { id }: { id: number }) => {
+export const proof: TaskAct = async (storage, { id }: { id: string }) => {
   const maciRound = await storage.fetchMacidata(id)
   if (!maciRound.isStopVoting || maciRound.hasProofs) {
     return { error: { msg: 'error status' } }
   }
 
-  // TODO: move to chain
-  const logs = await storage.fetchMaciLogs(id)
+  const chain = getChain(maciRound.chainId)
+
+  const logs = await chain.fetchMaciLogs(
+    maciRound.chainId,
+    maciRound.contractAddr,
+  )
 
   const res = genMaciInputs(
     {
       ...MaciParams[maciRound.type],
-      coordPriKey: maciRound.coordinatorPrivateKey,
+      coordPriKey: BigInt(maciRound.coordinatorPrivateKey),
       maxVoteOptions: maciRound.maxVoteOptions,
     },
     logs,

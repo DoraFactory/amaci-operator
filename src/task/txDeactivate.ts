@@ -3,7 +3,7 @@ import { ProofType, TaskAct } from '../types'
 
 export const txDeactivate: TaskAct = async (
   storage,
-  { id }: { id: number },
+  { id }: { id: string },
 ) => {
   const maciRound = await storage.fetchMacidata(id)
   const chain = getChain(maciRound.chainId)

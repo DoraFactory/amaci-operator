@@ -1,8 +1,8 @@
-import { Chain } from './chain'
 import { Storage } from './storage'
 
 export enum ChainId {
   eth = 1,
+  sepolia = 11155111,
 }
 
 export type ProofType = 'msg' | 'tally' | 'deactivate'
@@ -33,13 +33,13 @@ export const MaciParams: Record<
 }
 
 export interface IMaciMetadata {
-  id: number
+  id: string
 
   chainId: ChainId
   contractAddr: string
   type: MaciType
 
-  coordinatorPrivateKey: bigint
+  coordinatorPrivateKey: string
   eoaPrivateKey: any
 
   startAt: number

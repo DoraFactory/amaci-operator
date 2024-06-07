@@ -5,6 +5,8 @@
   "main": "index.js",
   "scripts": {
     "build": "rm -rf dist && tsc",
+    "manage": " node --env-file=.env dist/index.js",
+    "server": " node --env-file=.env dist/server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
@@ -15,6 +17,7 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3.0.2",
     "@eslint/js": "^9.1.1",
+    "@types/express": "^4.17.21",
     "@types/lodash": "^4.17.0",
     "@types/node": "^20.12.7",
     "@types/snarkjs": "^0.7.8",
@@ -30,8 +33,10 @@
   "dependencies": {
     "circomlib": "^0.5.5",
     "ethers": "^6.12.0",
+    "express": "^4.19.2",
     "lodash": "^4.17.21",
+    "mongodb": "6.7",
     "snarkjs": "^0.7.3",
-    "web3": "^4.8.0"
+    "web3": "^4.9.0"
   }
 }

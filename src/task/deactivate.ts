@@ -2,10 +2,11 @@ import { groth16 } from 'snarkjs'
 
 import { genDeacitveMaciInputs } from '../operator/genDeactivateInputs'
 import { MaciParams, TaskAct } from '../types'
+import { getChain } from '../chain'
 
 const zkeyPath = './zkey/'
 
-export const deactivate: TaskAct = async (storage, { id }: { id: number }) => {
+export const deactivate: TaskAct = async (storage, { id }: { id: string }) => {
   const maciRound = await storage.fetchMacidata(id)
   if (maciRound.isStopVoting) {
     return { error: { msg: 'error status' } }
@@ -18,14 +19,19 @@ export const deactivate: TaskAct = async (storage, { id }: { id: number }) => {
     return { error: { msg: 'too earlier' } }
   }
 
-  const logs = await storage.fetchMaciLogs(id)
+  const chain = getChain(maciRound.chainId)
+
+  const logs = await chain.fetchMaciLogs(
+    maciRound.chainId,
+    maciRound.contractAddr,
+  )
 
   const { allDeactivates, activeStates } = await storage.fetchDeactivateInfo(id)
 
   const res = genDeacitveMaciInputs(
     {
       ...MaciParams[maciRound.type],
-      coordPriKey: maciRound.coordinatorPrivateKey,
+      coordPriKey: BigInt(maciRound.coordinatorPrivateKey),
       maxVoteOptions: maciRound.maxVoteOptions,
     },
     logs,

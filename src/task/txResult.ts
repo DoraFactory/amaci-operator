@@ -1,7 +1,7 @@
 import { getChain } from '../chain'
 import { ProofType, TaskAct } from '../types'
 
-export const txResult: TaskAct = async (storage, { id }: { id: number }) => {
+export const txResult: TaskAct = async (storage, { id }: { id: string }) => {
   const maciRound = await storage.fetchMacidata(id)
   if (
     maciRound.ifFinished ||

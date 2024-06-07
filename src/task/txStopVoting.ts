@@ -3,7 +3,7 @@ import { TaskAct } from '../types'
 
 export const txStopVoting: TaskAct = async (
   storage,
-  { id }: { id: number },
+  { id }: { id: string },
 ) => {
   const maciRound = await storage.fetchMacidata(id)
   if (maciRound.isStopVoting) {

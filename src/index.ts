@@ -2,8 +2,7 @@ import _ from 'lodash'
 import { Task, TaskResult } from './types'
 import * as T from './task'
 
-import { TestStorage } from './storage/TestStorage'
-import { EvmChain } from './chain/EvmChain'
+import { MongoStorage } from './storage/MongoStorage'
 
 const DefaultTask: Task = { name: 'inspect' }
 
@@ -15,8 +14,7 @@ const sleep = async (ms: number) =>
   })
 
 const main = async () => {
-  const storage = new TestStorage()
-  const chain = new EvmChain()
+  const storage = new MongoStorage()
 
   const tasks: Task[] = []
 
@@ -41,7 +39,7 @@ const main = async () => {
   while (true) {
     const task = tasks.shift() || DefaultTask
 
-    console.log('Task:', task.name)
+    console.log('[DO]: ' + task.name)
 
     const { newTasks, error } = await doTack(task).catch(
       (err): TaskResult => ({

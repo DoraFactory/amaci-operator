@@ -37,5 +37,7 @@ export const inspect: TaskAct = async (storage) => {
     }
   }
 
+  console.log('[TASK inspect] find rounds count: ' + maciRounds.length)
+
   return { newTasks }
 }

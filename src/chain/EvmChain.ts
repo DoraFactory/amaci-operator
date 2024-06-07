@@ -3,10 +3,12 @@ import Web3, { Transaction } from 'web3'
 import { Chain } from './type'
 import { ChainId, ProofType } from '../types'
 import { Groth16Proof } from 'snarkjs'
+import { getContractLogs } from './evm/getContractLogs'
 
 const web3FromChainId = (chainId: ChainId) => {
   switch (chainId) {
     case ChainId.eth:
+    case ChainId.sepolia:
     default:
       return new Web3(
         'https://sepolia.infura.io/v3/1d0842dba8df4b07a2a02ab24c44e6be',
@@ -37,6 +39,10 @@ const sendTx = async (web3: Web3, tx: Transaction) => {
 export class EvmChain implements Chain {
   async isReadyToSendTx(chainId: ChainId, priKey: string): Promise<boolean> {
     return true
+  }
+
+  async fetchMaciLogs(chainId: ChainId, contractAddr: string) {
+    return getContractLogs(web3FromChainId(chainId), contractAddr)
   }
 
   async stopVotingPeriod(

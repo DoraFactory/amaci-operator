@@ -1,8 +1,10 @@
 import type { Groth16Proof } from 'snarkjs'
-import type { ChainId, ProofType } from '../types'
+import type { ChainId, IContractLogs, ProofType } from '../types'
 
 export interface Chain {
   isReadyToSendTx(chainId: ChainId, priKey: any): Promise<boolean>
+
+  fetchMaciLogs(chainId: ChainId, contractAddr: string): Promise<IContractLogs>
 
   stopVotingPeriod(
     chainId: ChainId,
