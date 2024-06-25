@@ -32,6 +32,24 @@ export const MaciParams: Record<
   },
 }
 
+/**
+ * eg: '2-1-1-5' => { 2, 1, 5, 1 }
+ */
+export const maciParamsFromCircuitPower = (circuitPower: string) => {
+  const nums = circuitPower.split('-').map((s) => Number(s))
+
+  if (nums.length !== 4 || nums.some((n) => !n)) {
+    throw new Error('can not get maci params from circuit power')
+  }
+
+  return {
+    stateTreeDepth: nums[0],
+    intStateTreeDepth: nums[1],
+    batchSize: nums[3],
+    voteOptionTreeDepth: nums[2],
+  }
+}
+
 export interface IMaciMetadata {
   id: string
 
@@ -91,14 +109,12 @@ export interface IKeypair {
 }
 
 export type Task = {
-  name:
-    | 'inspect'
-    | 'deactivate'
-    | 'proof'
-    | 'txDeactivate'
-    | 'txStopVoting'
-    | 'txProof'
-    | 'txResult'
+  name: 'inspect' | 'deactivate' | 'tally'
+  // | 'proof'
+  // | 'txDeactivate'
+  // | 'txStopVoting'
+  // | 'txProof'
+  // | 'txResult'
   params?: any
 }
 

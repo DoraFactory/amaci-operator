@@ -2,7 +2,7 @@ import _ from 'lodash'
 import { Task, TaskResult } from './types'
 import * as T from './task'
 
-import { MongoStorage } from './storage/MongoStorage'
+import { TestStorage } from './storage/TestStorage'
 
 const DefaultTask: Task = { name: 'inspect' }
 
@@ -14,7 +14,7 @@ const sleep = async (ms: number) =>
   })
 
 const main = async () => {
-  const storage = new MongoStorage()
+  const storage = new TestStorage()
 
   const tasks: Task[] = []
 
@@ -22,14 +22,16 @@ const main = async () => {
     switch (task.name) {
       case 'deactivate':
         return T.deactivate(storage, task.params)
-      case 'proof':
-        return T.proof(storage, task.params)
-      case 'txProof':
-        return T.txProof(storage, task.params)
-      case 'txStopVoting':
-        return T.txStopVoting(storage, task.params)
-      case 'txResult':
-        return T.txResult(storage, task.params)
+      case 'tally':
+        return T.tally(storage, task.params)
+      // case 'proof':
+      //   return T.proof(storage, task.params)
+      // case 'txProof':
+      //   return T.txProof(storage, task.params)
+      // case 'txStopVoting':
+      //   return T.txStopVoting(storage, task.params)
+      // case 'txResult':
+      //   return T.txResult(storage, task.params)
       case 'inspect':
       default:
         return T.inspect(storage)
