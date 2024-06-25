@@ -1,4 +1,4 @@
-import { fetchRounds } from '@/vota/indexer'
+import { fetchRounds } from '../vota/indexer'
 import { Task, TaskAct } from '../types'
 
 export const inspect: TaskAct = async () => {

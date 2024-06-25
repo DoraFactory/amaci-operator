@@ -3,6 +3,7 @@ import { Task, TaskResult } from './types'
 import * as T from './task'
 
 import { TestStorage } from './storage/TestStorage'
+import { log } from './log'
 
 const DefaultTask: Task = { name: 'inspect' }
 
@@ -43,11 +44,12 @@ const main = async () => {
 
     console.log('[DO]: ' + task.name)
 
-    const { newTasks, error } = await doTack(task).catch(
-      (err): TaskResult => ({
+    const { newTasks, error } = await doTack(task).catch((err): TaskResult => {
+      log(err)
+      return {
         error: { msg: err.message, again: -1 },
-      }),
-    )
+      }
+    })
 
     if (newTasks) {
       for (const nt of newTasks) {
@@ -64,7 +66,7 @@ const main = async () => {
       }
     }
 
-    await sleep(10000)
+    await sleep(1000)
   }
 }
 

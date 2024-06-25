@@ -1,5 +1,3 @@
-import { CosmWasmClient } from '@cosmjs/cosmwasm-stargate'
-
 const endpoint = process.env.IND_ENDPOINT
 
 interface SignUpEvent {
@@ -73,7 +71,7 @@ interface RoundData {
 }
 
 const ROUND_QUERY = (id: string) => `query {
-  round(id) {
+  round(id: "${id}") {
     id
     blockHeight
     txHash

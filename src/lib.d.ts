@@ -19,6 +19,8 @@ declare module 'circomlib' {
 declare module 'ffjavascript' {
   export const utils: any
   export const Scalar: any
+  export const buildBn128: any
+  export const buildBls12381: any
 }
 
 declare module 'blake-hash' {

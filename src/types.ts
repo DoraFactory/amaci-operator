@@ -102,6 +102,11 @@ export interface IContractLogs {
   }[]
 }
 
+export interface ProofData {
+  proofHex: { a: string; b: string; c: string }
+  commitment: string
+}
+
 export interface IKeypair {
   privKey: bigint
   pubKey: [bigint, bigint]

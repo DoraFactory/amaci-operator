@@ -1,14 +1,24 @@
+import fs from 'fs'
+import path from 'path'
 import { groth16 } from 'snarkjs'
 import { GasPrice, calculateFee } from '@cosmjs/stargate'
 
-import { fetchAllVotesLogs, fetchRound } from '@/vota/indexer'
-import { getContractSignerClient } from '@/lib/client/utils'
+import { adaptToUncompressed } from '../vota/adapt'
+import { fetchAllVotesLogs, fetchRound } from '../vota/indexer'
+import { getContractSignerClient } from '../lib/client/utils'
+import { maciParamsFromCircuitPower, ProofData, TaskAct } from '../types'
+import { log } from '../log'
 
 import { genMaciInputs } from '../operator/genInputs'
-import { maciParamsFromCircuitPower, TaskAct } from '../types'
-import { getChain } from '../chain'
 
 const zkeyPath = './zkey/'
+
+interface AllData {
+  result: string[]
+  salt: string
+  msg: ProofData[]
+  tally: ProofData[]
+}
 
 export const tally: TaskAct = async (_, { id }: { id: string }) => {
   const maciRound = await fetchRound(id)
@@ -35,97 +45,148 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     const spGfee = calculateFee(100000000, spGasPrice)
     const startProcessRes = await maciClient.startProcessPeriod(spGfee)
 
-    console.log('startProcessRes', startProcessRes.transactionHash)
+    log('startProcessRes', startProcessRes)
   }
 
-  const logs = await fetchAllVotesLogs(id)
+  const params = maciParamsFromCircuitPower(maciRound.circuitPower)
 
-  // const chain = getChain(maciRound.chainId)
+  /**
+   * 尝试查看本地是否已经生成了所有证明信息
+   *
+   * 如果没有，则下载合约记录并且生成
+   */
+  let allData: AllData | undefined
+  const saveFile = path.join(process.env.WORK_PATH, id + '.json')
+  if (fs.existsSync(saveFile)) {
+    const file = fs.readFileSync(saveFile).toString()
+    try {
+      allData = JSON.parse(file)
+    } catch {}
+  }
 
-  // const logs = await chain.fetchMaciLogs(
-  //   maciRound.chainId,
-  //   maciRound.contractAddr,
-  // )
+  if (!allData) {
+    const logs = await fetchAllVotesLogs(id)
 
-  const maxVoteOptions = await maciClient.maxVoteOptions()
-  const res = genMaciInputs(
-    {
-      ...maciParamsFromCircuitPower(maciRound.circuitPower),
-      coordPriKey: BigInt(process.env.COORDINATOR_PRI_KEY),
-      maxVoteOptions: Number(maxVoteOptions),
-    },
-    {
-      states: logs.signup.map((s) => ({
-        idx: s.stateIdx,
-        balance: BigInt(s.balance),
-        pubkey: (s.pubKey.match(/\d+/g) || []).map((n: string) =>
-          BigInt(n),
-        ) as [bigint, bigint],
-        c: [BigInt(s.d0), BigInt(s.d1), BigInt(s.d2), BigInt(s.d3)],
-      })),
-      messages: logs.msg.map((m) => ({
-        idx: m.msgChainLength,
-        msg: (m.message.match(/(?<=\()\d+(?=\))/g) || []).map((s) => BigInt(s)),
-        pubkey: (m.encPubKey.match(/\d+/g) || []).map((n: string) =>
-          BigInt(n),
-        ) as [bigint, bigint],
-      })),
-      dmessages: [],
-    },
-    [],
-    [],
-  )
-
-  // // await storage.saveAllInputs(id, res)
-
-  const lastTallyInput = res.tallyInputs[res.tallyInputs.length - 1]
-  // await storage.saveResult(
-  //   id,
-  //   res.result.map((i) => i.toString()),
-  //   lastTallyInput.newResultsRootSalt.toString(),
-  // )
-
-  console.log('start to gen proof | msg')
-  for (let i = 0; i < res.msgInputs.length; i++) {
-    const input = res.msgInputs[i]
-
-    const { proof } = await groth16.fullProve(
-      input,
-      zkeyPath + maciRound.circuitPower + '/msg.wasm',
-      zkeyPath + maciRound.circuitPower + '/msg.zkey',
+    const maxVoteOptions = await maciClient.maxVoteOptions()
+    const res = genMaciInputs(
+      {
+        ...params,
+        coordPriKey: BigInt(process.env.COORDINATOR_PRI_KEY),
+        maxVoteOptions: Number(maxVoteOptions),
+      },
+      {
+        states: logs.signup.map((s) => ({
+          idx: s.stateIdx,
+          balance: BigInt(s.balance),
+          pubkey: (s.pubKey.match(/\d+/g) || []).map((n: string) =>
+            BigInt(n),
+          ) as [bigint, bigint],
+          c: [BigInt(s.d0), BigInt(s.d1), BigInt(s.d2), BigInt(s.d3)],
+        })),
+        messages: logs.msg.map((m) => ({
+          idx: m.msgChainLength,
+          msg: (m.message.match(/(?<=\()\d+(?=\))/g) || []).map((s) =>
+            BigInt(s),
+          ),
+          pubkey: (m.encPubKey.match(/\d+/g) || []).map((n: string) =>
+            BigInt(n),
+          ) as [bigint, bigint],
+        })),
+        dmessages: [],
+      },
+      [],
+      [],
     )
-    const commitment = input.newStateCommitment.toString()
-    // await storage.saveProof(
-    //   id,
-    //   'msg',
-    //   i,
-    //   input.newStateCommitment.toString(),
-    //   proof,
-    // )
-    console.log('gen proof | msg | ' + i)
+
+    const lastTallyInput = res.tallyInputs[res.tallyInputs.length - 1]
+    const result = res.result.map((i) => i.toString())
+    const salt = lastTallyInput.newResultsRootSalt.toString()
+
+    const msg: ProofData[] = []
+    log('start to gen proof | msg')
+    for (let i = 0; i < res.msgInputs.length; i++) {
+      const input = res.msgInputs[i]
+
+      const { proof } = await groth16.fullProve(
+        input,
+        zkeyPath + maciRound.circuitPower + '/msg.wasm',
+        zkeyPath + maciRound.circuitPower + '/msg.zkey',
+      )
+
+      const proofHex = await adaptToUncompressed(proof)
+      const commitment = input.newStateCommitment.toString()
+      log('gen proof | msg | ' + i)
+      msg.push({ proofHex, commitment })
+    }
+
+    const tally: ProofData[] = []
+    log('start to gen proof | tally')
+    for (let i = 0; i < res.tallyInputs.length; i++) {
+      const input = res.tallyInputs[i]
+
+      const { proof } = await groth16.fullProve(
+        input,
+        zkeyPath + maciRound.circuitPower + '/tally.wasm',
+        zkeyPath + maciRound.circuitPower + '/tally.zkey',
+      )
+
+      const proofHex = await adaptToUncompressed(proof)
+      const commitment = input.newTallyCommitment.toString()
+      log('gen proof | tally | ' + i)
+      tally.push({ proofHex, commitment })
+    }
+
+    allData = {
+      result,
+      salt,
+      msg,
+      tally,
+    }
+
+    fs.writeFileSync(saveFile, JSON.stringify(allData))
   }
 
-  console.log('start to gen proof | tally')
-  for (let i = 0; i < res.tallyInputs.length; i++) {
-    const input = res.tallyInputs[i]
+  console.log('TODO: send msg')
 
-    const { proof } = await groth16.fullProve(
-      input,
-      zkeyPath + maciRound.circuitPower + '/tally.wasm',
-      zkeyPath + maciRound.circuitPower + '/tally.zkey',
-    )
-    const commitment = input.newTallyCommitment.toString()
-    // await storage.saveProof(
-    //   id,
-    //   'tally',
-    //   i,
-    //   input.newTallyCommitment.toString(),
-    //   proof,
-    // )
-    // console.log('gen proof | tally | ' + i)
+  const mc = await maciClient.getProcessedMsgCount()
+  const uc = await maciClient.getProcessedUserCount()
+
+  let mi = Math.ceil(Number(mc) / params.batchSize)
+
+  log('prepare to send msg', mi)
+
+  if (mi < allData.msg.length) {
+    for (; mi < allData.msg.length; mi++) {
+      const { proofHex, commitment } = allData.msg[mi]
+      const res = await maciClient.processMessage({
+        groth16Proof: proofHex,
+        newStateCommitment: commitment,
+      })
+      log('processMessage', mi, res)
+    }
+
+    await maciClient.stopProcessingPeriod()
   }
 
-  // await storage.setMaciStatus(id, { hasProofs: true })
+  let ui = Math.ceil(Number(uc) / 5 ** params.intStateTreeDepth)
+
+  log('prepare to send tally', ui)
+
+  if (ui < allData.tally.length) {
+    for (; ui < allData.tally.length; ui++) {
+      const { proofHex, commitment } = allData.tally[ui]
+      const res = await maciClient.processTally({
+        groth16Proof: proofHex,
+        newTallyCommitment: commitment,
+      })
+      log('processTally', ui, res)
+    }
+
+    await maciClient.stopTallyingPeriod({
+      results: allData.result,
+      salt: allData.salt,
+    })
+  }
 
   return {}
 }

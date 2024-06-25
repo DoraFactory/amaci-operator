@@ -7,6 +7,8 @@ declare global {
       RPC_ENDPOINT: string
       IND_ENDPOINT: string
 
+      WORK_PATH: string
+
       MNEMONIC: string
       OPERATOR: string
     }
