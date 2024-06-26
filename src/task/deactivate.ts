@@ -15,24 +15,11 @@ import {
 import { getChain } from '../chain'
 import { fetchAllDeactivateLogs, fetchRound } from '../vota/indexer'
 import { adaptToUncompressed } from '../vota/adapt'
+import { Timer } from '../storage/timer'
 
 const zkeyPath = './zkey/'
 
 const deactivateInterval = Number(process.env.DEACTIVATE_INTERVAL)
-
-let timer: Record<string, number> | undefined
-const saveFile = path.join(process.env.WORK_PATH, `deactivate`)
-if (fs.existsSync(saveFile)) {
-  const file = fs.readFileSync(saveFile).toString()
-  try {
-    timer = JSON.parse(file)
-  } catch {}
-}
-
-if (!timer) {
-  timer = {}
-  fs.writeFileSync(saveFile, JSON.stringify(timer))
-}
 
 export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
   const maciRound = await fetchRound(id)
@@ -43,7 +30,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
     return { error: { msg: 'error status' } }
   }
 
-  const latestdeactivateAt = timer[id] || 0
+  const latestdeactivateAt = Timer.get(id)
 
   if (latestdeactivateAt + deactivateInterval > now) {
     return { error: { msg: 'too earlier' } }
@@ -127,8 +114,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
     log('upload deactivate history', uploadRes)
   }
 
-  timer[id] = now
-  fs.writeFileSync(saveFile, JSON.stringify(timer))
+  Timer.set(id, now)
 
   return {}
 }
