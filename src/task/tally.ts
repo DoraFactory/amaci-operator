@@ -26,7 +26,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
   const now = Date.now()
 
   if (
-    maciRound.period === 'Voting' &&
+    !['Voting', 'Processing', 'Tallying'].includes(maciRound.period) &&
     now < Number(maciRound.votingEnd) / 1e6
   ) {
     return { error: { msg: 'error status: not end' } }
@@ -92,10 +92,17 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
             BigInt(n),
           ) as [bigint, bigint],
         })),
-        dmessages: [],
+        dmessages: logs.dmsg.map((m) => ({
+          idx: m.dmsgChainLength,
+          numSignUps: m.numSignUps,
+          msg: (m.message.match(/(?<=\()\d+(?=\))/g) || []).map((s) =>
+            BigInt(s),
+          ),
+          pubkey: (m.encPubKey.match(/\d+/g) || []).map((n: string) =>
+            BigInt(n),
+          ) as [bigint, bigint],
+        })),
       },
-      [],
-      [],
     )
 
     const lastTallyInput = res.tallyInputs[res.tallyInputs.length - 1]
@@ -145,8 +152,6 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
 
     fs.writeFileSync(saveFile, JSON.stringify(allData))
   }
-
-  console.log('TODO: send msg')
 
   const mc = await maciClient.getProcessedMsgCount()
   const uc = await maciClient.getProcessedUserCount()

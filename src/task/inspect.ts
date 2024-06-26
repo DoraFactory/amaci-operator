@@ -19,7 +19,7 @@ export const inspect: TaskAct = async () => {
 
     // Tally
     if (
-      maciRound.period === 'Voting' &&
+      ['Voting', 'Processing', 'Tallying'].includes(maciRound.period) &&
       now > Number(maciRound.votingEnd) / 1e6
     ) {
       newTasks.push({ name: 'tally', params: { id: maciRound.id } })

@@ -1,4 +1,10 @@
-import { CosmWasmClient } from '@cosmjs/cosmwasm-stargate'
+import {
+  CosmWasmClient,
+  SigningCosmWasmClient,
+  SigningCosmWasmClientOptions,
+} from '@cosmjs/cosmwasm-stargate'
+import { Secp256k1HdWallet } from '@cosmjs/launchpad'
+import { GasPrice } from '@cosmjs/stargate'
 
 const apiEndpoint = 'http://3.0.94.169:8000/'
 const rpc = 'https://vota-sf-rpc.dorafactory.org'
@@ -250,28 +256,93 @@ const testContract =
 const testOp = 'dora1f0cywn02dm63xl52kw8r9myu5lelxfxd7zrqan'
 
 const main = async () => {
-  const rounds = await fetchAllPages<RoundData>(ROUND_QUERY(testOp), {})
-
-  console.log(rounds)
-
+  // const rounds = await fetchAllPages<RoundData>(ROUND_QUERY(testOp), {})
+  // console.log(rounds)
   // const signUpEvents = await fetchAllPages<SignUpEvent>(
   //   SIGN_UP_EVENTS_QUERY(testContract),
   //   {},
   // )
   // console.log(signUpEvents)
+  // const msgEvents = await fetchAllPages<PublishMessageEvent>(
+  //   PUBLISH_MESSAGE_EVENTS_QUERY(testContract),
+  //   {},
+  // )
+  // console.log(msgEvents)
 
-  const msgEvents = await fetchAllPages<PublishMessageEvent>(
-    PUBLISH_MESSAGE_EVENTS_QUERY(testContract),
+  const dmsgEvents = await fetchAllPages<PublishDeactivateMessageEvent>(
+    PUBLISH_DEACTIVATE_MESSAGE_EVENTS_QUERY(testContract),
     {},
   )
-  console.log(msgEvents)
+  console.log(dmsgEvents)
 
   // const client = await CosmWasmClient.connect(rpc)
   // const res = await client.queryContractSmart(testContract, {
   //   get_processed_msg_count: {},
   // })
-
   // console.log(res)
+  // ==========================================================================
+  // const prefix = 'dora'
+  // const defaultSigningClientOptions: SigningCosmWasmClientOptions = {
+  //   broadcastPollIntervalMs: 8_000,
+  //   broadcastTimeoutMs: 16_000,
+  //   gasPrice: GasPrice.fromString('100000000000peaka'),
+  // }
+  // const contractAddress = process.env.DEACTIVATE_RECORDER
+  // const mnemonic = process.env.MNEMONIC
+  // const wallet = await Secp256k1HdWallet.fromMnemonic(mnemonic, {
+  //   prefix,
+  // })
+  // const signingCosmWasmClient = await SigningCosmWasmClient.connectWithSigner(
+  //   process.env.RPC_ENDPOINT,
+  //   wallet,
+  //   {
+  //     ...defaultSigningClientOptions,
+  //   },
+  // )
+  // const [{ address }] = await wallet.getAccounts()
+  // const res = await signingCosmWasmClient.execute(
+  //   address,
+  //   contractAddress,
+  //   {
+  //     upload_deactivate_message: {
+  //       contract_address: 'test',
+  //       deactivate_message: [['0', '1', '2', '3', '4']],
+  //     },
+  //   },
+  //   'auto',
+  // )
+  // console.log(res)
+
+  // const response = await fetch(apiEndpoint, {
+  //   method: 'POST',
+  //   headers: {
+  //     'Content-Type': 'application/json',
+  //     Accept: 'application/json',
+  //   },
+  //   body: JSON.stringify({
+  //     query: `query {
+  //       deactivateMessages(orderBy: [BLOCK_HEIGHT_ASC],
+  //         filter: {
+  //           maciContractAddress: {
+  //             equalTo: "test"
+  //           },
+  //         }) {
+  //         nodes {
+  //           id
+  //           blockHeight
+  //           timestamp
+  //           txHash
+  //           deactivateMessage
+  //           maciContractAddress
+  //           maciOperator
+  //         }
+  //         totalCount
+  //       }
+  //     }`,
+  //   }),
+  // }).then((res) => res.json())
+
+  // console.log(response.data.deactivateMessages.nodes)
 }
 
 main()

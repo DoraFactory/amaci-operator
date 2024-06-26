@@ -339,6 +339,31 @@ export class MACI {
     this._processedDMsgCount += deactivates.length
   }
 
+  uploadDeactivateHistory(deactivates: bigint[][], subStateTreeLength: number) {
+    for (let i = 0; i < deactivates.length; i++) {
+      const dLeaf = deactivates[i]
+      this.deactivateTree.updateLeaf(i, poseidon(dLeaf))
+
+      const activeState = BigInt(this.processedDMsgCount + i + 1)
+
+      const cmd = this.dCommands[i]
+
+      const error = this.checkDeactivateCommand(cmd, subStateTreeLength)
+
+      let stateIdx = 5 ** this.stateTreeDepth - 1
+      if (!error && cmd) {
+        stateIdx = Number(cmd.stateIdx)
+      }
+
+      if (!error) {
+        // UPDATE STATE =======================================================
+        this.activeStateTree.updateLeaf(stateIdx, activeState)
+      }
+
+      this._processedDMsgCount++
+    }
+  }
+
   processDeactivateMessage(inputSize: number, subStateTreeLength: number) {
     const batchSize = this.batchSize
     const batchStartIdx = this.processedDMsgCount

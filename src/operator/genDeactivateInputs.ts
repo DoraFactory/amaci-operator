@@ -21,7 +21,6 @@ export const genDeacitveMaciInputs = (
   }: IGenMaciInputsParams,
   contractLogs: IContractLogs,
   deactivates: bigint[][],
-  activeStates: bigint[],
 ) => {
   const maci = new MACI(
     stateTreeDepth,
@@ -33,8 +32,6 @@ export const genDeacitveMaciInputs = (
     contractLogs.states.length,
   )
 
-  maci.initProcessedDeactivateLog(deactivates, activeStates)
-
   for (const state of contractLogs.states) {
     maci.initStateTree(state.idx, state.pubkey, state.balance, state.c)
   }
@@ -43,12 +40,12 @@ export const genDeacitveMaciInputs = (
     maci.pushDeactivateMessage(msg.msg, msg.pubkey)
   }
 
-  maci.initProcessedDeactivateLog(deactivates, activeStates)
+  maci.uploadDeactivateHistory(deactivates, contractLogs.states.length)
 
   const newDeactivates: bigint[][] = []
   // PROCESSING
   let i = maci.processedDMsgCount
-  const dMsgInputs: (DMsgInput & { size: number })[] = []
+  const dMsgInputs: { input: DMsgInput; size: string }[] = []
   while (maci.processedDMsgCount < contractLogs.dmessages.length) {
     let size = maci.batchSize
     if (size + i > contractLogs.dmessages.length) {
@@ -62,12 +59,11 @@ export const genDeacitveMaciInputs = (
     )
 
     newDeactivates.push(...newDeactivate)
-    dMsgInputs.push({ ...input, size })
+    dMsgInputs.push({ input, size: size.toString() })
   }
 
   return {
     dMsgInputs,
     newDeactivates,
-    activeStates: maci.activeStateTreeLeaves,
   }
 }

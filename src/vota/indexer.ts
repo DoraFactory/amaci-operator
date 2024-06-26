@@ -26,13 +26,23 @@ interface PublishMessageEvent {
   contractAddress: string
 }
 
+interface DeactivateMessage {
+  id: string
+  blockHeight: string
+  timestamp: string
+  txHash: string
+  deactivateMessage: string // '[["0", "1", "2", "3", "4"]]'
+  maciContractAddress: string
+  maciOperator: string
+}
+
 interface PublishDeactivateMessageEvent {
   id: string
   blockHeight: string
   timestamp: string
   txHash: string
   dmsgChainLength: number
-  numSignUps: string
+  numSignUps: number
   message: string
   encPubKey: string
   contractAddress: string
@@ -240,6 +250,36 @@ const PUBLISH_DEACTIVATE_MESSAGE_EVENTS_QUERY = (
   }
 }`
 
+const DEACTIVATE_MESSAGE_QUERY = (
+  contract: string,
+) => `query ($limit: Int, $offset: Int) {
+  deactivateMessages(
+    first: $limit,
+    offset: $offset,
+    orderBy: [BLOCK_HEIGHT_ASC],
+    filter: {
+      maciContractAddress: { 
+        equalTo: "${contract}" 
+      },
+    }
+  ) {
+	  totalCount
+	  pageInfo {
+      endCursor
+      hasNextPage
+	  }
+    nodes {
+      id
+      blockHeight
+      timestamp
+      txHash
+      deactivateMessage
+      maciContractAddress
+      maciOperator
+    }
+  }
+}`
+
 async function fetchOne<T>(query: string): Promise<T> {
   return fetch(endpoint, {
     method: 'POST',
@@ -303,9 +343,35 @@ export const fetchAllVotesLogs = async (contract: string) => {
     PUBLISH_MESSAGE_EVENTS_QUERY(contract),
     {},
   )
+  const dmsg = await fetchAllPages<PublishDeactivateMessageEvent>(
+    PUBLISH_DEACTIVATE_MESSAGE_EVENTS_QUERY(contract),
+    {},
+  )
 
   return {
     signup,
     msg,
+    dmsg,
+  }
+}
+
+export const fetchAllDeactivateLogs = async (contract: string) => {
+  const signup = await fetchAllPages<SignUpEvent>(
+    SIGN_UP_EVENTS_QUERY(contract),
+    {},
+  )
+  const ds = await fetchAllPages<DeactivateMessage>(
+    DEACTIVATE_MESSAGE_QUERY(contract),
+    {},
+  )
+  const dmsg = await fetchAllPages<PublishDeactivateMessageEvent>(
+    PUBLISH_DEACTIVATE_MESSAGE_EVENTS_QUERY(contract),
+    {},
+  )
+
+  return {
+    signup,
+    ds: ds.map((d) => (d.deactivateMessage.match(/\d+/g) || []) as string[]),
+    dmsg,
   }
 }
