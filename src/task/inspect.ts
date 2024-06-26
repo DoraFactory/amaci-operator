@@ -8,12 +8,14 @@ export const inspect: TaskAct = async () => {
 
   const newTasks: Task[] = []
 
+  let tasks = 0
   for (const maciRound of rounds) {
     // deactivate
     if (
       maciRound.period === 'Voting'
       // TODO: time check
     ) {
+      tasks++
       newTasks.push({ name: 'deactivate', params: { id: maciRound.id } })
     }
 
@@ -22,11 +24,12 @@ export const inspect: TaskAct = async () => {
       ['Voting', 'Processing', 'Tallying'].includes(maciRound.period) &&
       now > Number(maciRound.votingEnd) / 1e6
     ) {
+      tasks++
       newTasks.push({ name: 'tally', params: { id: maciRound.id } })
     }
   }
 
-  console.log('[TASK inspect] find rounds count: ' + rounds.length)
+  console.log(`[TASK inspect] find rounds count: ${tasks}/${rounds.length}`)
 
   return { newTasks }
 }

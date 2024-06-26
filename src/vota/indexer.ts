@@ -116,6 +116,9 @@ const ROUNDS_QUERY = (operator: string) => `query ($limit: Int, $offset: Int) {
       operator: { 
         equalTo: "${operator}" 
       },
+      period: {
+        notIn: "Ended"
+      }
     }
   ) {
     totalCount

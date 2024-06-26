@@ -256,8 +256,8 @@ const testContract =
 const testOp = 'dora1f0cywn02dm63xl52kw8r9myu5lelxfxd7zrqan'
 
 const main = async () => {
-  // const rounds = await fetchAllPages<RoundData>(ROUND_QUERY(testOp), {})
-  // console.log(rounds)
+  const rounds = await fetchAllPages<RoundData>(ROUND_QUERY(testOp), {})
+  console.log(rounds)
   // const signUpEvents = await fetchAllPages<SignUpEvent>(
   //   SIGN_UP_EVENTS_QUERY(testContract),
   //   {},
@@ -268,13 +268,11 @@ const main = async () => {
   //   {},
   // )
   // console.log(msgEvents)
-
-  const dmsgEvents = await fetchAllPages<PublishDeactivateMessageEvent>(
-    PUBLISH_DEACTIVATE_MESSAGE_EVENTS_QUERY(testContract),
-    {},
-  )
-  console.log(dmsgEvents)
-
+  // const dmsgEvents = await fetchAllPages<PublishDeactivateMessageEvent>(
+  //   PUBLISH_DEACTIVATE_MESSAGE_EVENTS_QUERY(testContract),
+  //   {},
+  // )
+  // console.log(dmsgEvents)
   // const client = await CosmWasmClient.connect(rpc)
   // const res = await client.queryContractSmart(testContract, {
   //   get_processed_msg_count: {},
@@ -312,7 +310,6 @@ const main = async () => {
   //   'auto',
   // )
   // console.log(res)
-
   // const response = await fetch(apiEndpoint, {
   //   method: 'POST',
   //   headers: {
@@ -341,7 +338,6 @@ const main = async () => {
   //     }`,
   //   }),
   // }).then((res) => res.json())
-
   // console.log(response.data.deactivateMessages.nodes)
 }
 
