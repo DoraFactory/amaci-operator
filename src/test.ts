@@ -300,17 +300,10 @@ const testContract =
 const testOp = 'dora1f0cywn02dm63xl52kw8r9myu5lelxfxd7zrqan'
 
 const main = async () => {
-  const a = genKeypair(111111n)
-  console.log(a)
+  for (let i = 1n; i < 10n; i++) {
+    console.log(genKeypair(111111n * i).pubKey.map(String))
+  }
 
-  // const signTx = await fetchAllPages<any>(MACI_SIGNUP_QUERY, {})
-  // fs.writeFileSync('./all.json', JSON.stringify(signTx))
-  // fs.writeFileSync('./addrs.json', signTx.map((s) => s.caller).join('\n'))
-  const rounds = await fetchAllPages<RoundData>(
-    ROUNDS_QUERY(String(a.pubKey[0]), String(a.pubKey[1])),
-    {},
-  )
-  console.log(rounds.length)
   // const signUpEvents = await fetchAllPages<SignUpEvent>(
   //   SIGN_UP_EVENTS_QUERY(testContract),
   //   {},
@@ -363,35 +356,35 @@ const main = async () => {
   //   'auto',
   // )
   // console.log(res)
-  const response = await fetch(apiEndpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    },
-    body: JSON.stringify({
-      query: `query {
-        deactivateMessages(orderBy: [BLOCK_HEIGHT_ASC],
-          filter: {
-            maciContractAddress: {
-              equalTo: "dora1r4x3lvn20vpls2ammp4ch5z08nge6h77p43ktl04efptgqxgl0qs07cx0z"
-            },
-          }) {
-          nodes {
-            id
-            blockHeight
-            timestamp
-            txHash
-            deactivateMessage
-            maciContractAddress
-            maciOperator
-          }
-          totalCount
-        }
-      }`,
-    }),
-  }).then((res) => res.json())
-  console.log(response.data.deactivateMessages.nodes)
+  // const response = await fetch(apiEndpoint, {
+  //   method: 'POST',
+  //   headers: {
+  //     'Content-Type': 'application/json',
+  //     Accept: 'application/json',
+  //   },
+  //   body: JSON.stringify({
+  //     query: `query {
+  //       deactivateMessages(orderBy: [BLOCK_HEIGHT_ASC],
+  //         filter: {
+  //           maciContractAddress: {
+  //             equalTo: "dora1r4x3lvn20vpls2ammp4ch5z08nge6h77p43ktl04efptgqxgl0qs07cx0z"
+  //           },
+  //         }) {
+  //         nodes {
+  //           id
+  //           blockHeight
+  //           timestamp
+  //           txHash
+  //           deactivateMessage
+  //           maciContractAddress
+  //           maciOperator
+  //         }
+  //         totalCount
+  //       }
+  //     }`,
+  //   }),
+  // }).then((res) => res.json())
+  // console.log(response.data.deactivateMessages.nodes)
 }
 
 main()

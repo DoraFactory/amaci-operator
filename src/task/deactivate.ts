@@ -113,6 +113,8 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
       res.newDeactivates.map((d) => d.map(String)),
     )
     log('upload deactivate history', uploadRes)
+  } else {
+    log('empty deactivate op')
   }
 
   Timer.set(id, now)

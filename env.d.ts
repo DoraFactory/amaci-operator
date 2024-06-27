@@ -12,7 +12,7 @@ declare global {
       WORK_PATH: string
 
       MNEMONIC: string
-      OPERATOR: string
+      // OPERATOR: string
     }
   }
 }
