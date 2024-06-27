@@ -21,7 +21,10 @@ interface AllData {
 }
 
 export const tally: TaskAct = async (_, { id }: { id: string }) => {
+  log('\n\n\ntally', id)
   const maciRound = await fetchRound(id)
+
+  log('period:', maciRound.period)
 
   const now = Date.now()
 
@@ -66,6 +69,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
 
   if (!allData) {
     const logs = await fetchAllVotesLogs(id)
+
+    log('logs s-m-d', logs.signup.length, logs.msg.length, logs.dmsg.length)
 
     const maxVoteOptions = await maciClient.maxVoteOptions()
     const res = genMaciInputs(

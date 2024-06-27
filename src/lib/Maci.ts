@@ -538,6 +538,10 @@ export class MACI {
     this._stateCommitment = poseidon([this.stateTree.root, 0n])
 
     log(['Vote End '.padEnd(60, '='), ''].join('\n'))
+
+    if (this.messages.length === 0) {
+      this.endProcessingPeriod()
+    }
   }
 
   checkCommandNow(cmd: ICmd | null) {

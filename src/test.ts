@@ -1,3 +1,4 @@
+import fs from 'fs'
 import {
   CosmWasmClient,
   SigningCosmWasmClient,
@@ -5,8 +6,11 @@ import {
 } from '@cosmjs/cosmwasm-stargate'
 import { Secp256k1HdWallet } from '@cosmjs/launchpad'
 import { GasPrice } from '@cosmjs/stargate'
+import { genKeypair } from './lib/keypair'
 
 const apiEndpoint = 'http://3.0.94.169:8000/'
+// const apiEndpoint = 'https://vota-api.dorafactory.org'
+
 const rpc = 'https://vota-sf-rpc.dorafactory.org'
 
 interface SignUpEvent {
@@ -79,14 +83,23 @@ interface RoundData {
   certificationSystem: string
 }
 
-const ROUND_QUERY = (operator: string) => `query ($limit: Int, $offset: Int) {
+const ROUNDS_QUERY = (
+  coordinatorPubkeyX: string,
+  coordinatorPubkeyY: string,
+) => `query ($limit: Int, $offset: Int) {
   rounds(
     first: $limit,
     offset: $offset,
     filter: {
-      operator: { 
-        equalTo: "${operator}" 
+      coordinatorPubkeyX: {
+        equalTo: "${coordinatorPubkeyX}" 
       },
+      coordinatorPubkeyY: {
+        equalTo: "${coordinatorPubkeyY}" 
+      },
+      period: {
+        notIn: "Ended"
+      }
     }
   ) {
     totalCount
@@ -100,6 +113,8 @@ const ROUND_QUERY = (operator: string) => `query ($limit: Int, $offset: Int) {
       txHash
       operator
       contractAddress
+      coordinatorPubkeyX
+      coordinatorPubkeyY
       circuitName
       timestamp
       votingStart
@@ -203,10 +218,10 @@ const PUBLISH_DEACTIVATE_MESSAGE_EVENTS_QUERY = (
     }
   ) {
 	  totalCount
-	  pageInfo {
+    pageInfo {
       endCursor
       hasNextPage
-	  }
+    }
     nodes {
       id
       blockHeight
@@ -217,6 +232,35 @@ const PUBLISH_DEACTIVATE_MESSAGE_EVENTS_QUERY = (
       message
       encPubKey
       contractAddress
+    }
+  }
+}`
+
+const MACI_SIGNUP_QUERY = `query ($limit: Int, $offset: Int) {
+  transactions(
+    first: $limit,
+    offset: $offset,
+    filter: {
+      contractAddress: {
+        equalTo: "dora1smdzpfsy48kmkzmm4m9hsg4850czdvfncxyxp6d4h3j7qv3m4v0s0530a6"
+      }
+      type: {
+        equalTo: "signup"
+      }
+    },
+    orderBy: [TIMESTAMP_DESC]
+  )
+  {
+	  totalCount
+    pageInfo {
+      endCursor
+      hasNextPage
+    }
+    nodes {
+      id
+      blockHeight
+      txHash
+      caller
     }
   }
 }`
@@ -256,8 +300,17 @@ const testContract =
 const testOp = 'dora1f0cywn02dm63xl52kw8r9myu5lelxfxd7zrqan'
 
 const main = async () => {
-  const rounds = await fetchAllPages<RoundData>(ROUND_QUERY(testOp), {})
-  console.log(rounds)
+  const a = genKeypair(111111n)
+  console.log(a)
+
+  // const signTx = await fetchAllPages<any>(MACI_SIGNUP_QUERY, {})
+  // fs.writeFileSync('./all.json', JSON.stringify(signTx))
+  // fs.writeFileSync('./addrs.json', signTx.map((s) => s.caller).join('\n'))
+  const rounds = await fetchAllPages<RoundData>(
+    ROUNDS_QUERY(String(a.pubKey[0]), String(a.pubKey[1])),
+    {},
+  )
+  console.log(rounds.length)
   // const signUpEvents = await fetchAllPages<SignUpEvent>(
   //   SIGN_UP_EVENTS_QUERY(testContract),
   //   {},

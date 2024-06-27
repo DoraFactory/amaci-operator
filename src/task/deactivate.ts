@@ -22,6 +22,7 @@ const zkeyPath = './zkey/'
 const deactivateInterval = Number(process.env.DEACTIVATE_INTERVAL)
 
 export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
+  log('\n\n\ndeactivate', id)
   const maciRound = await fetchRound(id)
 
   const now = Date.now()

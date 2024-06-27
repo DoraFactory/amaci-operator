@@ -1,7 +1,7 @@
 declare global {
   namespace NodeJS {
-    interface ProcessEnv {
-      MONGODB_URI: string
+    type ProcessEnv = {
+      // MONGODB_URI: string
       COORDINATOR_PRI_KEY: string
 
       RPC_ENDPOINT: string

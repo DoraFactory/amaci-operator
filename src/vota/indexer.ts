@@ -87,6 +87,8 @@ const ROUND_QUERY = (id: string) => `query {
     txHash
     operator
     contractAddress
+    coordinatorPubkeyX
+    coordinatorPubkeyY
     circuitName
     timestamp
     votingStart
@@ -108,13 +110,19 @@ const ROUND_QUERY = (id: string) => `query {
     certificationSystem
   }
 }`
-const ROUNDS_QUERY = (operator: string) => `query ($limit: Int, $offset: Int) {
+const ROUNDS_QUERY = (
+  coordinatorPubkeyX: string,
+  coordinatorPubkeyY: string,
+) => `query ($limit: Int, $offset: Int) {
   rounds(
     first: $limit,
     offset: $offset,
     filter: {
-      operator: { 
-        equalTo: "${operator}" 
+      coordinatorPubkeyX: {
+        equalTo: "${coordinatorPubkeyX}" 
+      },
+      coordinatorPubkeyY: {
+        equalTo: "${coordinatorPubkeyY}" 
       },
       period: {
         notIn: "Ended"
@@ -132,6 +140,8 @@ const ROUNDS_QUERY = (operator: string) => `query ($limit: Int, $offset: Int) {
       txHash
       operator
       contractAddress
+      coordinatorPubkeyX
+      coordinatorPubkeyY
       circuitName
       timestamp
       votingStart
@@ -329,8 +339,11 @@ async function fetchAllPages<T>(query: string, variables: any): Promise<T[]> {
   return allData
 }
 
-export const fetchRounds = async (operator: string) => {
-  return fetchAllPages<RoundData>(ROUNDS_QUERY(operator), {})
+export const fetchRounds = async (coordinatorPubkey: string[]) => {
+  return fetchAllPages<RoundData>(
+    ROUNDS_QUERY(coordinatorPubkey[0], coordinatorPubkey[1]),
+    {},
+  )
 }
 
 export const fetchRound = async (id: string) => {

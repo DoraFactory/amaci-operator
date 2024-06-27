@@ -42,7 +42,11 @@ const main = async () => {
   while (true) {
     const task = tasks.shift() || DefaultTask
 
-    console.log('[DO]: ' + task.name)
+    console.log(
+      '[DO]: ' +
+        task.name +
+        (task.params ? ' - ' + JSON.stringify(task.params) : ''),
+    )
 
     const { newTasks, error } = await doTack(task).catch((err): TaskResult => {
       log(err)

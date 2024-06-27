@@ -1,13 +1,16 @@
 import { fetchRounds } from '../vota/indexer'
 import { Task, TaskAct } from '../types'
 import { Timer } from '../storage/timer'
+import { genKeypair } from '../lib/keypair'
 
 const deactivateInterval = Number(process.env.DEACTIVATE_INTERVAL)
 
 export const inspect: TaskAct = async () => {
   const now = Date.now()
 
-  const rounds = await fetchRounds(process.env.OPERATOR)
+  const coordinator = genKeypair(BigInt(process.env.COORDINATOR_PRI_KEY))
+
+  const rounds = await fetchRounds(coordinator.pubKey.map(String))
 
   const newTasks: Task[] = []
 
@@ -16,7 +19,8 @@ export const inspect: TaskAct = async () => {
     // deactivate
     if (
       maciRound.period === 'Voting' &&
-      Timer.get(maciRound.id) + deactivateInterval < now
+      Timer.get(maciRound.id) + deactivateInterval < now &&
+      now < Number(maciRound.votingEnd) / 1e6
     ) {
       tasks++
       newTasks.push({ name: 'deactivate', params: { id: maciRound.id } })

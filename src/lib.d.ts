@@ -1,5 +1,5 @@
 declare module 'circomlib' {
-  export const poseidon: (inputs: (bigint | number)[]) => bigint
+  export const poseidon: (inputs: Array<bigint | number>) => bigint
   export const babyJub: {
     Base8: [bigint, bigint]
     mulPointEscalar: (base: [bigint, bigint], e: bigint) => [bigint, bigint]
@@ -10,14 +10,15 @@ declare module 'circomlib' {
     }
   }
   export const eddsa: {
-    prv2pub: (priKey: Buffer) => [bigint, bigint]
-    pruneBuffer: (buff: Buffer) => Buffer
+    prv2pub: (priKey: Uint8Array) => [bigint, bigint]
+    pruneBuffer: (buff: Uint8Array) => Uint8Array
     verifyPoseidon: (msg: bigint, sig: any, A: [bigint, bigint]) => boolean
   }
 }
 
 declare module 'ffjavascript' {
   export const utils: any
+  // eslint-disable-next-line @typescript-eslint/naming-convention
   export const Scalar: any
   export const buildBn128: any
   export const buildBls12381: any

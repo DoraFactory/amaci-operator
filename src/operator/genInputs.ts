@@ -52,12 +52,12 @@ export const genMaciInputs = (
     if (size + i > contractLogs.dmessages.length) {
       size = contractLogs.dmessages.length - i
     }
+    i = i + size
 
     maci.processDeactivateMessage(
       size,
       contractLogs.dmessages[i - 1].numSignUps,
     )
-    i = i + size
   }
 
   maci.endVotePeriod()
