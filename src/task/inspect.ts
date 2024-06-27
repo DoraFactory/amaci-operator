@@ -2,6 +2,7 @@ import { fetchRounds } from '../vota/indexer'
 import { Task, TaskAct } from '../types'
 import { Timer } from '../storage/timer'
 import { genKeypair } from '../lib/keypair'
+import { log } from '../log'
 
 const deactivateInterval = Number(process.env.DEACTIVATE_INTERVAL)
 
@@ -37,6 +38,7 @@ export const inspect: TaskAct = async () => {
   }
 
   console.log(`[TASK inspect] find rounds count: ${tasks}/${rounds.length}`)
+  log(`[TASK inspect] find rounds count: ${tasks}/${rounds.length}`)
 
   return { newTasks }
 }
