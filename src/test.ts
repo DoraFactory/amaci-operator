@@ -363,35 +363,35 @@ const main = async () => {
   //   'auto',
   // )
   // console.log(res)
-  // const response = await fetch(apiEndpoint, {
-  //   method: 'POST',
-  //   headers: {
-  //     'Content-Type': 'application/json',
-  //     Accept: 'application/json',
-  //   },
-  //   body: JSON.stringify({
-  //     query: `query {
-  //       deactivateMessages(orderBy: [BLOCK_HEIGHT_ASC],
-  //         filter: {
-  //           maciContractAddress: {
-  //             equalTo: "test"
-  //           },
-  //         }) {
-  //         nodes {
-  //           id
-  //           blockHeight
-  //           timestamp
-  //           txHash
-  //           deactivateMessage
-  //           maciContractAddress
-  //           maciOperator
-  //         }
-  //         totalCount
-  //       }
-  //     }`,
-  //   }),
-  // }).then((res) => res.json())
-  // console.log(response.data.deactivateMessages.nodes)
+  const response = await fetch(apiEndpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({
+      query: `query {
+        deactivateMessages(orderBy: [BLOCK_HEIGHT_ASC],
+          filter: {
+            maciContractAddress: {
+              equalTo: "dora1r4x3lvn20vpls2ammp4ch5z08nge6h77p43ktl04efptgqxgl0qs07cx0z"
+            },
+          }) {
+          nodes {
+            id
+            blockHeight
+            timestamp
+            txHash
+            deactivateMessage
+            maciContractAddress
+            maciOperator
+          }
+          totalCount
+        }
+      }`,
+    }),
+  }).then((res) => res.json())
+  console.log(response.data.deactivateMessages.nodes)
 }
 
 main()

@@ -359,9 +359,9 @@ export class MACI {
         // UPDATE STATE =======================================================
         this.activeStateTree.updateLeaf(stateIdx, activeState)
       }
-
-      this._processedDMsgCount++
     }
+
+    this._processedDMsgCount += deactivates.length
   }
 
   processDeactivateMessage(inputSize: number, subStateTreeLength: number) {

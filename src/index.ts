@@ -51,7 +51,7 @@ const main = async () => {
     const { newTasks, error } = await doTack(task).catch((err): TaskResult => {
       log(err)
       return {
-        error: { msg: err.message, again: -1 },
+        error: { msg: err.message },
       }
     })
 
@@ -70,7 +70,7 @@ const main = async () => {
       }
     }
 
-    await sleep(1000)
+    await sleep(5000)
   }
 }
 

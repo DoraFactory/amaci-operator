@@ -33,8 +33,6 @@ export const genMaciInputs = (
     contractLogs.states.length,
   )
 
-  // maci.initProcessedDeactivateLog(deactivates, activeStates)
-
   for (const state of contractLogs.states) {
     maci.initStateTree(state.idx, state.pubkey, state.balance, state.c)
   }

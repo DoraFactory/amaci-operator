@@ -370,7 +370,10 @@ export const fetchAllVotesLogs = async (contract: string) => {
 
   return {
     signup,
-    ds: ds.map((d) => (d.deactivateMessage.match(/\d+/g) || []) as string[]),
+    ds: ds.reduce(
+      (s, c) => [...s, ...JSON.parse(c.deactivateMessage)],
+      [] as string[][],
+    ),
     msg,
     dmsg,
   }
@@ -392,7 +395,10 @@ export const fetchAllDeactivateLogs = async (contract: string) => {
 
   return {
     signup,
-    ds: ds.map((d) => (d.deactivateMessage.match(/\d+/g) || []) as string[]),
+    ds: ds.reduce(
+      (s, c) => [...s, ...JSON.parse(c.deactivateMessage)],
+      [] as string[][],
+    ),
     dmsg,
   }
 }
