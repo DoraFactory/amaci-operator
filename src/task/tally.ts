@@ -108,6 +108,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
           ) as [bigint, bigint],
         })),
       },
+      logs.ds.map((d) => d.map(BigInt)),
     )
 
     const lastTallyInput = res.tallyInputs[res.tallyInputs.length - 1]
@@ -176,6 +177,11 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     }
 
     await maciClient.stopProcessingPeriod()
+  } else {
+    const period = await maciClient.getPeriod()
+    if (period.status === 'processing') {
+      await maciClient.stopProcessingPeriod()
+    }
   }
 
   let ui = Math.ceil(Number(uc) / 5 ** params.intStateTreeDepth)
@@ -196,6 +202,14 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       results: allData.result,
       salt: allData.salt,
     })
+  } else {
+    const period = await maciClient.getPeriod()
+    if (period.status === 'tallying') {
+      await maciClient.stopTallyingPeriod({
+        results: allData.result,
+        salt: allData.salt,
+      })
+    }
   }
 
   return {}

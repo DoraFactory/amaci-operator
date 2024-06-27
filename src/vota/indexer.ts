@@ -125,7 +125,7 @@ const ROUNDS_QUERY = (
         equalTo: "${coordinatorPubkeyY}" 
       },
       period: {
-        notIn: "Ended"
+        notIn: ["Ended", "Pending"]
       }
     }
   ) {
@@ -359,6 +359,10 @@ export const fetchAllVotesLogs = async (contract: string) => {
     PUBLISH_MESSAGE_EVENTS_QUERY(contract),
     {},
   )
+  const ds = await fetchAllPages<DeactivateMessage>(
+    DEACTIVATE_MESSAGE_QUERY(contract),
+    {},
+  )
   const dmsg = await fetchAllPages<PublishDeactivateMessageEvent>(
     PUBLISH_DEACTIVATE_MESSAGE_EVENTS_QUERY(contract),
     {},
@@ -366,6 +370,7 @@ export const fetchAllVotesLogs = async (contract: string) => {
 
   return {
     signup,
+    ds: ds.map((d) => (d.deactivateMessage.match(/\d+/g) || []) as string[]),
     msg,
     dmsg,
   }
