@@ -1,7 +1,6 @@
 declare global {
   namespace NodeJS {
     type ProcessEnv = {
-      // MONGODB_URI: string
       COORDINATOR_PRI_KEY: string
 
       RPC_ENDPOINT: string
@@ -12,7 +11,6 @@ declare global {
       WORK_PATH: string
 
       MNEMONIC: string
-      // OPERATOR: string
     }
   }
 }

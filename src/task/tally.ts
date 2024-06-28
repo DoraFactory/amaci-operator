@@ -13,6 +13,11 @@ import { genMaciInputs } from '../operator/genInputs'
 
 const zkeyPath = './zkey/'
 
+const inputsPath = path.join(process.env.WORK_PATH, 'inputs')
+if (!fs.existsSync(inputsPath)) {
+  fs.mkdirSync(inputsPath)
+}
+
 interface AllData {
   result: string[]
   salt: string
@@ -59,7 +64,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
    * 如果没有，则下载合约记录并且生成
    */
   let allData: AllData | undefined
-  const saveFile = path.join(process.env.WORK_PATH, id + '.json')
+  const saveFile = path.join(inputsPath, id + '.json')
   if (fs.existsSync(saveFile)) {
     const file = fs.readFileSync(saveFile).toString()
     try {

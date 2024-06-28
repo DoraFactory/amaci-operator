@@ -551,7 +551,7 @@ export class MACI {
     if (cmd.stateIdx > BigInt(this.numSignUps)) {
       return 'state leaf index overflow'
     }
-    if (cmd.voIdx > BigInt(this.maxVoteOptions)) {
+    if (cmd.voIdx >= BigInt(this.maxVoteOptions)) {
       return 'vote option index overflow'
     }
     const stateIdx = Number(cmd.stateIdx)
