@@ -89,5 +89,5 @@ async function extractZKeys(fileName: string) {
 }
 
 async function removeZKeys() {
-  fs.rmdirSync('zkeys', { recursive: true })
+  fs.rmdirSync('zkey', { recursive: true })
 }
