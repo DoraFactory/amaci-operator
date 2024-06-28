@@ -16,6 +16,11 @@ const sleep = async (ms: number) =>
 
 let prevTaskName = ''
 
+if (!process.env.COORDINATOR_PRI_KEY) {
+  console.log('[ERROR] empty COORDINATOR_PRI_KEY in .env file!')
+  process.exit(1)
+}
+
 const main = async () => {
   const storage = new TestStorage()
 
