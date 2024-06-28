@@ -14,6 +14,8 @@ const sleep = async (ms: number) =>
     }, ms)
   })
 
+let prevTaskName = ''
+
 const main = async () => {
   const storage = new TestStorage()
 
@@ -41,6 +43,11 @@ const main = async () => {
 
   while (true) {
     const task = tasks.shift() || DefaultTask
+
+    if (task.name === 'inspect' && prevTaskName === 'inspect') {
+      await sleep(60000)
+    }
+    prevTaskName = task.name
 
     const msg =
       '[DO]: ' +
@@ -71,7 +78,7 @@ const main = async () => {
       }
     }
 
-    await sleep(5000)
+    await sleep(1000)
   }
 }
 
