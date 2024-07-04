@@ -57,7 +57,7 @@ const main = async () => {
     const msg =
       '[DO]: ' +
       task.name +
-      (task.params ? ' - ' + JSON.stringify(task.params) : '')
+      (task.params?.id ? ' - MACI Round ' + task.params.id : '')
     console.log(msg)
     log(msg)
 

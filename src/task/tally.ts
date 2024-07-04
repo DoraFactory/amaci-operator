@@ -72,6 +72,16 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     } catch {}
   }
 
+  const mc = await maciClient.getProcessedMsgCount()
+  const uc = await maciClient.getProcessedUserCount()
+
+  /**
+   * 如果线上还没有开始处理交易，则总是重新生成证明
+   */
+  if (Number(mc) === 0 && Number(uc) === 0) {
+    allData = undefined
+  }
+
   if (!allData) {
     const logs = await fetchAllVotesLogs(id)
 
@@ -163,9 +173,6 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
 
     fs.writeFileSync(saveFile, JSON.stringify(allData))
   }
-
-  const mc = await maciClient.getProcessedMsgCount()
-  const uc = await maciClient.getProcessedUserCount()
 
   let mi = Math.ceil(Number(mc) / params.batchSize)
 
