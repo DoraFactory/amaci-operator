@@ -79,6 +79,10 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
    * 如果线上还没有开始处理交易，则总是重新生成证明
    */
   if (Number(mc) === 0 && Number(uc) === 0) {
+    if (allData) {
+      log('re-proof')
+      console.log('RE-PROOF')
+    }
     allData = undefined
   }
 
