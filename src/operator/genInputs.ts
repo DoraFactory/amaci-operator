@@ -1,4 +1,4 @@
-import { genRandomKey } from '../lib/keypair'
+import { genStaticRandomKey } from '../lib/keypair'
 import { MACI, MACI_STATES, MsgInput, TallyInput } from '../lib/Maci'
 import { IContractLogs } from '../types'
 
@@ -21,7 +21,8 @@ export const genMaciInputs = (
     maxVoteOptions,
   }: IGenMaciInputsParams,
   contractLogs: IContractLogs,
-  deactivates: bigint[][],
+  // deactivates: bigint[][],
+  deactivateSize: number,
 ) => {
   const maci = new MACI(
     stateTreeDepth,
@@ -45,28 +46,32 @@ export const genMaciInputs = (
     maci.pushDeactivateMessage(dmsg.msg, dmsg.pubkey)
   }
 
-  maci.uploadDeactivateHistory(deactivates, contractLogs.states.length)
+  // maci.uploadDeactivateHistory(deactivates, contractLogs.states.length)
 
-  // let i = 0
-  // while (maci.processedDMsgCount < contractLogs.dmessages.length) {
-  //   let size = maci.batchSize
-  //   if (size + i > contractLogs.dmessages.length) {
-  //     size = contractLogs.dmessages.length - i
-  //   }
-  //   i = i + size
+  let i = 0
+  while (maci.processedDMsgCount < deactivateSize) {
+    let size = maci.batchSize
+    if (size + i > deactivateSize) {
+      size = deactivateSize - i
+    }
+    i = i + size
 
-  //   maci.processDeactivateMessage(
-  //     size,
-  //     contractLogs.dmessages[i - 1].numSignUps,
-  //   )
-  // }
+    maci.processDeactivateMessage(
+      size,
+      contractLogs.dmessages[i - 1].numSignUps,
+    )
+  }
 
   maci.endVotePeriod()
+
+  let nonce = 1n
 
   // PROCESSING
   const msgInputs: MsgInput[] = []
   while (maci.states === MACI_STATES.PROCESSING) {
-    const input = maci.processMessage(genRandomKey())
+    const input = maci.processMessage(
+      genStaticRandomKey(coordPriKey, 20041n, nonce++),
+    )
 
     msgInputs.push(input)
   }
@@ -74,7 +79,9 @@ export const genMaciInputs = (
   // TALLYING
   const tallyInputs: TallyInput[] = []
   while (maci.states === MACI_STATES.TALLYING) {
-    const input = maci.processTally(genRandomKey())
+    const input = maci.processTally(
+      genStaticRandomKey(coordPriKey, 20042n, nonce++),
+    )
 
     tallyInputs.push(input)
   }

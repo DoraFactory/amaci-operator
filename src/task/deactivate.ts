@@ -39,11 +39,12 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
 
   const params = maciParamsFromCircuitPower(maciRound.circuitPower)
 
+  const maciClient = await getContractSignerClient(id)
+  const dc = await maciClient.getProcessedDMsgCount()
+
   const logs = await fetchAllDeactivateLogs(id)
 
-  if (logs.dmsg.length > logs.ds.length) {
-    const maciClient = await getContractSignerClient(id)
-
+  if (logs.dmsg.length > Number(dc)) {
     const maxVoteOptions = await maciClient.maxVoteOptions()
 
     const res = genDeacitveMaciInputs(
@@ -73,7 +74,8 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
           ) as [bigint, bigint],
         })),
       },
-      logs.ds.map((d) => d.map(BigInt)),
+      // logs.ds.map((d) => d.map(BigInt)),
+      Number(dc),
     )
 
     const dmsg: (ProofData & { root: string; size: string })[] = []

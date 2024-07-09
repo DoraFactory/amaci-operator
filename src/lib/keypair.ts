@@ -1,4 +1,4 @@
-import { babyJub, eddsa } from 'circomlib'
+import { babyJub, eddsa, poseidon } from 'circomlib'
 
 import crypto from 'crypto'
 import * as ff from 'ffjavascript'
@@ -48,6 +48,28 @@ export const genRandomKey = () => {
   }
 
   const privKey = rand % SNARK_FIELD_SIZE
+  return privKey
+}
+
+export const genStaticRandomKey = (
+  priSeed: bigint,
+  type: bigint,
+  index: bigint,
+) => {
+  const min =
+    6350874878119819312338956282401532410528162663560392320966563075034087161851n
+
+  let rand = poseidon([priSeed, type, index])
+  while (true) {
+    if (rand >= min) {
+      break
+    }
+
+    rand = poseidon([rand, rand])
+  }
+
+  // const privKey = rand % SNARK_FIELD_SIZE;
+  const privKey = rand % 2n ** 253n
   return privKey
 }
 

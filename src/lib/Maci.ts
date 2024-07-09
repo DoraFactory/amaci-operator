@@ -1,7 +1,12 @@
 import { eddsa, poseidon } from 'circomlib'
 import { encryptOdevity, decrypt } from './rerandomize'
 import { solidityPackedSha256 } from 'ethers'
-import { stringizing, genKeypair, genEcdhSharedKey } from './keypair'
+import {
+  stringizing,
+  genStaticRandomKey,
+  genKeypair,
+  genEcdhSharedKey,
+} from './keypair'
 import { Tree } from './Tree'
 
 import { poseidonDecrypt } from '../js/poseidonCipher.js'
@@ -443,7 +448,11 @@ export class MACI {
 
       const sharedKey = genEcdhSharedKey(this.coordinator.privKey, s.pubKey)
 
-      const deactivate = encryptOdevity(!!error, this.coordinator.pubKey)
+      const deactivate = encryptOdevity(
+        !!error,
+        this.coordinator.pubKey,
+        genStaticRandomKey(this.coordinator.privKey, 20040n, newActiveState[i]),
+      )
       const dLeaf = [
         deactivate.c1.x,
         deactivate.c1.y,

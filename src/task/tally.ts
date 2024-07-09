@@ -66,11 +66,16 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
   let allData: AllData | undefined
   const saveFile = path.join(inputsPath, id + '.json')
   if (fs.existsSync(saveFile)) {
-    const file = fs.readFileSync(saveFile).toString()
-    try {
-      allData = JSON.parse(file)
-    } catch {}
+    /**
+     * 现在基于确定性的 proof，即使中途失败也可以重新生成所有证明，不需要读取缓存
+     */
+    // const file = fs.readFileSync(saveFile).toString()
+    // try {
+    //   allData = JSON.parse(file)
+    // } catch {}
   }
+
+  const dc = await maciClient.getProcessedDMsgCount()
 
   const mc = await maciClient.getProcessedMsgCount()
   const uc = await maciClient.getProcessedUserCount()
@@ -127,7 +132,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
           ) as [bigint, bigint],
         })),
       },
-      logs.ds.map((d) => d.map(BigInt)),
+      // logs.ds.map((d) => d.map(BigInt)),
+      Number(dc),
     )
 
     const lastTallyInput = res.tallyInputs[res.tallyInputs.length - 1]

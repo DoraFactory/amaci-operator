@@ -27,9 +27,10 @@ export interface ICiphertext {
  * @param original The value to encode. It must be less than the BabyJub field
  *                 size.
  */
-export const encodeToMessage = (original: bigint): IMessage => {
-  const randomKey = genKeypair()
-
+export const encodeToMessage = (
+  original: bigint,
+  randomKey = genKeypair(),
+): IMessage => {
   const xIncrement = F.e(F.sub(randomKey.pubKey[0], original))
 
   return {
@@ -77,9 +78,11 @@ export const encryptOdevity = (
   pubKey: [bigint, bigint],
   randomVal = genRandomKey(),
 ) => {
-  let message = encodeToMessage(123n)
+  let i = 0n
+  let message = encodeToMessage(123n, genKeypair(randomVal + i))
   while ((message.point.x % 2n === 1n) !== isOdd) {
-    message = encodeToMessage(123n)
+    i++
+    message = encodeToMessage(123n, genKeypair(randomVal + i))
   }
 
   const c1Point = babyJub.mulPointEscalar(babyJub.Base8, randomVal)

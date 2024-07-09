@@ -359,10 +359,10 @@ export const fetchAllVotesLogs = async (contract: string) => {
     PUBLISH_MESSAGE_EVENTS_QUERY(contract),
     {},
   )
-  const ds = await fetchAllPages<DeactivateMessage>(
-    DEACTIVATE_MESSAGE_QUERY(contract),
-    {},
-  )
+  // const ds = await fetchAllPages<DeactivateMessage>(
+  //   DEACTIVATE_MESSAGE_QUERY(contract),
+  //   {},
+  // )
   const dmsg = await fetchAllPages<PublishDeactivateMessageEvent>(
     PUBLISH_DEACTIVATE_MESSAGE_EVENTS_QUERY(contract),
     {},
@@ -370,10 +370,10 @@ export const fetchAllVotesLogs = async (contract: string) => {
 
   return {
     signup,
-    ds: ds.reduce(
-      (s, c) => [...s, ...JSON.parse(c.deactivateMessage)],
-      [] as string[][],
-    ),
+    // ds: ds.reduce(
+    //   (s, c) => [...s, ...JSON.parse(c.deactivateMessage)],
+    //   [] as string[][],
+    // ),
     msg,
     dmsg,
   }
@@ -384,10 +384,10 @@ export const fetchAllDeactivateLogs = async (contract: string) => {
     SIGN_UP_EVENTS_QUERY(contract),
     {},
   )
-  const ds = await fetchAllPages<DeactivateMessage>(
-    DEACTIVATE_MESSAGE_QUERY(contract),
-    {},
-  )
+  // const ds = await fetchAllPages<DeactivateMessage>(
+  //   DEACTIVATE_MESSAGE_QUERY(contract),
+  //   {},
+  // )
   const dmsg = await fetchAllPages<PublishDeactivateMessageEvent>(
     PUBLISH_DEACTIVATE_MESSAGE_EVENTS_QUERY(contract),
     {},
@@ -395,10 +395,10 @@ export const fetchAllDeactivateLogs = async (contract: string) => {
 
   return {
     signup,
-    ds: ds.reduce(
-      (s, c) => [...s, ...JSON.parse(c.deactivateMessage)],
-      [] as string[][],
-    ),
+    // ds: ds.reduce(
+    //   (s, c) => [...s, ...JSON.parse(c.deactivateMessage)],
+    //   [] as string[][],
+    // ),
     dmsg,
   }
 }
