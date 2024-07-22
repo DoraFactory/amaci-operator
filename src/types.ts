@@ -7,7 +7,7 @@ export enum ChainId {
 
 export type ProofType = 'msg' | 'tally' | 'deactivate'
 
-export type MaciType = '6-2-3-25' | '2-1-1-5'
+export type MaciType = '6-2-3-25' | '4-2-2-25' | '2-1-1-5'
 
 export const MaciParams: Record<
   MaciType,
@@ -23,6 +23,12 @@ export const MaciParams: Record<
     intStateTreeDepth: 2,
     batchSize: 25,
     voteOptionTreeDepth: 3,
+  },
+  '4-2-2-25': {
+    stateTreeDepth: 4,
+    intStateTreeDepth: 2,
+    batchSize: 25,
+    voteOptionTreeDepth: 2,
   },
   '2-1-1-5': {
     stateTreeDepth: 2,

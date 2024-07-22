@@ -31,7 +31,15 @@ async function main() {
 
   console.log('\nStart to download zkey:')
 
-  await downloadAndExtractZKeys('2-1-1-5')
+  if (!fs.existsSync('./zkey/2-1-1-5')) {
+    console.log('download zkey: 2-1-1-5')
+    await downloadAndExtractZKeys('2-1-1-5')
+  }
+
+  if (!fs.existsSync('./zkey/4-2-2-25')) {
+    console.log('download zkey: 4-2-2-25')
+    await downloadAndExtractZKeys('4-2-2-25')
+  }
 }
 
 main()

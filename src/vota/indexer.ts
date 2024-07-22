@@ -125,7 +125,7 @@ const ROUNDS_QUERY = (
         equalTo: "${coordinatorPubkeyY}" 
       },
       period: {
-        notIn: ["Ended", "Pending"]
+        notIn: ["Ended"]
       }
     }
   ) {
