@@ -421,7 +421,9 @@ export class MACI {
       const error = this.checkDeactivateCommand(cmd, subStateTreeLength)
 
       let stateIdx = 5 ** this.stateTreeDepth - 1
-      if (!error && cmd) {
+      if (error === 'signature error' && cmd) {
+        stateIdx = Math.min(Number(cmd.stateIdx), stateIdx)
+      } else if (!error && cmd) {
         stateIdx = Number(cmd.stateIdx)
       }
 
@@ -437,14 +439,13 @@ export class MACI {
         s.d2[1],
         0,
       ]
-      ;(currentStateLeavesPathElements[i] =
-        subStateTree.pathElementOf(stateIdx)),
-        (activeStateLeavesPathElements[i] =
-          this.activeStateTree.pathElementOf(stateIdx)),
-        (deactivateLeavesPathElements[i] = this.deactivateTree.pathElementOf(
-          deactivateIndex0 + i,
-        )),
-        (currentActiveState[i] = this.activeStateTree.leaf(stateIdx))
+      currentStateLeavesPathElements[i] = subStateTree.pathElementOf(stateIdx)
+      activeStateLeavesPathElements[i] =
+        this.activeStateTree.pathElementOf(stateIdx)
+      deactivateLeavesPathElements[i] = this.deactivateTree.pathElementOf(
+        deactivateIndex0 + i,
+      )
+      currentActiveState[i] = this.activeStateTree.leaf(stateIdx)
 
       const sharedKey = genEcdhSharedKey(this.coordinator.privKey, s.pubKey)
 

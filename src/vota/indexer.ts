@@ -118,6 +118,9 @@ const ROUNDS_QUERY = (
     first: $limit,
     offset: $offset,
     filter: {
+      maciType: {
+        equalTo: "AMACI"
+      },
       coordinatorPubkeyX: {
         equalTo: "${coordinatorPubkeyX}" 
       },

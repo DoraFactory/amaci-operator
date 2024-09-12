@@ -110,7 +110,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
       log('processTally', i, res)
     }
 
-    const uploadRes = uploadDeactivateHistory(
+    const uploadRes = await uploadDeactivateHistory(
       id,
       res.newDeactivates.map((d) => d.map(String)),
     )
