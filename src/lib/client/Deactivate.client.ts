@@ -16,7 +16,8 @@ export const uploadDeactivateHistory = async (
     broadcastTimeoutMs: 16_000,
     gasPrice: GasPrice.fromString('100000000000peaka'),
   }
-  const contractAddress = process.env.DEACTIVATE_RECORDER
+  // const contractAddress = process.env.DEACTIVATE_RECORDER
+  const contractAddress = contract
   const mnemonic = process.env.MNEMONIC
   const wallet = await Secp256k1HdWallet.fromMnemonic(mnemonic, {
     prefix,
@@ -34,7 +35,6 @@ export const uploadDeactivateHistory = async (
     contractAddress,
     {
       upload_deactivate_message: {
-        contract_address: contract,
         deactivate_message: deactivate,
       },
     },

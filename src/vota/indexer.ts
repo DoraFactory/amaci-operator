@@ -61,7 +61,6 @@ interface RoundData {
   status: string
   period: string
   actionType: string
-  roundId: string
   roundTitle: string
   roundDescription: string
   roundLink: string
@@ -70,7 +69,6 @@ interface RoundData {
   voteOptionMap: string
   results: string
   allResult: string
-  maciDenom: string
   gasStationEnable: boolean
   totalGrant: string
   baseGrant: string
@@ -96,11 +94,9 @@ const ROUND_QUERY = (id: string) => `query {
     status
     period
     actionType
-    roundId
     roundTitle
     roundDescription
     roundLink
-    maciDenom
     gasStationEnable
     totalGrant
     baseGrant
@@ -119,7 +115,10 @@ const ROUNDS_QUERY = (
     offset: $offset,
     filter: {
       maciType: {
-        equalTo: "AMACI"
+        equalTo: "aMACI"
+      },
+      caller: {
+        equalTo: "${process.env.DEACTIVATE_RECORDER}"
       },
       coordinatorPubkeyX: {
         equalTo: "${coordinatorPubkeyX}" 
@@ -152,11 +151,9 @@ const ROUNDS_QUERY = (
       status
       period
       actionType
-      roundId
       roundTitle
       roundDescription
       roundLink
-      maciDenom
       gasStationEnable
       totalGrant
       baseGrant

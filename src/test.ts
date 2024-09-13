@@ -64,7 +64,6 @@ interface RoundData {
   status: string
   period: string
   actionType: string
-  roundId: string
   roundTitle: string
   roundDescription: string
   roundLink: string
@@ -73,7 +72,6 @@ interface RoundData {
   voteOptionMap: string
   results: string
   allResult: string
-  maciDenom: string
   gasStationEnable: boolean
   totalGrant: string
   baseGrant: string
@@ -91,6 +89,9 @@ const ROUNDS_QUERY = (
     first: $limit,
     offset: $offset,
     filter: {
+      caller: {
+        equalTo: "${process.env.DEACTIVATE_RECORDER}"
+      },
       coordinatorPubkeyX: {
         equalTo: "${coordinatorPubkeyX}" 
       },
@@ -122,11 +123,9 @@ const ROUNDS_QUERY = (
       status
       period
       actionType
-      roundId
       roundTitle
       roundDescription
       roundLink
-      maciDenom
       gasStationEnable
       totalGrant
       baseGrant
