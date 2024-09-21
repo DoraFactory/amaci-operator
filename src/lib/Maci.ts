@@ -551,6 +551,9 @@ export class MACI {
 
     if (this.messages.length === 0) {
       this.endProcessingPeriod()
+      if (this.numSignUps === 0) {
+        this.states = MACI_STATES.ENDED
+      }
     }
   }
 

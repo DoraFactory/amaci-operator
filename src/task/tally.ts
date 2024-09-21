@@ -34,7 +34,9 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
   const now = Date.now()
 
   if (
-    !['Voting', 'Processing', 'Tallying'].includes(maciRound.period) &&
+    !['Pending', 'Voting', 'Processing', 'Tallying'].includes(
+      maciRound.period,
+    ) &&
     now < Number(maciRound.votingEnd) / 1e6
   ) {
     return { error: { msg: 'error status: not end' } }
@@ -48,7 +50,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
   /**
    * 先结束当前 round
    */
-  if (maciRound.period === 'Voting') {
+  if (['Pending', 'Voting'].includes(maciRound.period)) {
     const spGasPrice = GasPrice.fromString('100000000000peaka')
     const spGfee = calculateFee(100000000, spGasPrice)
     const startProcessRes = await maciClient.startProcessPeriod(spGfee)
@@ -138,7 +140,9 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
 
     const lastTallyInput = res.tallyInputs[res.tallyInputs.length - 1]
     const result = res.result.map((i) => i.toString())
-    const salt = lastTallyInput.newResultsRootSalt.toString()
+    const salt = lastTallyInput
+      ? lastTallyInput.newResultsRootSalt.toString()
+      : '0'
 
     const msg: ProofData[] = []
     log('start to gen proof | msg')

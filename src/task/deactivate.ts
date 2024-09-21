@@ -27,7 +27,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
 
   const now = Date.now()
 
-  if (maciRound.period !== 'Voting') {
+  if (!['Pending', 'Voting'].includes(maciRound.period)) {
     return { error: { msg: 'error status' } }
   }
 

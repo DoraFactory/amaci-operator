@@ -19,7 +19,8 @@ export const inspect: TaskAct = async () => {
   for (const maciRound of rounds) {
     // deactivate
     if (
-      maciRound.period === 'Voting' &&
+      now > Number(maciRound.votingStart) / 1e6 &&
+      // maciRound.period === 'Voting' &&
       Timer.get(maciRound.id) + deactivateInterval < now &&
       now < Number(maciRound.votingEnd) / 1e6
     ) {
@@ -29,7 +30,9 @@ export const inspect: TaskAct = async () => {
 
     // Tally
     if (
-      ['Voting', 'Processing', 'Tallying'].includes(maciRound.period) &&
+      ['Pending', 'Voting', 'Processing', 'Tallying'].includes(
+        maciRound.period,
+      ) &&
       now > Number(maciRound.votingEnd) / 1e6
     ) {
       tasks++
