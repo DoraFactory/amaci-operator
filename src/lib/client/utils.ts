@@ -2,9 +2,10 @@ import {
   SigningCosmWasmClient,
   SigningCosmWasmClientOptions,
 } from '@cosmjs/cosmwasm-stargate'
-import { Secp256k1HdWallet } from '@cosmjs/launchpad'
 import { GasPrice } from '@cosmjs/stargate'
+
 import { MaciClient } from './Maci.client'
+import { getWallet } from '../../wallet'
 
 export const prefix = 'dora'
 
@@ -16,11 +17,7 @@ const defaultSigningClientOptions: SigningCosmWasmClientOptions = {
 
 export async function getContractSignerClient(contract: string) {
   const contractAddress = contract
-  const mnemonic = process.env.MNEMONIC
-
-  const wallet = await Secp256k1HdWallet.fromMnemonic(mnemonic, {
-    prefix,
-  })
+  const wallet = await getWallet()
 
   const signingCosmWasmClient = await SigningCosmWasmClient.connectWithSigner(
     process.env.RPC_ENDPOINT,

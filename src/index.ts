@@ -8,6 +8,7 @@ import * as T from './task'
 import { TestStorage } from './storage/TestStorage'
 import { genKeypair } from './lib/keypair'
 import { log } from './log'
+import { getWallet } from './wallet'
 
 const DefaultTask: Task = { name: 'inspect' }
 
@@ -41,10 +42,7 @@ const main = async () => {
 
   // ==========================================================================
 
-  const mnemonic = process.env.MNEMONIC
-  const wallet = await Secp256k1HdWallet.fromMnemonic(mnemonic, {
-    prefix: 'dora',
-  })
+  const wallet = await getWallet()
   const [{ address }] = await wallet.getAccounts()
   console.log('\nVota address:')
   console.log(address)

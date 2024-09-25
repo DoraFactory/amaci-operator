@@ -2,6 +2,7 @@ import fs from 'fs'
 import { Secp256k1HdWallet } from '@cosmjs/launchpad'
 import { downloadAndExtractZKeys } from './lib/downloadZkeys'
 import { genKeypair } from './lib/keypair'
+import { getWallet } from './wallet'
 
 async function main() {
   console.log('Init')
@@ -19,10 +20,7 @@ async function main() {
 
   // ==========================================================================
 
-  const mnemonic = process.env.MNEMONIC
-  const wallet = await Secp256k1HdWallet.fromMnemonic(mnemonic, {
-    prefix: 'dora',
-  })
+  const wallet = await getWallet()
   const [{ address }] = await wallet.getAccounts()
   console.log('\nVota address:')
   console.log(address)
