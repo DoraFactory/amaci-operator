@@ -31,6 +31,7 @@ export const genDeacitveMaciInputs = (
     coordPriKey,
     maxVoteOptions,
     contractLogs.states.length,
+    false, // 处理 deacitvate 的时候不需要关心 isQuadraticCost 的状态
   )
 
   for (const state of contractLogs.states) {

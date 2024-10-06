@@ -76,6 +76,7 @@ interface RoundData {
   circuitType: string
   circuitPower: string
   certificationSystem: string
+  isQuadraticCost: boolean
 }
 
 const ROUND_QUERY = (id: string) => `query {

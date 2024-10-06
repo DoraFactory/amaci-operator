@@ -9,6 +9,7 @@ interface IGenMaciInputsParams {
   batchSize: number
   coordPriKey: bigint
   maxVoteOptions: number
+  isQuadraticCost: boolean
 }
 
 export const genMaciInputs = (
@@ -19,6 +20,7 @@ export const genMaciInputs = (
     batchSize,
     coordPriKey,
     maxVoteOptions,
+    isQuadraticCost,
   }: IGenMaciInputsParams,
   contractLogs: IContractLogs,
   // deactivates: bigint[][],
@@ -32,6 +34,7 @@ export const genMaciInputs = (
     coordPriKey,
     maxVoteOptions,
     contractLogs.states.length,
+    isQuadraticCost,
   )
 
   for (const state of contractLogs.states) {

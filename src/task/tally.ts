@@ -104,6 +104,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         ...params,
         coordPriKey: BigInt(process.env.COORDINATOR_PRI_KEY),
         maxVoteOptions: Number(maxVoteOptions),
+        isQuadraticCost: maciRound.isQuadraticCost,
       },
       {
         states: logs.signup.map((s) => ({
