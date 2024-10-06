@@ -73,10 +73,9 @@ interface RoundData {
   totalGrant: string
   baseGrant: string
   totalBond: string
-  circuitType: string
+  circuitType: '1' | '0'
   circuitPower: string
   certificationSystem: string
-  isQuadraticCost: boolean
 }
 
 const ROUND_QUERY = (id: string) => `query {
