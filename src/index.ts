@@ -1,14 +1,16 @@
-import fs from 'fs'
+// import fs from 'fs'
 import _ from 'lodash'
-import { Secp256k1HdWallet } from '@cosmjs/launchpad'
+// import { Secp256k1HdWallet } from '@cosmjs/launchpad'
 
 import { Task, TaskResult } from './types'
 import * as T from './task'
 
 import { TestStorage } from './storage/TestStorage'
-import { genKeypair } from './lib/keypair'
+// import { genKeypair } from './lib/keypair'
 import { log } from './log'
-import { getWallet } from './wallet'
+// import { getWallet } from './wallet'
+
+import { init } from './init'
 
 const DefaultTask: Task = { name: 'inspect' }
 
@@ -27,27 +29,7 @@ if (!process.env.COORDINATOR_PRI_KEY) {
 }
 
 const main = async () => {
-  console.log('Init')
-  if (!fs.existsSync(process.env.WORK_PATH)) {
-    fs.mkdirSync(process.env.WORK_PATH)
-  }
-
-  // ==========================================================================
-
-  const coordinator = genKeypair(BigInt(process.env.COORDINATOR_PRI_KEY))
-
-  console.log('\nCoordinator public key:')
-  console.log('X:', String(coordinator.pubKey[0]))
-  console.log('Y:', String(coordinator.pubKey[1]))
-
-  // ==========================================================================
-
-  const wallet = await getWallet()
-  const [{ address }] = await wallet.getAccounts()
-  console.log('\nVota address:')
-  console.log(address)
-
-  // ==========================================================================
+  await init()
 
   const storage = new TestStorage()
 

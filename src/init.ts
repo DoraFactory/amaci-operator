@@ -1,10 +1,10 @@
 import fs from 'fs'
-import { Secp256k1HdWallet } from '@cosmjs/launchpad'
+// import { Secp256k1HdWallet } from '@cosmjs/launchpad'
 import { downloadAndExtractZKeys } from './lib/downloadZkeys'
 import { genKeypair } from './lib/keypair'
 import { getWallet } from './wallet'
 
-async function main() {
+export async function init() {
   console.log('Init')
   if (!fs.existsSync(process.env.WORK_PATH)) {
     fs.mkdirSync(process.env.WORK_PATH)
@@ -29,15 +29,13 @@ async function main() {
 
   console.log('\nStart to download zkey:')
 
-  if (!fs.existsSync('./zkey/2-1-1-5')) {
-    console.log('download zkey: 2-1-1-5')
-    await downloadAndExtractZKeys('2-1-1-5')
+  if (!fs.existsSync('./zkey/2-1-1-5_v2')) {
+    console.log('download zkey: 2-1-1-5_v2')
+    await downloadAndExtractZKeys('2-1-1-5_v2')
   }
 
-  if (!fs.existsSync('./zkey/4-2-2-25')) {
-    console.log('download zkey: 4-2-2-25')
-    await downloadAndExtractZKeys('4-2-2-25')
+  if (!fs.existsSync('./zkey/4-2-2-25_v2')) {
+    console.log('download zkey: 4-2-2-25_v2')
+    await downloadAndExtractZKeys('4-2-2-25_v2')
   }
 }
-
-main()

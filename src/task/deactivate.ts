@@ -86,8 +86,8 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
 
       const { proof } = await groth16.fullProve(
         input,
-        zkeyPath + maciRound.circuitPower + '/deactivate.wasm',
-        zkeyPath + maciRound.circuitPower + '/deactivate.zkey',
+        zkeyPath + maciRound.circuitPower + '_v2/deactivate.wasm',
+        zkeyPath + maciRound.circuitPower + '_v2/deactivate.zkey',
       )
       const proofHex = await adaptToUncompressed(proof)
       const commitment = input.newDeactivateCommitment.toString()
