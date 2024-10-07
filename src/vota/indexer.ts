@@ -1,4 +1,5 @@
 const endpoint = process.env.IND_ENDPOINT
+const codeIds = process.env.CODE_IDS
 
 interface SignUpEvent {
   id: string
@@ -129,6 +130,9 @@ const ROUNDS_QUERY = (
       period: {
         notIn: ["Ended"]
       }
+      codeId: {
+        in: ${codeIds}
+      }
     }
   ) {
     totalCount
@@ -161,6 +165,7 @@ const ROUNDS_QUERY = (
       circuitType
       circuitPower
       certificationSystem
+      codeId
     }
   }
 }`
