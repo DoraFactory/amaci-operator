@@ -12,7 +12,11 @@ export const inspect: TaskAct = async () => {
   const coordinator = genKeypair(BigInt(process.env.COORDINATOR_PRI_KEY))
 
   const rounds = await fetchRounds(coordinator.pubKey.map(String))
-
+  console.log('===========')
+  console.log(process.env.CODE_IDS)
+  console.log(coordinator.pubKey.map(String))
+  console.log(rounds)
+  console.log('===========')
   const newTasks: Task[] = []
 
   let tasks = 0
