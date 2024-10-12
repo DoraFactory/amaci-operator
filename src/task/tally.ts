@@ -25,6 +25,13 @@ interface AllData {
   tally: ProofData[]
 }
 
+const sleep = async (ms: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(() => {
+      resolve()
+    }, ms)
+  })
+
 export const tally: TaskAct = async (_, { id }: { id: string }) => {
   log('\n\n\ntally', id)
   const maciRound = await fetchRound(id)
@@ -54,6 +61,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     const spGasPrice = GasPrice.fromString('100000000000peaka')
     const spGfee = calculateFee(100000000, spGasPrice)
     const startProcessRes = await maciClient.startProcessPeriod(spGfee)
+
+    await sleep(6000)
 
     log('startProcessRes', startProcessRes)
   }
@@ -208,6 +217,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     const period = await maciClient.getPeriod()
     if (period.status === 'processing') {
       await maciClient.stopProcessingPeriod()
+
+      await sleep(6000)
     }
   }
 
