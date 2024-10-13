@@ -5,4 +5,4 @@ From the protocol's [frontend](https://vota.dorafactory.org/), users will be abl
 
 
 ## How to run aMACI operator service
-For the most up to date documentation please visit [how to run aMACI operator service](https://docs.dorafactory.org/docs/vota-devops/amaci)
+For the most up to date documentation, please visit [how to run aMACI operator service](https://docs.dorafactory.org/docs/vota-devops/amaci)
