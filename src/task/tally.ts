@@ -58,13 +58,16 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
    * 先结束当前 round
    */
   if (['Pending', 'Voting'].includes(maciRound.period)) {
-    const spGasPrice = GasPrice.fromString('100000000000peaka')
-    const spGfee = calculateFee(100000000, spGasPrice)
-    const startProcessRes = await maciClient.startProcessPeriod(spGfee)
+    const preiod = await maciClient.getPeriod()
+    if (['pending', 'voting'].includes(preiod.status)) {
+      const spGasPrice = GasPrice.fromString('100000000000peaka')
+      const spGfee = calculateFee(20000000, spGasPrice)
+      const startProcessRes = await maciClient.startProcessPeriod(spGfee)
 
-    await sleep(6000)
+      await sleep(6000)
 
-    log('startProcessRes', startProcessRes)
+      log('startProcessRes', startProcessRes)
+    }
   }
 
   const params = maciParamsFromCircuitPower(maciRound.circuitPower)
