@@ -39,7 +39,8 @@ export const inspect: TaskAct = async () => {
       ) &&
       now > Number(maciRound.votingEnd) / 1e6
     ) {
-      tasks++
+      tasks += 2
+      newTasks.push({ name: 'deactivate', params: { id: maciRound.id } })
       newTasks.push({ name: 'tally', params: { id: maciRound.id } })
     }
   }

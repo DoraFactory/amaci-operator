@@ -27,14 +27,18 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
 
   const now = Date.now()
 
-  if (!['Pending', 'Voting'].includes(maciRound.period)) {
-    return { error: { msg: 'error status' } }
-  }
+  // If the round has already ended, you can ignore the condition
+  // and execute a deactivate task.
+  if (now < Number(maciRound.votingEnd) / 1e6) {
+    if (!['Pending', 'Voting'].includes(maciRound.period)) {
+      return { error: { msg: 'error status' } }
+    }
 
-  const latestdeactivateAt = Timer.get(id)
+    const latestdeactivateAt = Timer.get(id)
 
-  if (latestdeactivateAt + deactivateInterval > now) {
-    return { error: { msg: 'too earlier' } }
+    if (latestdeactivateAt + deactivateInterval > now) {
+      return { error: { msg: 'too earlier' } }
+    }
   }
 
   const params = maciParamsFromCircuitPower(maciRound.circuitPower)
