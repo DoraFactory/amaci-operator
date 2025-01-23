@@ -11,7 +11,7 @@ import { log } from '../log'
 
 import { genMaciInputs } from '../operator/genInputs'
 
-const zkeyPath = './zkey/'
+const zkeyPath = './zkey/zkeys/'
 
 const inputsPath = path.join(process.env.WORK_PATH, 'inputs')
 if (!fs.existsSync(inputsPath)) {
@@ -34,7 +34,7 @@ const sleep = async (ms: number) =>
 
 export const tally: TaskAct = async (_, { id }: { id: string }) => {
   log('\n\n\ntally', id)
-  // Get round info by the round id(contract address)
+  // Get round info by the round id(con)
   const maciRound = await fetchRound(id)
 
   log('period:', maciRound.period)
@@ -166,8 +166,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
 
       const { proof } = await groth16.fullProve(
         input,
-        zkeyPath + maciRound.circuitPower + '_v2/msg.wasm',
-        zkeyPath + maciRound.circuitPower + '_v2/msg.zkey',
+        zkeyPath + 'r1cs' + '/msg_js/msg.wasm',
+        zkeyPath + 'zkey' + '/msg_1.zkey',
       )
 
       const proofHex = await adaptToUncompressed(proof)
@@ -183,8 +183,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
 
       const { proof } = await groth16.fullProve(
         input,
-        zkeyPath + maciRound.circuitPower + '_v2/tally.wasm',
-        zkeyPath + maciRound.circuitPower + '_v2/tally.zkey',
+        zkeyPath + 'r1cs' + '/tally_js/tally.wasm',
+        zkeyPath + 'zkey' + '/tally_1.zkey',
       )
 
       const proofHex = await adaptToUncompressed(proof)
