@@ -39,17 +39,17 @@ interface PublishMessageEvent {
   contractAddress: string
 }
 
-interface PublishDeactivateMessageEvent {
-  id: string
-  blockHeight: string
-  timestamp: string
-  txHash: string
-  dmsgChainLength: number
-  numSignUps: string
-  message: string
-  encPubKey: string
-  contractAddress: string
-}
+// interface PublishDeactivateMessageEvent {
+//   id: string
+//   blockHeight: string
+//   timestamp: string
+//   txHash: string
+//   dmsgChainLength: number
+//   numSignUps: string
+//   message: string
+//   encPubKey: string
+//   contractAddress: string
+// }
 
 interface RoundData {
   id: string
@@ -89,9 +89,6 @@ const ROUNDS_QUERY = (
     first: $limit,
     offset: $offset,
     filter: {
-      caller: {
-        equalTo: "${process.env.DEACTIVATE_RECORDER}"
-      },
       coordinatorPubkeyX: {
         equalTo: "${coordinatorPubkeyX}" 
       },
@@ -203,37 +200,37 @@ const PUBLISH_MESSAGE_EVENTS_QUERY = (
   }
 }`
 
-const PUBLISH_DEACTIVATE_MESSAGE_EVENTS_QUERY = (
-  contract: string,
-) => `query ($limit: Int, $offset: Int) {
-	publishDeactivateMessageEvents(
-    first: $limit,
-    offset: $offset,
-    orderBy: [DMSG_CHAIN_LENGTH_ASC],
-    filter: {
-      contractAddress: { 
-        equalTo: "${contract}" 
-      },
-    }
-  ) {
-	  totalCount
-    pageInfo {
-      endCursor
-      hasNextPage
-    }
-    nodes {
-      id
-      blockHeight
-      timestamp
-      txHash
-      dmsgChainLength
-      numSignUps
-      message
-      encPubKey
-      contractAddress
-    }
-  }
-}`
+// const PUBLISH_DEACTIVATE_MESSAGE_EVENTS_QUERY = (
+//   contract: string,
+// ) => `query ($limit: Int, $offset: Int) {
+// 	publishDeactivateMessageEvents(
+//     first: $limit,
+//     offset: $offset,
+//     orderBy: [DMSG_CHAIN_LENGTH_ASC],
+//     filter: {
+//       contractAddress: { 
+//         equalTo: "${contract}" 
+//       },
+//     }
+//   ) {
+// 	  totalCount
+//     pageInfo {
+//       endCursor
+//       hasNextPage
+//     }
+//     nodes {
+//       id
+//       blockHeight
+//       timestamp
+//       txHash
+//       dmsgChainLength
+//       numSignUps
+//       message
+//       encPubKey
+//       contractAddress
+//     }
+//   }
+// }`
 
 const MACI_SIGNUP_QUERY = `query ($limit: Int, $offset: Int) {
   transactions(

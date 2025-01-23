@@ -34,6 +34,7 @@ const sleep = async (ms: number) =>
 
 export const tally: TaskAct = async (_, { id }: { id: string }) => {
   log('\n\n\ntally', id)
+  // Get round info by the round id(contract address)
   const maciRound = await fetchRound(id)
 
   log('period:', maciRound.period)
@@ -61,6 +62,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     const preiod = await maciClient.getPeriod()
     if (['pending', 'voting'].includes(preiod.status)) {
       const spGasPrice = GasPrice.fromString('100000000000peaka')
+      //TODO: 这里的gas的估算需要auto
       const spGfee = calculateFee(20000000, spGasPrice)
       const startProcessRes = await maciClient.startProcessPeriod(spGfee)
 
@@ -89,7 +91,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     // } catch {}
   }
 
-  const dc = await maciClient.getProcessedDMsgCount()
+  // const dc = await maciClient.getProcessedDMsgCount()
 
   const mc = await maciClient.getProcessedMsgCount()
   const uc = await maciClient.getProcessedUserCount()
@@ -108,7 +110,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
   if (!allData) {
     const logs = await fetchAllVotesLogs(id)
 
-    log('logs s-m-d', logs.signup.length, logs.msg.length, logs.dmsg.length)
+    log('logs s-m', logs.signup.length, logs.msg.length)
 
     const maxVoteOptions = await maciClient.maxVoteOptions()
     const res = genMaciInputs(
@@ -136,19 +138,19 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
             BigInt(n),
           ) as [bigint, bigint],
         })),
-        dmessages: logs.dmsg.map((m) => ({
-          idx: m.dmsgChainLength,
-          numSignUps: m.numSignUps,
-          msg: (m.message.match(/(?<=\()\d+(?=\))/g) || []).map((s) =>
-            BigInt(s),
-          ),
-          pubkey: (m.encPubKey.match(/\d+/g) || []).map((n: string) =>
-            BigInt(n),
-          ) as [bigint, bigint],
-        })),
+        // dmessages: logs.dmsg.map((m) => ({
+        //   idx: m.dmsgChainLength,
+        //   numSignUps: m.numSignUps,
+        //   msg: (m.message.match(/(?<=\()\d+(?=\))/g) || []).map((s) =>
+        //     BigInt(s),
+        //   ),
+        //   pubkey: (m.encPubKey.match(/\d+/g) || []).map((n: string) =>
+        //     BigInt(n),
+        //   ) as [bigint, bigint],
+        // })),
       },
       // logs.ds.map((d) => d.map(BigInt)),
-      Number(dc),
+      // Number(dc),
     )
 
     const lastTallyInput = res.tallyInputs[res.tallyInputs.length - 1]

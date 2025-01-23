@@ -22,18 +22,18 @@ export class TestStorage implements Storage {
     return true
   }
 
-  async setDeactivateInfo(
-    id: string,
-    allDeactivates: string[][],
-    activeStates: string[],
-  ): Promise<boolean> {
-    throw new Error('Method not implemented.')
-  }
-  async fetchDeactivateInfo(
-    id: string,
-  ): Promise<{ allDeactivates: string[][]; activeStates: string[] }> {
-    throw new Error('Method not implemented.')
-  }
+  // async setDeactivateInfo(
+  //   id: string,
+  //   allDeactivates: string[][],
+  //   activeStates: string[],
+  // ): Promise<boolean> {
+  //   throw new Error('Method not implemented.')
+  // }
+  // async fetchDeactivateInfo(
+  //   id: string,
+  // ): Promise<{ allDeactivates: string[][]; activeStates: string[] }> {
+  //   throw new Error('Method not implemented.')
+  // }
 
   async saveAllInputs(id: string, inputs: any): Promise<boolean> {
     return true

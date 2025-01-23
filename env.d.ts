@@ -5,8 +5,6 @@ declare global {
 
       RPC_ENDPOINT: string
       IND_ENDPOINT: string
-      DEACTIVATE_RECORDER: string
-      DEACTIVATE_INTERVAL: string
       CODE_IDS: string[]
 
       WORK_PATH: string

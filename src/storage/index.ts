@@ -10,16 +10,16 @@ export interface Storage {
 
   setMaciStatus(id: string, status: Partial<IMaciStatus>): Promise<boolean>
 
-  setDeactivateInfo(
-    id: string,
-    allDeactivates: string[][],
-    activeStates: string[],
-  ): Promise<boolean>
+  // setDeactivateInfo(
+  //   id: string,
+  //   allDeactivates: string[][],
+  //   activeStates: string[],
+  // ): Promise<boolean>
 
-  fetchDeactivateInfo(id: string): Promise<{
-    allDeactivates: string[][]
-    activeStates: string[]
-  }>
+  // fetchDeactivateInfo(id: string): Promise<{
+  //   allDeactivates: string[][]
+  //   activeStates: string[]
+  // }>
 
   saveAllInputs(id: string, inputs: any): Promise<boolean>
 

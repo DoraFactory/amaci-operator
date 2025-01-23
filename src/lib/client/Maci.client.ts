@@ -42,7 +42,7 @@ export interface MaciReadOnlyInterface {
   getNumSignUp: () => Promise<Uint256>
   getMsgChainLength: () => Promise<Uint256>
   getDMsgChainLength: () => Promise<Uint256>
-  getProcessedDMsgCount: () => Promise<Uint256>
+  // getProcessedDMsgCount: () => Promise<Uint256>
   getProcessedMsgCount: () => Promise<Uint256>
   getProcessedUserCount: () => Promise<Uint256>
   getResult: ({ index }: { index: Uint256 }) => Promise<Uint256>
@@ -70,7 +70,7 @@ export class MaciQueryClient implements MaciReadOnlyInterface {
     this.getNumSignUp = this.getNumSignUp.bind(this)
     this.getMsgChainLength = this.getMsgChainLength.bind(this)
     this.getDMsgChainLength = this.getDMsgChainLength.bind(this)
-    this.getProcessedDMsgCount = this.getProcessedDMsgCount.bind(this)
+    // this.getProcessedDMsgCount = this.getProcessedDMsgCount.bind(this)
     this.getProcessedMsgCount = this.getProcessedMsgCount.bind(this)
     this.getProcessedUserCount = this.getProcessedUserCount.bind(this)
     this.getResult = this.getResult.bind(this)
@@ -116,11 +116,11 @@ export class MaciQueryClient implements MaciReadOnlyInterface {
       get_d_msg_chain_length: {},
     })
   }
-  getProcessedDMsgCount = async (): Promise<Uint256> => {
-    return this.client.queryContractSmart(this.contractAddress, {
-      get_processed_d_msg_count: {},
-    })
-  }
+  // getProcessedDMsgCount = async (): Promise<Uint256> => {
+  //   return this.client.queryContractSmart(this.contractAddress, {
+  //     get_processed_d_msg_count: {},
+  //   })
+  // }
   getProcessedMsgCount = async (): Promise<Uint256> => {
     return this.client.queryContractSmart(this.contractAddress, {
       get_processed_msg_count: {},
@@ -273,34 +273,34 @@ export interface MaciInterface extends MaciReadOnlyInterface {
     memo?: string,
     _funds?: Coin[],
   ) => Promise<ExecuteResult>
-  publishDeactivateMessage: (
-    {
-      encPubKey,
-      message,
-    }: {
-      encPubKey: PubKey
-      message: MessageData
-    },
-    fee?: number | StdFee | 'auto',
-    memo?: string,
-    _funds?: Coin[],
-  ) => Promise<ExecuteResult>
-  processDeactivateMessage: (
-    {
-      groth16Proof,
-      newDeactivateCommitment,
-      newDeactivateRoot,
-      size,
-    }: {
-      groth16Proof: Groth16ProofType
-      newDeactivateCommitment: Uint256
-      newDeactivateRoot: Uint256
-      size: Uint256
-    },
-    fee?: number | StdFee | 'auto',
-    memo?: string,
-    _funds?: Coin[],
-  ) => Promise<ExecuteResult>
+  // publishDeactivateMessage: (
+  //   {
+  //     encPubKey,
+  //     message,
+  //   }: {
+  //     encPubKey: PubKey
+  //     message: MessageData
+  //   },
+  //   fee?: number | StdFee | 'auto',
+  //   memo?: string,
+  //   _funds?: Coin[],
+  // ) => Promise<ExecuteResult>
+  // processDeactivateMessage: (
+  //   {
+  //     groth16Proof,
+  //     newDeactivateCommitment,
+  //     newDeactivateRoot,
+  //     size,
+  //   }: {
+  //     groth16Proof: Groth16ProofType
+  //     newDeactivateCommitment: Uint256
+  //     newDeactivateRoot: Uint256
+  //     size: Uint256
+  //   },
+  //   fee?: number | StdFee | 'auto',
+  //   memo?: string,
+  //   _funds?: Coin[],
+  // ) => Promise<ExecuteResult>
   addNewKey: (
     {
       d,
@@ -423,8 +423,8 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     this.signUp = this.signUp.bind(this)
     this.startProcessPeriod = this.startProcessPeriod.bind(this)
     this.stopVotingPeriod = this.stopVotingPeriod.bind(this)
-    this.publishDeactivateMessage = this.publishDeactivateMessage.bind(this)
-    this.processDeactivateMessage = this.processDeactivateMessage.bind(this)
+    // this.publishDeactivateMessage = this.publishDeactivateMessage.bind(this)
+    // this.processDeactivateMessage = this.processDeactivateMessage.bind(this)
     this.addNewKey = this.addNewKey.bind(this)
     this.publishMessage = this.publishMessage.bind(this)
     this.processMessage = this.processMessage.bind(this)
@@ -609,64 +609,64 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
       _funds,
     )
   }
-  publishDeactivateMessage = async (
-    {
-      encPubKey,
-      message,
-    }: {
-      encPubKey: PubKey
-      message: MessageData
-    },
-    fee: number | StdFee | 'auto' = 'auto',
-    memo?: string,
-    _funds?: Coin[],
-  ): Promise<ExecuteResult> => {
-    return await this.client.execute(
-      this.sender,
-      this.contractAddress,
-      {
-        publish_deactivate_message: {
-          enc_pub_key: encPubKey,
-          message,
-        },
-      },
-      fee,
-      memo,
-      _funds,
-    )
-  }
-  processDeactivateMessage = async (
-    {
-      groth16Proof,
-      newDeactivateCommitment,
-      newDeactivateRoot,
-      size,
-    }: {
-      groth16Proof: Groth16ProofType
-      newDeactivateCommitment: Uint256
-      newDeactivateRoot: Uint256
-      size: Uint256
-    },
-    fee: number | StdFee | 'auto' = 'auto',
-    memo?: string,
-    _funds?: Coin[],
-  ): Promise<ExecuteResult> => {
-    return await this.client.execute(
-      this.sender,
-      this.contractAddress,
-      {
-        process_deactivate_message: {
-          groth16_proof: groth16Proof,
-          new_deactivate_commitment: newDeactivateCommitment,
-          new_deactivate_root: newDeactivateRoot,
-          size,
-        },
-      },
-      fee,
-      memo,
-      _funds,
-    )
-  }
+  // publishDeactivateMessage = async (
+  //   {
+  //     encPubKey,
+  //     message,
+  //   }: {
+  //     encPubKey: PubKey
+  //     message: MessageData
+  //   },
+  //   fee: number | StdFee | 'auto' = 'auto',
+  //   memo?: string,
+  //   _funds?: Coin[],
+  // ): Promise<ExecuteResult> => {
+  //   return await this.client.execute(
+  //     this.sender,
+  //     this.contractAddress,
+  //     {
+  //       publish_deactivate_message: {
+  //         enc_pub_key: encPubKey,
+  //         message,
+  //       },
+  //     },
+  //     fee,
+  //     memo,
+  //     _funds,
+  //   )
+  // }
+  // processDeactivateMessage = async (
+  //   {
+  //     groth16Proof,
+  //     newDeactivateCommitment,
+  //     newDeactivateRoot,
+  //     size,
+  //   }: {
+  //     groth16Proof: Groth16ProofType
+  //     newDeactivateCommitment: Uint256
+  //     newDeactivateRoot: Uint256
+  //     size: Uint256
+  //   },
+  //   fee: number | StdFee | 'auto' = 'auto',
+  //   memo?: string,
+  //   _funds?: Coin[],
+  // ): Promise<ExecuteResult> => {
+  //   return await this.client.execute(
+  //     this.sender,
+  //     this.contractAddress,
+  //     {
+  //       process_deactivate_message: {
+  //         groth16_proof: groth16Proof,
+  //         new_deactivate_commitment: newDeactivateCommitment,
+  //         new_deactivate_root: newDeactivateRoot,
+  //         size,
+  //       },
+  //     },
+  //     fee,
+  //     memo,
+  //     _funds,
+  //   )
+  // }
   addNewKey = async (
     {
       d,

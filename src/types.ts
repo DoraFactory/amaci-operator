@@ -5,7 +5,7 @@ export enum ChainId {
   sepolia = 11155111,
 }
 
-export type ProofType = 'msg' | 'tally' | 'deactivate'
+export type ProofType = 'msg' | 'tally'
 
 export type MaciType = '4-2-2-25_v2' | '2-1-1-5_v2'
 
@@ -69,16 +69,16 @@ export interface IMaciMetadata {
   startAt: number
   endAt: number
   maxVoteOptions: number
-  deactivateInterval: number
+  // deactivateInterval: number
 }
 
 export interface IMaciStatus {
-  latestdeactivateAt: number
+  // latestdeactivateAt: number
 
   isStopVoting: boolean
 
-  deactivateProofsCount: number
-  submitedDeactivateProofsCount: number
+  // deactivateProofsCount: number
+  // submitedDeactivateProofsCount: number
 
   hasProofs: boolean
   msgProofsCount: number
@@ -94,12 +94,12 @@ export interface IContractLogs {
     msg: bigint[]
     pubkey: [bigint, bigint]
   }[]
-  dmessages: {
-    idx: number
-    numSignUps: number
-    msg: bigint[]
-    pubkey: [bigint, bigint]
-  }[]
+  // dmessages: {
+  //   idx: number
+  //   numSignUps: number
+  //   msg: bigint[]
+  //   pubkey: [bigint, bigint]
+  // }[]
   states: {
     idx: number
     balance: bigint
@@ -120,7 +120,7 @@ export interface IKeypair {
 }
 
 export type Task = {
-  name: 'inspect' | 'deactivate' | 'tally'
+  name: 'inspect' | 'tally'
   // | 'proof'
   // | 'txDeactivate'
   // | 'txStopVoting'

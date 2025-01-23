@@ -11,8 +11,8 @@ const sleep = async (ms: number) => {
 
 const PublishMessageSign =
   '0x8bb5a8cf78a5b2f53c73e2feacb1fb3e91c3f03cb15e33f53174db20e37e3928'
-const PublishDeactivateMessageSign =
-  '0xbc95c7d3fe7fef05bb4206d406cce3f05e000db24e6ca7d01aee1cfa63fa58e4'
+// const PublishDeactivateMessageSign =
+  // '0xbc95c7d3fe7fef05bb4206d406cce3f05e000db24e6ca7d01aee1cfa63fa58e4'
 const SignUpSign =
   '0xc7563c66f89e2fb0839e2b64ed54fe4803ff9428777814772ccfe4c385072c4b'
 const SignUpActiveSign =
@@ -27,7 +27,7 @@ export const getContractLogs = async (
   to?: number,
 ): Promise<IContractLogs> => {
   const messages: IContractLogs['messages'] = []
-  const dmessages: IContractLogs['dmessages'] = []
+  // const dmessages: IContractLogs['dmessages'] = []
   const states: IContractLogs['states'] = []
   const statesActive: { idx: number; c: bigint[] }[] = []
 
@@ -42,17 +42,17 @@ export const getContractLogs = async (
     messages.push({ idx, msg, pubkey })
   }
 
-  function handleDeactivateMessage(log: Log) {
-    const idx = Number(log.topics[1])
-    const d = web3.eth.abi.decodeParameters(
-      ['uint256[10]'],
-      log.data,
-    )[0] as string[]
-    const numSignUps = Number(d[0])
-    const msg = d.slice(1, 8).map((n) => BigInt(n))
-    const pubkey = d.slice(8, 10).map((n) => BigInt(n)) as [bigint, bigint]
-    dmessages.push({ idx, numSignUps, msg, pubkey })
-  }
+  // function handleDeactivateMessage(log: Log) {
+  //   const idx = Number(log.topics[1])
+  //   const d = web3.eth.abi.decodeParameters(
+  //     ['uint256[10]'],
+  //     log.data,
+  //   )[0] as string[]
+  //   const numSignUps = Number(d[0])
+  //   const msg = d.slice(1, 8).map((n) => BigInt(n))
+  //   const pubkey = d.slice(8, 10).map((n) => BigInt(n)) as [bigint, bigint]
+  //   dmessages.push({ idx, numSignUps, msg, pubkey })
+  // }
 
   function handleSignUpActive(log: Log) {
     const idx = Number(log.topics[1])
@@ -88,7 +88,7 @@ export const getContractLogs = async (
         topics: [
           [
             PublishMessageSign,
-            PublishDeactivateMessageSign,
+            // PublishDeactivateMessageSign,
             SignUpSign,
             SignUpActiveSign,
           ],
@@ -100,8 +100,8 @@ export const getContractLogs = async (
           const log = _log as Log
           if (log.topics[0] === PublishMessageSign) {
             handleMessage(log)
-          } else if (log.topics[0] === PublishDeactivateMessageSign) {
-            handleDeactivateMessage(log)
+          // } else if (log.topics[0] === PublishDeactivateMessageSign) {
+          //   handleDeactivateMessage(log)
           } else if (log.topics[0] === SignUpActiveSign) {
             handleSignUpActive(log)
           } else {
@@ -124,5 +124,5 @@ export const getContractLogs = async (
     }
   }
 
-  return { messages, dmessages, states }
+  return { messages, states }
 }

@@ -27,27 +27,27 @@ interface PublishMessageEvent {
   contractAddress: string
 }
 
-interface DeactivateMessage {
-  id: string
-  blockHeight: string
-  timestamp: string
-  txHash: string
-  deactivateMessage: string // '[["0", "1", "2", "3", "4"]]'
-  maciContractAddress: string
-  maciOperator: string
-}
+// interface DeactivateMessage {
+//   id: string
+//   blockHeight: string
+//   timestamp: string
+//   txHash: string
+//   deactivateMessage: string // '[["0", "1", "2", "3", "4"]]'
+//   maciContractAddress: string
+//   maciOperator: string
+// }
 
-interface PublishDeactivateMessageEvent {
-  id: string
-  blockHeight: string
-  timestamp: string
-  txHash: string
-  dmsgChainLength: number
-  numSignUps: number
-  message: string
-  encPubKey: string
-  contractAddress: string
-}
+// interface PublishDeactivateMessageEvent {
+//   id: string
+//   blockHeight: string
+//   timestamp: string
+//   txHash: string
+//   dmsgChainLength: number
+//   numSignUps: number
+//   message: string
+//   encPubKey: string
+//   contractAddress: string
+// }
 
 interface RoundData {
   id: string
@@ -116,10 +116,7 @@ const ROUNDS_QUERY = (
     offset: $offset,
     filter: {
       maciType: {
-        equalTo: "aMACI"
-      },
-      caller: {
-        equalTo: "${process.env.DEACTIVATE_RECORDER}"
+        equalTo: "MACI"
       },
       coordinatorPubkeyX: {
         equalTo: "${coordinatorPubkeyX}" 
@@ -236,67 +233,67 @@ const PUBLISH_MESSAGE_EVENTS_QUERY = (
   }
 }`
 
-const PUBLISH_DEACTIVATE_MESSAGE_EVENTS_QUERY = (
-  contract: string,
-) => `query ($limit: Int, $offset: Int) {
-	publishDeactivateMessageEvents(
-    first: $limit,
-    offset: $offset,
-    orderBy: [DMSG_CHAIN_LENGTH_ASC],
-    filter: {
-      contractAddress: { 
-        equalTo: "${contract}" 
-      },
-    }
-  ) {
-	  totalCount
-	  pageInfo {
-      endCursor
-      hasNextPage
-	  }
-    nodes {
-      id
-      blockHeight
-      timestamp
-      txHash
-      dmsgChainLength
-      numSignUps
-      message
-      encPubKey
-      contractAddress
-    }
-  }
-}`
+// const PUBLISH_DEACTIVATE_MESSAGE_EVENTS_QUERY = (
+//   contract: string,
+// ) => `query ($limit: Int, $offset: Int) {
+// 	publishDeactivateMessageEvents(
+//     first: $limit,
+//     offset: $offset,
+//     orderBy: [DMSG_CHAIN_LENGTH_ASC],
+//     filter: {
+//       contractAddress: { 
+//         equalTo: "${contract}" 
+//       },
+//     }
+//   ) {
+// 	  totalCount
+// 	  pageInfo {
+//       endCursor
+//       hasNextPage
+// 	  }
+//     nodes {
+//       id
+//       blockHeight
+//       timestamp
+//       txHash
+//       dmsgChainLength
+//       numSignUps
+//       message
+//       encPubKey
+//       contractAddress
+//     }
+//   }
+// }`
 
-const DEACTIVATE_MESSAGE_QUERY = (
-  contract: string,
-) => `query ($limit: Int, $offset: Int) {
-  deactivateMessages(
-    first: $limit,
-    offset: $offset,
-    orderBy: [BLOCK_HEIGHT_ASC],
-    filter: {
-      maciContractAddress: { 
-        equalTo: "${contract}" 
-      },
-    }
-  ) {
-	  totalCount
-	  pageInfo {
-      endCursor
-      hasNextPage
-	  }
-    nodes {
-      id
-      blockHeight
-      timestamp
-      txHash
-      deactivateMessage
-      maciContractAddress
-      maciOperator
-    }
-  }
-}`
+// const DEACTIVATE_MESSAGE_QUERY = (
+//   contract: string,
+// ) => `query ($limit: Int, $offset: Int) {
+//   deactivateMessages(
+//     first: $limit,
+//     offset: $offset,
+//     orderBy: [BLOCK_HEIGHT_ASC],
+//     filter: {
+//       maciContractAddress: { 
+//         equalTo: "${contract}" 
+//       },
+//     }
+//   ) {
+// 	  totalCount
+// 	  pageInfo {
+//       endCursor
+//       hasNextPage
+// 	  }
+//     nodes {
+//       id
+//       blockHeight
+//       timestamp
+//       txHash
+//       deactivateMessage
+//       maciContractAddress
+//       maciOperator
+//     }
+//   }
+// }`
 
 async function fetchOne<T>(query: string): Promise<T> {
   return fetch(endpoint, {
@@ -368,10 +365,10 @@ export const fetchAllVotesLogs = async (contract: string) => {
   //   DEACTIVATE_MESSAGE_QUERY(contract),
   //   {},
   // )
-  const dmsg = await fetchAllPages<PublishDeactivateMessageEvent>(
-    PUBLISH_DEACTIVATE_MESSAGE_EVENTS_QUERY(contract),
-    {},
-  )
+  // const dmsg = await fetchAllPages<PublishDeactivateMessageEvent>(
+  //   PUBLISH_DEACTIVATE_MESSAGE_EVENTS_QUERY(contract),
+  //   {},
+  // )
 
   return {
     signup,
@@ -380,30 +377,30 @@ export const fetchAllVotesLogs = async (contract: string) => {
     //   [] as string[][],
     // ),
     msg,
-    dmsg,
+    // dmsg,
   }
 }
 
-export const fetchAllDeactivateLogs = async (contract: string) => {
-  const signup = await fetchAllPages<SignUpEvent>(
-    SIGN_UP_EVENTS_QUERY(contract),
-    {},
-  )
-  // const ds = await fetchAllPages<DeactivateMessage>(
-  //   DEACTIVATE_MESSAGE_QUERY(contract),
-  //   {},
-  // )
-  const dmsg = await fetchAllPages<PublishDeactivateMessageEvent>(
-    PUBLISH_DEACTIVATE_MESSAGE_EVENTS_QUERY(contract),
-    {},
-  )
+// export const fetchAllDeactivateLogs = async (contract: string) => {
+//   const signup = await fetchAllPages<SignUpEvent>(
+//     SIGN_UP_EVENTS_QUERY(contract),
+//     {},
+//   )
+//   // const ds = await fetchAllPages<DeactivateMessage>(
+//   //   DEACTIVATE_MESSAGE_QUERY(contract),
+//   //   {},
+//   // )
+//   const dmsg = await fetchAllPages<PublishDeactivateMessageEvent>(
+//     PUBLISH_DEACTIVATE_MESSAGE_EVENTS_QUERY(contract),
+//     {},
+//   )
 
-  return {
-    signup,
-    // ds: ds.reduce(
-    //   (s, c) => [...s, ...JSON.parse(c.deactivateMessage)],
-    //   [] as string[][],
-    // ),
-    dmsg,
-  }
-}
+//   return {
+//     signup,
+//     // ds: ds.reduce(
+//     //   (s, c) => [...s, ...JSON.parse(c.deactivateMessage)],
+//     //   [] as string[][],
+//     // ),
+//     dmsg,
+//   }
+// }

@@ -1,16 +1,17 @@
 import { fetchRounds } from '../vota/indexer'
 import { Task, TaskAct } from '../types'
-import { Timer } from '../storage/timer'
+// import { Timer } from '../storage/timer'
 import { genKeypair } from '../lib/keypair'
 import { log } from '../log'
 
-const deactivateInterval = Number(process.env.DEACTIVATE_INTERVAL)
 
 export const inspect: TaskAct = async () => {
   const now = Date.now()
 
+  
   const coordinator = genKeypair(BigInt(process.env.COORDINATOR_PRI_KEY))
 
+  // 根据maci public key和code id来获取所有的rounds
   const rounds = await fetchRounds(coordinator.pubKey.map(String))
   console.log('===========')
   console.log(process.env.CODE_IDS)
@@ -21,16 +22,6 @@ export const inspect: TaskAct = async () => {
 
   let tasks = 0
   for (const maciRound of rounds) {
-    // deactivate
-    if (
-      now > Number(maciRound.votingStart) / 1e6 &&
-      // maciRound.period === 'Voting' &&
-      Timer.get(maciRound.id) + deactivateInterval < now &&
-      now < Number(maciRound.votingEnd) / 1e6
-    ) {
-      tasks++
-      newTasks.push({ name: 'deactivate', params: { id: maciRound.id } })
-    }
 
     // Tally
     if (
@@ -39,8 +30,7 @@ export const inspect: TaskAct = async () => {
       ) &&
       now > Number(maciRound.votingEnd) / 1e6
     ) {
-      tasks += 2
-      newTasks.push({ name: 'deactivate', params: { id: maciRound.id } })
+      tasks ++
       newTasks.push({ name: 'tally', params: { id: maciRound.id } })
     }
   }

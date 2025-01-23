@@ -37,18 +37,8 @@ const main = async () => {
 
   const doTack = (task: Task) => {
     switch (task.name) {
-      case 'deactivate':
-        return T.deactivate(storage, task.params)
       case 'tally':
         return T.tally(storage, task.params)
-      // case 'proof':
-      //   return T.proof(storage, task.params)
-      // case 'txProof':
-      //   return T.txProof(storage, task.params)
-      // case 'txStopVoting':
-      //   return T.txStopVoting(storage, task.params)
-      // case 'txResult':
-      //   return T.txResult(storage, task.params)
       case 'inspect':
       default:
         return T.inspect(storage)
