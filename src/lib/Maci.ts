@@ -39,8 +39,6 @@ interface IState {
   voTree: Tree
   nonce: bigint
   voted: boolean
-  d1: [bigint, bigint]
-  d2: [bigint, bigint]
 }
 
 const SNARK_FIELD_SIZE =
@@ -79,9 +77,6 @@ export class MACI {
 
   protected stateTree: Tree
 
-  protected dCommands: (ICmd | null)[]
-  protected _processedDMsgCount: number
-
   protected stateLeaves: Map<number, IState>
 
   protected commands: (ICmd | null)[]
@@ -110,10 +105,6 @@ export class MACI {
     return this.tallyResults.leaves()
   }
 
-  get processedDMsgCount() {
-    return this._processedDMsgCount
-  }
-
   constructor(
     stateTreeDepth: number,
     intStateTreeDepth: number,
@@ -138,7 +129,8 @@ export class MACI {
 
     const emptyVOTree = new Tree(5, voteOptionTreeDepth, 0n)
 
-    const stateTree = new Tree(5, stateTreeDepth, zeroHash10)
+    const blankStateHash = poseidon([0, 0, 0, 0, 0])
+    const stateTree = new Tree(5, stateTreeDepth, blankStateHash)
 
     log(
       [
@@ -154,8 +146,6 @@ export class MACI {
     this.stateTree = stateTree
 
     this.tallyResults = new Tree(5, voteOptionTreeDepth, 0n)
-    this.dCommands = []
-    this._processedDMsgCount = 0
 
     this.stateLeaves = new Map()
     this.commands = []
@@ -180,8 +170,6 @@ export class MACI {
       voTree: new Tree(5, this.voteOptionTreeDepth, 0n),
       nonce: 0n,
       voted: false,
-      d1: [0n, 0n],
-      d2: [0n, 0n],
     }
   }
 
@@ -549,9 +537,6 @@ export class MACI {
         s.balance,
         s.voted ? s.voTree.root : 0n,
         s.nonce,
-        ...s.d1,
-        ...s.d2,
-        0n,
       ]
       votes[i] = s.voTree.leaves()
 
