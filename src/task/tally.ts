@@ -63,7 +63,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     if (['pending', 'voting'].includes(preiod.status)) {
       const spGasPrice = GasPrice.fromString('100000000000peaka')
       //TODO: 这里的gas的估算需要auto
-      const spGfee = calculateFee(30000000, spGasPrice)
+      const spGfee = calculateFee(100000000, spGasPrice)
       const startProcessRes = await maciClient.startProcessPeriod(spGfee)
 
       await sleep(6000)
@@ -153,12 +153,15 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       // Number(dc),
     )
 
+    console.log('return res and finished tallying', res)
+
     const lastTallyInput = res.tallyInputs[res.tallyInputs.length - 1]
     const result = res.result.map((i) => i.toString())
     const salt = lastTallyInput
       ? lastTallyInput.newResultsRootSalt.toString()
       : '0'
 
+    console.log("start generate msg proof")
     const msg: ProofData[] = []
     log('start to gen proof | msg')
     for (let i = 0; i < res.msgInputs.length; i++) {
@@ -170,14 +173,19 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         zkeyPath + 'zkey' + '/msg_1.zkey',
       )
 
+      console.log("msg proof is:", proof)
+
       const proofHex = await adaptToUncompressed(proof)
       const commitment = input.newStateCommitment.toString()
       log('gen proof | msg | ' + i)
       msg.push({ proofHex, commitment })
     }
 
+    console.log("end generate msg proof")
+
     const tally: ProofData[] = []
     log('start to gen proof | tally')
+    console.log("start generate tally proof")
     for (let i = 0; i < res.tallyInputs.length; i++) {
       const input = res.tallyInputs[i]
 
@@ -192,6 +200,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       log('gen proof | tally | ' + i)
       tally.push({ proofHex, commitment })
     }
+
+    console.log("end generate tally proof")
 
     allData = {
       result,

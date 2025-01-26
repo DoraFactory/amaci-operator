@@ -45,30 +45,11 @@ export const genMaciInputs = (
     maci.pushMessage(msg.msg, msg.pubkey)
   }
 
-  // for (const dmsg of contractLogs.dmessages) {
-  //   maci.pushDeactivateMessage(dmsg.msg, dmsg.pubkey)
-  // }
-
-  // maci.uploadDeactivateHistory(deactivates, contractLogs.states.length)
-
-  // let i = 0
-  // while (maci.processedDMsgCount < deactivateSize) {
-  //   let size = maci.batchSize
-  //   if (size + i > deactivateSize) {
-  //     size = deactivateSize - i
-  //   }
-  //   i = i + size
-
-  //   maci.processDeactivateMessage(
-  //     size,
-  //     contractLogs.dmessages[i - 1].numSignUps,
-  //   )
-  // }
-
   maci.endVotePeriod()
 
   let nonce = 1n
 
+  console.log("start processing")
   // PROCESSING
   const msgInputs: MsgInput[] = []
   while (maci.states === MACI_STATES.PROCESSING) {
@@ -79,7 +60,12 @@ export const genMaciInputs = (
     msgInputs.push(input)
   }
 
+  console.log('msgInputs length is ', msgInputs.length)
+  console.log("end processing")
+
   // TALLYING
+
+  console.log("start tallying")
   const tallyInputs: TallyInput[] = []
   while (maci.states === MACI_STATES.TALLYING) {
     const input = maci.processTally(
@@ -89,6 +75,8 @@ export const genMaciInputs = (
     tallyInputs.push(input)
   }
 
+  console.log('tallyInputs', tallyInputs.length)
+  console.log("end tallying")
   // RESULT
   const result = maci.tallyResultsLeaves.slice(0, maxVoteOptions)
 

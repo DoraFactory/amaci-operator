@@ -78,13 +78,8 @@ export class MACI {
   protected voTreeZeroRoot: bigint
 
   protected stateTree: Tree
-  protected activeStateTree: Tree
-  // protected deactivateTree: Tree
-
-  // protected deactivateSize: number
 
   protected dCommands: (ICmd | null)[]
-  // protected dMessages: IMsg[]
   protected _processedDMsgCount: number
 
   protected stateLeaves: Map<number, IState>
@@ -117,10 +112,6 @@ export class MACI {
 
   get processedDMsgCount() {
     return this._processedDMsgCount
-  }
-
-  get activeStateTreeLeaves() {
-    return this.activeStateTree.leaves()
   }
 
   constructor(
@@ -162,12 +153,8 @@ export class MACI {
     this.voTreeZeroRoot = emptyVOTree.root
     this.stateTree = stateTree
 
-    this.activeStateTree = new Tree(5, stateTreeDepth, 0n)
     this.tallyResults = new Tree(5, voteOptionTreeDepth, 0n)
-    // this.deactivateTree = new Tree(5, stateTreeDepth, 0n)
-    // this.deactivateSize = 0
     this.dCommands = []
-    // this.dMessages = []
     this._processedDMsgCount = 0
 
     this.stateLeaves = new Map()
@@ -240,14 +227,14 @@ export class MACI {
     const s: IState = this.stateLeaves.get(leafIdx) || this.emptyState()
     s.pubKey = [...pubKey]
     s.balance = balance
-    s.d1 = [c[0], c[1]]
-    s.d2 = [c[2], c[3]]
 
     this.stateLeaves.set(leafIdx, s)
 
     const hash = poseidon([
-      poseidon([...s.pubKey, s.balance, s.voted ? s.voTree.root : 0n, s.nonce]),
-      c ? poseidon([...c.map((ci) => BigInt(ci)), 0n]) : zeroHash5,
+      ...s.pubKey,
+      s.balance,
+      s.voted ? s.voTree.root : 0n,
+      s.nonce
     ])
     this.stateTree.updateLeaf(leafIdx, hash)
 
@@ -268,37 +255,6 @@ export class MACI {
     })
   }
 
-  // pushDeactivateMessage(ciphertext: bigint[], encPubKey: [bigint, bigint]) {
-  //   if (this.states !== MACI_STATES.FILLING)
-  //     throw new Error('vote period ended')
-
-  //   const msgIdx = this.dMessages.length
-  //   const prevHash = msgIdx > 0 ? this.dMessages[msgIdx - 1].hash : 0n
-
-  //   const hash = poseidon([
-  //     poseidon(ciphertext.slice(0, 5)),
-  //     poseidon([...ciphertext.slice(5), ...encPubKey, prevHash]),
-  //   ])
-
-  //   this.dMessages.push({
-  //     ciphertext: [...ciphertext],
-  //     encPubKey: [...encPubKey],
-  //     prevHash,
-  //     hash,
-  //   })
-
-  //   this.dCommands.push(this.msgToCmd(ciphertext, encPubKey))
-
-  //   log(
-  //     [
-  //       `push Deactivate Message { idx: ${msgIdx} } `.padEnd(40, '='),
-  //       '- old msg hash:\t' + prevHash,
-  //       '- new msg hash:\t' + hash,
-  //       '',
-  //     ].join('\n'),
-  //   )
-  // }
-
   pushMessage(ciphertext: bigint[], encPubKey: [bigint, bigint]) {
     if (this.states !== MACI_STATES.FILLING)
       throw new Error('vote period ended')
@@ -318,7 +274,32 @@ export class MACI {
       hash,
     })
 
-    this.commands.push(this.msgToCmd(ciphertext, encPubKey))
+    // this.commands.push(this.msgToCmd(ciphertext, encPubKey))
+    const sharedKey = genEcdhSharedKey(this.coordinator.privKey, encPubKey)
+    try {
+      const plaintext = poseidonDecrypt(ciphertext, sharedKey, 0n, 6)
+      const packaged = plaintext[0]
+
+      const nonce = packaged % UINT32
+      const stateIdx = (packaged >> 32n) % UINT32
+      const voIdx = (packaged >> 64n) % UINT32
+      const newVotes = (packaged >> 96n) % UINT96
+
+      const cmd: ICmd = {
+        nonce, stateIdx, voIdx, newVotes,
+        newPubKey: [plaintext[1], plaintext[2]],
+        signature: {
+          R8: [plaintext[3], plaintext[4]],
+          S: plaintext[5],
+        },
+        msgHash: poseidon(plaintext.slice(0, 3))
+      }
+      this.commands.push(cmd)
+    } catch (e) {
+      // !discard
+      this.commands.push(null)
+      console.log('[dev] msg decrypt error')
+    }
 
     log(
       [
@@ -336,211 +317,6 @@ export class MACI {
         .join(','),
     })
   }
-
-  // initProcessedDeactivateLog(deactivates: bigint[][], activeState: bigint[]) {
-  //   for (let i = 0; i < deactivates.length; i++) {
-  //     const dLeaf = deactivates[i]
-  //     this.deactivateTree.updateLeaf(i, poseidon(dLeaf))
-  //   }
-
-  //   this.activeStateTree.initLeaves(activeState)
-
-  //   this._processedDMsgCount += deactivates.length
-  // }
-
-  // uploadDeactivateHistory(deactivates: bigint[][], subStateTreeLength: number) {
-  //   for (let i = 0; i < deactivates.length; i++) {
-  //     const dLeaf = deactivates[i]
-  //     this.deactivateTree.updateLeaf(i, poseidon(dLeaf))
-
-  //     const activeState = BigInt(this.processedDMsgCount + i + 1)
-
-  //     const cmd = this.dCommands[i]
-
-  //     const error = this.checkDeactivateCommand(cmd, subStateTreeLength)
-
-  //     let stateIdx = 5 ** this.stateTreeDepth - 1
-  //     if (!error && cmd) {
-  //       stateIdx = Number(cmd.stateIdx)
-  //     }
-
-  //     if (!error) {
-  //       // UPDATE STATE =======================================================
-  //       this.activeStateTree.updateLeaf(stateIdx, activeState)
-  //     }
-  //   }
-
-  //   this._processedDMsgCount += deactivates.length
-  // }
-
-  // processDeactivateMessage(inputSize: number, subStateTreeLength: number) {
-  //   const batchSize = this.batchSize
-  //   const batchStartIdx = this.processedDMsgCount
-  //   const size = Math.min(inputSize, this.dMessages.length - batchStartIdx)
-  //   const batchEndIdx = batchStartIdx + size
-
-  //   log(
-  //     `= Process d-message [${batchStartIdx}, ${batchEndIdx}) `.padEnd(40, '='),
-  //   )
-
-  //   const messages = this.dMessages.slice(batchStartIdx, batchEndIdx)
-  //   const commands = this.dCommands.slice(batchStartIdx, batchEndIdx)
-
-  //   while (messages.length < batchSize) {
-  //     messages.push(this.emptyMessage())
-  //     commands.push(null)
-  //   }
-
-  //   const subStateTree = this.stateTree.subTree(subStateTreeLength)
-  //   const currentStateRoot = subStateTree.root
-  //   const deactivateIndex0 = this.processedDMsgCount
-
-  //   const currentActiveStateRoot = this.activeStateTree.root
-  //   const currentDeactivateRoot = this.deactivateTree.root
-  //   const currentDeactivateCommitment = poseidon([
-  //     currentActiveStateRoot,
-  //     currentDeactivateRoot,
-  //   ])
-
-  //   // PROCESS ================================================================
-  //   const currentActiveState = new Array(batchSize)
-  //   const newActiveState = new Array(batchSize)
-  //   const currentStateLeaves = new Array(batchSize)
-  //   const currentStateLeavesPathElements = new Array(batchSize)
-  //   const activeStateLeavesPathElements = new Array(batchSize)
-  //   const deactivateLeavesPathElements = new Array(batchSize)
-  //   // const nonce = new Array(batchSize)
-
-  //   for (let i = 0; i < batchSize; i++) {
-  //     // nonce[i] = BigInt(this.processedDMsgCount + i)
-  //     newActiveState[i] = BigInt(this.processedDMsgCount + i + 1)
-  //   }
-
-  //   const newDeactivate = []
-  //   const c1 = []
-  //   const c2 = []
-
-  //   for (let i = 0; i < batchSize; i++) {
-  //     const cmd = commands[i]
-  //     const error = this.checkDeactivateCommand(cmd, subStateTreeLength)
-
-  //     let stateIdx = 5 ** this.stateTreeDepth - 1
-  //     if (error === 'signature error' && cmd) {
-  //       stateIdx = Math.min(Number(cmd.stateIdx), stateIdx)
-  //     } else if (!error && cmd) {
-  //       stateIdx = Number(cmd.stateIdx)
-  //     }
-
-  //     const s = this.stateLeaves.get(stateIdx) || this.emptyState()
-  //     currentStateLeaves[i] = [
-  //       ...s.pubKey,
-  //       s.balance,
-  //       s.voted ? s.voTree.root : 0n,
-  //       s.nonce,
-  //       s.d1[0],
-  //       s.d1[1],
-  //       s.d2[0],
-  //       s.d2[1],
-  //       0,
-  //     ]
-  //     currentStateLeavesPathElements[i] = subStateTree.pathElementOf(stateIdx)
-  //     activeStateLeavesPathElements[i] =
-  //       this.activeStateTree.pathElementOf(stateIdx)
-  //     deactivateLeavesPathElements[i] = this.deactivateTree.pathElementOf(
-  //       deactivateIndex0 + i,
-  //     )
-  //     currentActiveState[i] = this.activeStateTree.leaf(stateIdx)
-
-  //     const sharedKey = genEcdhSharedKey(this.coordinator.privKey, s.pubKey)
-
-  //     const deactivate = encryptOdevity(
-  //       !!error,
-  //       this.coordinator.pubKey,
-  //       genStaticRandomKey(this.coordinator.privKey, 20040n, newActiveState[i]),
-  //     )
-  //     const dLeaf = [
-  //       deactivate.c1.x,
-  //       deactivate.c1.y,
-  //       deactivate.c2.x,
-  //       deactivate.c2.y,
-  //       poseidon(sharedKey),
-  //     ]
-  //     c1.push([deactivate.c1.x, deactivate.c1.y])
-  //     c2.push([deactivate.c2.x, deactivate.c2.y])
-
-  //     if (!error) {
-  //       // UPDATE STATE =======================================================
-  //       this.activeStateTree.updateLeaf(stateIdx, newActiveState[i])
-
-  //       this.deactivateTree.updateLeaf(deactivateIndex0 + i, poseidon(dLeaf))
-  //       newDeactivate.push(dLeaf)
-  //     } else if (messages[i].ciphertext[0] !== 0n) {
-  //       // INVALID MSG
-  //       this.deactivateTree.updateLeaf(deactivateIndex0 + i, poseidon(dLeaf))
-  //       newDeactivate.push(dLeaf)
-  //     }
-
-  //     log(`- dmessage <${i}> ${error || '√'}`)
-  //   }
-
-  //   const newDeactivateRoot = this.deactivateTree.root
-  //   const newDeactivateCommitment = poseidon([
-  //     this.activeStateTree.root,
-  //     newDeactivateRoot,
-  //   ])
-
-  //   // GEN INPUT JSON =========================================================
-  //   const batchStartHash = this.dMessages[batchStartIdx].prevHash
-  //   const batchEndHash = this.dMessages[batchEndIdx - 1].hash
-
-  //   const inputHash =
-  //     BigInt(
-  //       solidityPackedSha256(
-  //         new Array(7).fill('uint256'),
-  //         stringizing([
-  //           newDeactivateRoot,
-  //           this.pubKeyHasher,
-  //           batchStartHash,
-  //           batchEndHash,
-  //           currentDeactivateCommitment,
-  //           newDeactivateCommitment,
-  //           subStateTree.root,
-  //         ]),
-  //       ),
-  //     ) % SNARK_FIELD_SIZE
-
-  //   const msgs = messages.map((msg) => msg.ciphertext)
-  //   const encPubKeys = messages.map((msg) => msg.encPubKey)
-  //   const input = {
-  //     inputHash,
-  //     currentActiveStateRoot,
-  //     currentDeactivateRoot,
-  //     batchStartHash,
-  //     batchEndHash,
-  //     msgs,
-  //     coordPrivKey: this.coordinator.formatedPrivKey,
-  //     coordPubKey: this.coordinator.pubKey,
-  //     encPubKeys,
-  //     // nonce,
-  //     c1,
-  //     c2,
-  //     currentActiveState,
-  //     newActiveState,
-  //     deactivateIndex0,
-  //     currentStateRoot,
-  //     currentStateLeaves,
-  //     currentStateLeavesPathElements,
-  //     activeStateLeavesPathElements,
-  //     deactivateLeavesPathElements,
-  //     currentDeactivateCommitment,
-  //     newDeactivateRoot,
-  //     newDeactivateCommitment,
-  //   }
-
-  //   this._processedDMsgCount = batchEndIdx
-
-  //   return { input, newDeactivate }
-  // }
 
   endVotePeriod() {
     if (this.states !== MACI_STATES.FILLING)
@@ -575,20 +351,6 @@ export class MACI {
     const voIdx = Number(cmd.voIdx)
     const s = this.stateLeaves.get(stateIdx) || this.emptyState()
 
-    const as = this.activeStateTree.leaf(stateIdx) || 0n
-    if (as !== 0n) {
-      return 'inactive'
-    }
-
-    // const deactivate = decrypt(this.coordinator.formatedPrivKey, {
-    //   c1: { x: s.d1[0], y: s.d1[1] },
-    //   c2: { x: s.d2[0], y: s.d2[1] },
-    //   xIncrement: 0n,
-    // })
-    // if (deactivate % 2n === 1n) {
-    //   return 'deactivated'
-    // }
-
     if (s.nonce + 1n !== cmd.nonce) {
       return 'nonce error'
     }
@@ -607,31 +369,6 @@ export class MACI {
       }
     }
   }
-
-  // checkDeactivateCommand(cmd: ICmd | null, subStateTreeLength: number) {
-  //   if (!cmd) {
-  //     return 'empty command'
-  //   }
-  //   if (cmd.stateIdx >= BigInt(subStateTreeLength)) {
-  //     return 'state leaf index overflow'
-  //   }
-  //   const stateIdx = Number(cmd.stateIdx)
-  //   const s = this.stateLeaves.get(stateIdx) || this.emptyState()
-
-  //   const deactivate = decrypt(this.coordinator.formatedPrivKey, {
-  //     c1: { x: s.d1[0], y: s.d1[1] },
-  //     c2: { x: s.d2[0], y: s.d2[1] },
-  //     xIncrement: 0n,
-  //   })
-  //   if (deactivate % 2n === 1n) {
-  //     return 'deactivated'
-  //   }
-
-  //   const verified = eddsa.verifyPoseidon(cmd.msgHash, cmd.signature, s.pubKey)
-  //   if (!verified) {
-  //     return 'signature error'
-  //   }
-  // }
 
   processMessage(newStateSalt = 0n) {
     if (this.states !== MACI_STATES.PROCESSING) throw new Error('period error')
@@ -659,14 +396,12 @@ export class MACI {
     const currentVoteWeights = new Array(batchSize)
     const currentVoteWeightsPathElements = new Array(batchSize)
 
-    const activeStateLeaves = new Array(batchSize)
-    const activeStateLeavesPathElements = new Array(batchSize)
-
     for (let i = batchSize - 1; i >= 0; i--) {
       const cmd = commands[i]
       const error = this.checkCommandNow(cmd)
 
-      let stateIdx = 5 ** this.stateTreeDepth - 1
+      // let stateIdx = 5 ** this.stateTreeDepth - 1
+      let stateIdx = 0
       let voIdx = 0
       if (!error && cmd) {
         stateIdx = Number(cmd.stateIdx)
@@ -680,17 +415,11 @@ export class MACI {
         s.balance,
         s.voted ? s.voTree.root : 0n,
         s.nonce,
-        ...s.d1,
-        ...s.d2,
-        0n,
       ]
       currentStateLeavesPathElements[i] = this.stateTree.pathElementOf(stateIdx)
       currentVoteWeights[i] = currVotes
       currentVoteWeightsPathElements[i] = s.voTree.pathElementOf(voIdx)
 
-      activeStateLeaves[i] = this.activeStateTree.leaf(stateIdx)
-      activeStateLeavesPathElements[i] =
-        this.activeStateTree.pathElementOf(stateIdx)
 
       if (!error && cmd) {
         // UPDATE STATE =======================================================
@@ -707,10 +436,7 @@ export class MACI {
 
         this.stateLeaves.set(stateIdx, s)
 
-        const hash = poseidon([
-          poseidon([...s.pubKey, s.balance, s.voTree.root, s.nonce]),
-          poseidon([...s.d1, ...s.d2, 0n]),
-        ])
+        const hash = poseidon([...s.pubKey, s.balance, s.voTree.root, s.nonce])
         this.stateTree.updateLeaf(stateIdx, hash)
       }
 
@@ -728,14 +454,10 @@ export class MACI {
     const batchStartHash = this.messages[batchStartIdx].prevHash
     const batchEndHash = this.messages[batchEndIdx - 1].hash
 
-    const activeStateRoot = this.activeStateTree.root
-    // const deactivateRoot = this.deactivateTree.root
-    // const deactivateCommitment = poseidon([activeStateRoot, deactivateRoot])
-
     const inputHash =
       BigInt(
         solidityPackedSha256(
-          new Array(7).fill('uint256'),
+          new Array(6).fill('uint256'),
           stringizing([
             packedVals,
             this.pubKeyHasher,
@@ -743,7 +465,6 @@ export class MACI {
             batchEndHash,
             this.stateCommitment,
             newStateCommitment,
-            // deactivateCommitment,
           ]),
         ),
       ) % SNARK_FIELD_SIZE
@@ -768,12 +489,6 @@ export class MACI {
       newStateSalt,
       currentVoteWeights,
       currentVoteWeightsPathElements,
-
-      activeStateRoot,
-      // deactivateRoot,
-      // deactivateCommitment,
-      activeStateLeaves,
-      activeStateLeavesPathElements,
     }
 
     this.msgEndIdx = batchStartIdx
