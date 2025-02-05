@@ -161,7 +161,22 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       ? lastTallyInput.newResultsRootSalt.toString()
       : '0'
 
-    console.log("start generate msg proof")
+    console.log('start generate msg proof')
+
+    let msgWasmFile: string
+    let msgZkeyFile: string
+    let tallyWasmFile: string = zkeyPath + 'r1cs/tally_js/tally.wasm'
+    let tallyZkeyFile: string = zkeyPath + 'zkey/tally_1.zkey'
+
+    if (Number(maciRound.circuitType) === 0) {
+      console.log('** 1p1v **')
+      msgWasmFile = zkeyPath + '/r1cs/linear/msg_js/msg.wasm'
+      msgZkeyFile = zkeyPath + 'zkey/msg_linear_1.zkey'
+    } else {
+      msgWasmFile = zkeyPath + 'r1cs/msg_js/msg.wasm'
+      msgZkeyFile = zkeyPath + 'zkey/msg_1.zkey'
+    }
+
     const msg: ProofData[] = []
     log('start to gen proof | msg')
     for (let i = 0; i < res.msgInputs.length; i++) {
@@ -169,11 +184,11 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
 
       const { proof } = await groth16.fullProve(
         input,
-        zkeyPath + 'r1cs' + '/msg_js/msg.wasm',
-        zkeyPath + 'zkey' + '/msg_1.zkey',
+        msgWasmFile, //zkeyPath + 'r1cs' + '/msg_js/msg.wasm',
+        msgZkeyFile, //zkeyPath + 'zkey' + '/msg_1.zkey',
       )
 
-      console.log("msg proof is:", proof)
+      console.log('msg proof is:', proof)
 
       const proofHex = await adaptToUncompressed(proof)
       const commitment = input.newStateCommitment.toString()
@@ -181,18 +196,18 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       msg.push({ proofHex, commitment })
     }
 
-    console.log("end generate msg proof")
+    console.log('end generate msg proof')
 
     const tally: ProofData[] = []
     log('start to gen proof | tally')
-    console.log("start generate tally proof")
+    console.log('start generate tally proof')
     for (let i = 0; i < res.tallyInputs.length; i++) {
       const input = res.tallyInputs[i]
 
       const { proof } = await groth16.fullProve(
         input,
-        zkeyPath + 'r1cs' + '/tally_js/tally.wasm',
-        zkeyPath + 'zkey' + '/tally_1.zkey',
+        tallyWasmFile, //zkeyPath + 'r1cs' + '/tally_js/tally.wasm',
+        tallyZkeyFile, //zkeyPath + 'zkey' + '/tally_1.zkey',
       )
 
       const proofHex = await adaptToUncompressed(proof)
@@ -201,7 +216,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       tally.push({ proofHex, commitment })
     }
 
-    console.log("end generate tally proof")
+    console.log('end generate tally proof')
 
     allData = {
       result,
