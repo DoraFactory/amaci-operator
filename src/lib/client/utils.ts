@@ -11,7 +11,7 @@ export const prefix = 'dora'
 
 const defaultSigningClientOptions: SigningCosmWasmClientOptions = {
   broadcastPollIntervalMs: 8_000,
-  broadcastTimeoutMs: 16_000,
+  broadcastTimeoutMs: 32_000,
   gasPrice: GasPrice.fromString('100000000000peaka'),
 }
 
