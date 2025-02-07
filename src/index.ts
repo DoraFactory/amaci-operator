@@ -58,6 +58,10 @@ const main = async () => {
       task.name +
       (task.params?.id ? ' - MACI Round ' + task.params.id : '')
     console.log(msg)
+    if (task.params?.id === 'dora1vcghd44nm8vngszq60kspj4zgas2mfxhtflngefwwhja5v4d827q57lxxd' || task.params?.id === 'dora1mxja9xjrnudxhwhfp25gndpgul3je8htdsfrgqf5tgpx420qadwshljsw6' || task.params?.id ==="dora1djd45rf2mzexvucklnx2xnuymvjkk55hyvzzlt3p8knqrkte69esrnfxvw") {
+      console.log('skip'+ task.params?.id + 'task')
+      continue
+    }
     log(msg)
 
     const { newTasks, error } = await doTack(task).catch((err): TaskResult => {
