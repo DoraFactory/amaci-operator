@@ -168,14 +168,17 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     let tallyWasmFile: string = zkeyPath + 'r1cs/tally_js/tally.wasm'
     let tallyZkeyFile: string = zkeyPath + 'zkey/tally_1.zkey'
 
-    if (Number(maciRound.circuitType) === 0) {
-      console.log('** 1p1v **')
-      msgWasmFile = zkeyPath + '/r1cs/linear/msg_js/msg.wasm'
-      msgZkeyFile = zkeyPath + 'zkey/msg_linear_1.zkey'
-    } else {
-      msgWasmFile = zkeyPath + 'r1cs/msg_js/msg.wasm'
-      msgZkeyFile = zkeyPath + 'zkey/msg_1.zkey'
-    }
+    // if (Number(maciRound.circuitType) === 0) {
+    //   console.log('** 1p1v **')
+    //   msgWasmFile = zkeyPath + '/r1cs/linear/msg_js/msg.wasm'
+    //   msgZkeyFile = zkeyPath + 'zkey/msg_linear_1.zkey'
+    // } else {
+    //   msgWasmFile = zkeyPath + 'r1cs/msg_js/msg.wasm'
+    //   msgZkeyFile = zkeyPath + 'zkey/msg_1.zkey'
+    // }
+
+    msgWasmFile = zkeyPath + 'r1cs/msg_js/msg.wasm'
+    msgZkeyFile = zkeyPath + 'zkey/msg_1.zkey'
 
     const msg: ProofData[] = []
     log('start to gen proof | msg')
