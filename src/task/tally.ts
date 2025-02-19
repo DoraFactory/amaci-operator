@@ -11,7 +11,7 @@ import { log } from '../log'
 
 import { genMaciInputs } from '../operator/genInputs'
 
-const zkeyPath = './zkey/zkeys/'
+const zkeyPath = './zkeys/'
 
 const inputsPath = path.join(process.env.WORK_PATH, 'inputs')
 if (!fs.existsSync(inputsPath)) {
