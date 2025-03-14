@@ -239,27 +239,62 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       log('processTally', ui, res)
     }
 
-    await maciClient.stopTallyingPeriod({
-      results: allData.result,
-      salt: allData.salt,
-    })
+    // 使用批量操作方法替代单独的操作
+    try {
+      console.log('Executing stopTallying and claim as batch operation...')
+      const batchResult = await maciClient.stopTallyingAndClaim({
+        results: allData.result,
+        salt: allData.salt,
+      }, 'auto')
+      console.log('Batch operation completed successfully, tx hash:', batchResult.transactionHash)
+    } catch (error) {
+      console.log('Error during batch operation:', error)
+      
+      // 如果批量操作失败，尝试单独执行
+      console.log('Trying operations separately...')
+      try {
+        await maciClient.stopTallyingPeriod({
+          results: allData.result,
+          salt: allData.salt,
+        })
+        
+        console.log('Executing claim operation.....')
+        const claimResult = await maciClient.claim('auto')
+        console.log('Claim operation completed successfully, tx hash:', claimResult.transactionHash)
+      } catch (fallbackError) {
+        console.log('Error during fallback operations:', fallbackError)
+      }
+    }
   } else {
     const period = await maciClient.getPeriod()
     if (period.status === 'tallying') {
-      await maciClient.stopTallyingPeriod({
-        results: allData.result,
-        salt: allData.salt,
-      })
+      // 同样使用批量操作
+      try {
+        console.log('Executing stopTallying and claim as batch operation...')
+        const batchResult = await maciClient.stopTallyingAndClaim({
+          results: allData.result,
+          salt: allData.salt,
+        }, 'auto')
+        console.log('Batch operation completed successfully, tx hash:', batchResult.transactionHash)
+      } catch (error) {
+        console.log('Error during batch operation:', error)
+        
+        // 如果批量操作失败，尝试单独执行
+        console.log('Trying operations separately...')
+        try {
+          await maciClient.stopTallyingPeriod({
+            results: allData.result,
+            salt: allData.salt,
+          })
+          
+          console.log('Executing claim operation.....')
+          const claimResult = await maciClient.claim('auto')
+          console.log('Claim operation completed successfully, tx hash:', claimResult.transactionHash)
+        } catch (fallbackError) {
+          console.log('Error during fallback operations:', fallbackError)
+        }
+      }
     }
-  }
-
-  // when finished tally operation, claim the reward
-  console.log('Executing claim operation.....')
-  try {
-    const claimResult = await maciClient.claim('auto')
-    console.log('Claim operation completed successfully, tx hash:', claimResult.transactionHash)
-  } catch (error) {
-    console.log('Error during claim operation:', error)
   }
 
   return {}

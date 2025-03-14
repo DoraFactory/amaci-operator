@@ -405,6 +405,18 @@ export interface MaciInterface extends MaciReadOnlyInterface {
     memo?: string,
     _funds?: Coin[],
   ) => Promise<ExecuteResult>
+  stopTallyingAndClaim: (
+    {
+      results,
+      salt,
+    }: {
+      results: Uint256[]
+      salt: Uint256
+    },
+    fee?: number | StdFee | 'auto',
+    memo?: string,
+    _funds?: Coin[],
+  ) => Promise<ExecuteResult>
 }
 export class MaciClient extends MaciQueryClient implements MaciInterface {
   client: SigningCosmWasmClient
@@ -441,6 +453,7 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     this.bond = this.bond.bind(this)
     this.withdraw = this.withdraw.bind(this)
     this.claim = this.claim.bind(this)
+    this.stopTallyingAndClaim = this.stopTallyingAndClaim.bind(this)
   }
 
   setParams = async (
@@ -825,6 +838,22 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
       _funds,
     )
   }
+  claim = async (
+    fee: number | StdFee | 'auto' = 'auto',
+    memo?: string,
+    _funds?: Coin[],
+  ): Promise<ExecuteResult> => {
+    return await this.client.execute(
+      this.sender,
+      this.contractAddress,
+      {
+        claim: {},
+      },
+      fee,
+      memo,
+      _funds,
+    )
+  }
   grant = async (
     {
       maxAmount,
@@ -903,20 +932,56 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
       _funds,
     )
   }
-  claim = async (
+  stopTallyingAndClaim = async (
+    {
+      results,
+      salt,
+    }: {
+      results: Uint256[]
+      salt: Uint256
+    },
     fee: number | StdFee | 'auto' = 'auto',
     memo?: string,
     _funds?: Coin[],
   ): Promise<ExecuteResult> => {
-    return await this.client.execute(
-      this.sender,
-      this.contractAddress,
+    // 创建批量消息
+    const msgs = [
       {
-        claim: {},
+        typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
+        value: {
+          sender: this.sender,
+          contract: this.contractAddress,
+          msg: Buffer.from(JSON.stringify({
+            stop_tallying_period: {
+              results,
+              salt,
+            }
+          })).toString('base64'),
+          funds: []
+        }
       },
+      {
+        typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
+        value: {
+          sender: this.sender,
+          contract: this.contractAddress,
+          msg: Buffer.from(JSON.stringify({
+            claim: {}
+          })).toString('base64'),
+          funds: []
+        }
+      }
+    ];
+
+    // 执行批量交易
+    const response = await this.client.signAndBroadcast(
+      this.sender,
+      msgs,
       fee,
-      memo,
-      _funds,
-    )
+      memo || ''
+    );
+    
+    // 转换为 ExecuteResult 类型 - 不要尝试访问不存在的 logs 属性
+    return response as unknown as ExecuteResult;
   }
 }
