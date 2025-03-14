@@ -400,6 +400,11 @@ export interface MaciInterface extends MaciReadOnlyInterface {
     memo?: string,
     _funds?: Coin[],
   ) => Promise<ExecuteResult>
+  claim: (
+    fee?: number | StdFee | 'auto',
+    memo?: string,
+    _funds?: Coin[],
+  ) => Promise<ExecuteResult>
 }
 export class MaciClient extends MaciQueryClient implements MaciInterface {
   client: SigningCosmWasmClient
@@ -435,6 +440,7 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     this.revoke = this.revoke.bind(this)
     this.bond = this.bond.bind(this)
     this.withdraw = this.withdraw.bind(this)
+    this.claim = this.claim.bind(this)
   }
 
   setParams = async (
@@ -891,6 +897,22 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
         withdraw: {
           amount,
         },
+      },
+      fee,
+      memo,
+      _funds,
+    )
+  }
+  claim = async (
+    fee: number | StdFee | 'auto' = 'auto',
+    memo?: string,
+    _funds?: Coin[],
+  ): Promise<ExecuteResult> => {
+    return await this.client.execute(
+      this.sender,
+      this.contractAddress,
+      {
+        claim: {},
       },
       fee,
       memo,

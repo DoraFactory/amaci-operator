@@ -253,5 +253,14 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     }
   }
 
+  // when finished tally operation, claim the reward
+  console.log('Executing claim operation.....')
+  try {
+    const claimResult = await maciClient.claim('auto')
+    console.log('Claim operation completed successfully, tx hash:', claimResult.transactionHash)
+  } catch (error) {
+    console.log('Error during claim operation:', error)
+  }
+
   return {}
 }
