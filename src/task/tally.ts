@@ -239,7 +239,6 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       log('processTally', ui, res)
     }
 
-    // 使用批量操作方法替代单独的操作
     try {
       console.log('Executing stopTallying and claim as batch operation...')
       const batchResult = await maciClient.stopTallyingAndClaim({
@@ -250,7 +249,6 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     } catch (error) {
       console.log('Error during batch operation:', error)
       
-      // 如果批量操作失败，尝试单独执行
       console.log('Trying operations separately...')
       try {
         await maciClient.stopTallyingPeriod({
@@ -268,7 +266,6 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
   } else {
     const period = await maciClient.getPeriod()
     if (period.status === 'tallying') {
-      // 同样使用批量操作
       try {
         console.log('Executing stopTallying and claim as batch operation...')
         const batchResult = await maciClient.stopTallyingAndClaim({
@@ -279,7 +276,6 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       } catch (error) {
         console.log('Error during batch operation:', error)
         
-        // 如果批量操作失败，尝试单独执行
         console.log('Trying operations separately...')
         try {
           await maciClient.stopTallyingPeriod({

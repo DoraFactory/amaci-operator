@@ -8,8 +8,11 @@ import {
   CosmWasmClient,
   SigningCosmWasmClient,
   ExecuteResult,
+  MsgExecuteContractEncodeObject
 } from '@cosmjs/cosmwasm-stargate'
 import { Coin, StdFee } from '@cosmjs/amino'
+import { MsgExecuteContract } from 'cosmjs-types/cosmwasm/wasm/v1/tx';
+type MixedData<T> = T | Array<MixedData<T>> | { [key: string]: MixedData<T> };
 import {
   Uint256,
   Timestamp,
@@ -85,6 +88,27 @@ export class MaciQueryClient implements MaciReadOnlyInterface {
     this.queryCircuitType = this.queryCircuitType.bind(this)
     this.queryCertSystem = this.queryCertSystem.bind(this)
   }
+
+  stringizing = (
+    o: MixedData<bigint>,
+    path: MixedData<bigint>[] = []
+  ): MixedData<string> => {
+    if (path.includes(o)) {
+      throw new Error('loop nesting!');
+    }
+    const newPath = [...path, o];
+    if (Array.isArray(o)) {
+      return o.map((item) => this.stringizing(item, newPath));
+    } else if (typeof o === 'object') {
+      const output: { [key: string]: MixedData<string> } = {};
+      for (const key in o) {
+        output[key] = this.stringizing(o[key], newPath);
+      }
+      return output;
+    } else {
+      return o.toString();
+    }
+  };
 
   getRoundInfo = async (): Promise<RoundInfo> => {
     return this.client.queryContractSmart(this.contractAddress, {
@@ -944,36 +968,42 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     memo?: string,
     _funds?: Coin[],
   ): Promise<ExecuteResult> => {
+
     // 创建批量消息
-    const msgs = [
+    const msgs: MsgExecuteContractEncodeObject[] = [
       {
         typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
-        value: {
+        value: MsgExecuteContract.fromPartial({
           sender: this.sender,
           contract: this.contractAddress,
-          msg: Buffer.from(JSON.stringify({
-            stop_tallying_period: {
-              results,
-              salt,
-            }
-          })).toString('base64'),
-          funds: []
-        }
+          msg: new TextEncoder().encode(
+            JSON.stringify(
+              {
+                stop_tallying_period: {
+                  results,
+                  salt,
+                }
+              }
+            )
+          ),
+        })
       },
       {
         typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
-        value: {
+        value: MsgExecuteContract.fromPartial({
           sender: this.sender,
           contract: this.contractAddress,
-          msg: Buffer.from(JSON.stringify({
-            claim: {}
-          })).toString('base64'),
-          funds: []
-        }
+          msg: new TextEncoder().encode(
+            JSON.stringify(
+              {
+                claim: {}
+              }
+            )
+          ),
+        })
       }
     ];
 
-    // 执行批量交易
     const response = await this.client.signAndBroadcast(
       this.sender,
       msgs,
@@ -981,7 +1011,6 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
       memo || ''
     );
     
-    // 转换为 ExecuteResult 类型 - 不要尝试访问不存在的 logs 属性
     return response as unknown as ExecuteResult;
   }
 }
