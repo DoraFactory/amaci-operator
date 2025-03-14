@@ -45,11 +45,19 @@ const main = async () => {
     }
   }
 
+  let monitorCounter = 0;
   while (true) {
+
+    monitorCounter++;
+    if (monitorCounter % 10 === 0) {
+      const memUsage = process.memoryUsage();
+      const cpuUsage = process.cpuUsage();
+      console.log(`Memory: ${Math.round(memUsage.heapUsed / 1024 / 1024)}MB, CPU user: ${cpuUsage.user / 1000}ms, system: ${cpuUsage.system / 1000}ms`);
+    }
     const task = tasks.shift() || DefaultTask
 
     if (task.name === 'inspect' && prevTaskName === 'inspect') {
-      await sleep(60000)
+      await sleep(300000)
     }
     prevTaskName = task.name
 
