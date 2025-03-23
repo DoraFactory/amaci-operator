@@ -12,7 +12,6 @@ import {
   TaskAct,
   maciParamsFromCircuitPower,
 } from '../types'
-import { getChain } from '../chain'
 import { fetchAllDeactivateLogs, fetchRound } from '../vota/indexer'
 import { adaptToUncompressed } from '../vota/adapt'
 import { Timer } from '../storage/timer'
