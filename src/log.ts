@@ -33,5 +33,5 @@ export const log = (...msgs: any[]) => {
   fs.appendFileSync(logFile, logMessage);
   
   // 同时输出到控制台
-  console.log(...msgs);
+  // console.log(...msgs);
 }

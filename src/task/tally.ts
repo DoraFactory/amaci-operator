@@ -8,7 +8,7 @@ import { fetchAllVotesLogs, fetchRound } from '../vota/indexer'
 import { getContractSignerClient } from '../lib/client/utils'
 import { maciParamsFromCircuitPower, ProofData, TaskAct } from '../types'
 import { log } from '../log'
-import { startOperation, endOperation } from '../lib/monitor'
+import { startOperation, endOperation, setRoundCircuitPower } from '../lib/monitor'
 
 import { genMaciInputs } from '../operator/genInputs'
 
@@ -40,6 +40,11 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
   try {
     log('\n\n\ntally', id)
     const maciRound = await fetchRound(id)
+
+    // 保存 round 的 circuit power 信息
+    if (maciRound.circuitPower) {
+      setRoundCircuitPower(id, maciRound.circuitPower);
+    }
 
     log('period:', maciRound.period)
 

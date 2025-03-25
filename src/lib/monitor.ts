@@ -17,6 +17,7 @@ export interface OperationRecord {
 // 定义每个 round 的记录
 export interface RoundRecord {
   id: string;
+  circuitPower?: string;
   operations: {
     tally?: OperationRecord[];
     deactivate?: OperationRecord[];
@@ -27,12 +28,12 @@ export interface RoundRecord {
 const records: Record<string, RoundRecord> = {};
 
 // 数据存储路径
-const MONITOR_FILE_PATH = path.join(process.env.WORK_PATH || '.', 'round_operations_monitor.json');
+const MONITOR_FILE_PATH = path.join(process.env.BENCH_DATA || '.', 'round_operations_monitor.json');
 // Markdown 文件存储目录
-const MARKDOWN_DIR_PATH = path.join(process.env.WORK_PATH || '.', 'round_stats');
+const MARKDOWN_DIR_PATH = path.join(process.env.BENCH_DATA || '.', 'round_stats');
 
 // 输出一些调试信息
-console.log(`[DEBUG] WORK_PATH environment variable: "${process.env.WORK_PATH || '(not set)'}"`);
+console.log(`[DEBUG] BENCH_DATA environment variable: "${process.env.BENCH_DATA || '(not set)'}"`);
 console.log(`[DEBUG] Monitor data file path: "${MONITOR_FILE_PATH}"`);
 console.log(`[DEBUG] Markdown directory path: "${MARKDOWN_DIR_PATH}"`);
 
@@ -161,6 +162,33 @@ export function endOperation(
   
   // 导出为 Markdown
   exportRoundToMarkdown(roundId);
+  
+  // 只在确定完成时清理
+  // 根据您的业务逻辑，定义清理条件
+  if (operation === 'tally' && success) {
+    console.log(`[MONITOR] Round ${roundId} completed with successful tally, cleaning up memory...`);
+    
+    // 在删除前确保已成功导出到 Markdown
+    // 根据 circuitPower 确定子文件夹
+    let subDir = 'unknown_power';
+    
+    if (records[roundId].circuitPower) {
+      subDir = `power_${records[roundId].circuitPower}`;
+    }
+    
+    // 使用正确的子文件夹路径检查文件是否存在
+    const powerDirPath = path.join(MARKDOWN_DIR_PATH, subDir);
+    const markdownPath = path.join(powerDirPath, `round_${roundId}.md`);
+    
+    console.log(`[DEBUG] Checking for Markdown file at: ${markdownPath}`);
+    if (fs.existsSync(markdownPath)) {
+      // 删除内存中的记录
+      delete records[roundId];
+      console.log(`[MONITOR] Round ${roundId} data removed from memory`);
+    } else {
+      console.log(`[MONITOR] Warning: Could not find Markdown file for round ${roundId} at ${markdownPath}, keeping in memory`);
+    }
+  }
 }
 
 // 打印特定 round 的统计信息
@@ -276,6 +304,21 @@ export function printAllStats() {
   log(`=========================================\n`);
 }
 
+// 将 circuitPower 信息保存到记录
+export function setRoundCircuitPower(roundId: string, circuitPower: string) {
+  if (!records[roundId]) {
+    records[roundId] = {
+      id: roundId,
+      circuitPower: circuitPower,
+      operations: {}
+    };
+  } else if (!records[roundId].circuitPower) {
+    records[roundId].circuitPower = circuitPower;
+    // 保存更新后的记录
+    saveRecords();
+  }
+}
+
 // 将特定 round 的统计信息导出为 Markdown 文件
 export function exportRoundToMarkdown(roundId: string) {
   console.log(`[DEBUG] Attempting to export statistics for round ${roundId}`);
@@ -286,11 +329,37 @@ export function exportRoundToMarkdown(roundId: string) {
   }
 
   const round = records[roundId];
-  const markdownPath = path.join(MARKDOWN_DIR_PATH, `round_${roundId}.md`);
+  
+  // 根据 circuitPower 确定子文件夹
+  let subDir = 'unknown_power';
+  
+  if (round.circuitPower) {
+    subDir = `power_${round.circuitPower}`;
+  }
+  
+  // 创建子文件夹（如果不存在）
+  const powerDirPath = path.join(MARKDOWN_DIR_PATH, subDir);
+  if (!fs.existsSync(powerDirPath)) {
+    try {
+      fs.mkdirSync(powerDirPath, { recursive: true });
+      log(`[MONITOR] Created circuit power directory at ${powerDirPath}`);
+    } catch (dirError: any) {
+      log(`[MONITOR] Error creating circuit power directory: ${dirError.message}`);
+      // 如果子文件夹创建失败，继续使用主目录
+    }
+  }
+  
+  // 使用子文件夹路径
+  const markdownPath = path.join(powerDirPath, `round_${roundId}.md`);
   console.log(`[DEBUG] Will write Markdown to: ${markdownPath}`);
   
   let content = `# Round ${roundId} Operations Statistics\n\n`;
   content += `*Last updated: ${new Date().toISOString()}*\n\n`;
+  
+  // 添加 circuit power 信息（如果有）
+  if (round.circuitPower) {
+    content += `*Circuit Power: ${round.circuitPower}*\n\n`;
+  }
   
   // 总结部分
   content += `## Summary\n\n`;
@@ -399,24 +468,111 @@ export function exportAllRoundsToMarkdown() {
   log(`[MONITOR] Exporting statistics for ${roundIds.length} rounds to Markdown`);
   console.log(`[DEBUG] Found ${roundIds.length} rounds to export: ${roundIds.join(', ')}`);
   
+  // 按 circuit power 分组
+  const powerGroups: Record<string, string[]> = {};
+  
   for (const roundId of roundIds) {
+    const power = records[roundId].circuitPower || 'unknown';
+    if (!powerGroups[power]) {
+      powerGroups[power] = [];
+    }
+    powerGroups[power].push(roundId);
+    
+    // 导出单个 round 文件
     exportRoundToMarkdown(roundId);
   }
   
-  // 生成汇总 Markdown
+  // 为每个 circuit power 创建摘要文件
+  for (const power in powerGroups) {
+    const powerRoundIds = powerGroups[power];
+    
+    // 确定子文件夹
+    const subDir = power === 'unknown' ? 'unknown_power' : `power_${power}`;
+    const powerDirPath = path.join(MARKDOWN_DIR_PATH, subDir);
+    if (!fs.existsSync(powerDirPath)) {
+      try {
+        fs.mkdirSync(powerDirPath, { recursive: true });
+      } catch (error) {
+        continue; // 如果创建失败，跳过这个 power 的摘要文件
+      }
+    }
+    
+    // 创建该 power 的摘要文件
+    const powerSummaryPath = path.join(powerDirPath, 'summary.md');
+    let powerContent = `# Circuit Power ${power} - Operations Summary\n\n`;
+    powerContent += `*Generated: ${new Date().toISOString()}*\n\n`;
+    powerContent += `## Rounds Summary (${powerRoundIds.length} rounds)\n\n`;
+    powerContent += `| Round ID | Tally Count | Tally Success | Tally Avg (ms) | Deactivate Count | Deactivate Success | Deactivate Avg (ms) |\n`;
+    powerContent += `|----------|-------------|--------------|----------------|------------------|-------------------|--------------------|\n`;
+    
+    for (const roundId of powerRoundIds) {
+      const round = records[roundId];
+      
+      // 计算统计信息（与原代码相同）
+      let tallyCount = 0;
+      let tallySuccessCount = 0;
+      let tallyAvgDuration = 'N/A';
+      
+      if (round.operations.tally && round.operations.tally.length > 0) {
+        tallyCount = round.operations.tally.length;
+        const successfulOps = round.operations.tally.filter(op => op.success && op.duration);
+        tallySuccessCount = successfulOps.length;
+        
+        if (successfulOps.length > 0) {
+          const totalDuration = successfulOps.reduce((sum, op) => sum + (op.duration || 0), 0);
+          tallyAvgDuration = Math.round(totalDuration / successfulOps.length).toString();
+        }
+      }
+      
+      let deactivateCount = 0;
+      let deactivateSuccessCount = 0;
+      let deactivateAvgDuration = 'N/A';
+      
+      if (round.operations.deactivate && round.operations.deactivate.length > 0) {
+        deactivateCount = round.operations.deactivate.length;
+        const successfulOps = round.operations.deactivate.filter(op => op.success && op.duration);
+        deactivateSuccessCount = successfulOps.length;
+        
+        if (successfulOps.length > 0) {
+          const totalDuration = successfulOps.reduce((sum, op) => sum + (op.duration || 0), 0);
+          deactivateAvgDuration = Math.round(totalDuration / successfulOps.length).toString();
+        }
+      }
+      
+      powerContent += `| ${roundId} | ${tallyCount} | ${tallySuccessCount} | ${tallyAvgDuration} | ${deactivateCount} | ${deactivateSuccessCount} | ${deactivateAvgDuration} |\n`;
+    }
+    
+    try {
+      fs.writeFileSync(powerSummaryPath, powerContent);
+      log(`[MONITOR] Exported summary for circuit power ${power} to ${powerSummaryPath}`);
+    } catch (error: any) {
+      log(`[MONITOR] Error exporting circuit power summary: ${error.message}`);
+    }
+  }
+  
+  // 生成总体汇总 Markdown（与原代码基本相同）
   const summaryPath = path.join(MARKDOWN_DIR_PATH, 'all_rounds_summary.md');
   console.log(`[DEBUG] Will write summary Markdown to: ${summaryPath}`);
   let content = `# All Rounds Operations Summary\n\n`;
   content += `*Generated: ${new Date().toISOString()}*\n\n`;
   
-  content += `## Rounds Summary\n\n`;
-  content += `| Round ID | Tally Count | Tally Success | Tally Avg (ms) | Deactivate Count | Deactivate Success | Deactivate Avg (ms) |\n`;
-  content += `|----------|-------------|--------------|----------------|------------------|-------------------|--------------------|\n`;
+  content += `## Circuit Power Distribution\n\n`;
+  content += `| Circuit Power | Round Count |\n`;
+  content += `|---------------|------------|\n`;
+  
+  for (const power in powerGroups) {
+    content += `| ${power} | ${powerGroups[power].length} |\n`;
+  }
+  
+  content += `\n## Rounds Summary\n\n`;
+  content += `| Round ID | Circuit Power | Tally Count | Tally Success | Tally Avg (ms) | Deactivate Count | Deactivate Success | Deactivate Avg (ms) |\n`;
+  content += `|----------|--------------|-------------|--------------|----------------|------------------|-------------------|--------------------|\n`;
   
   for (const roundId of roundIds) {
     const round = records[roundId];
+    const power = round.circuitPower || 'unknown';
     
-    // Tally stats
+    // 计算统计信息（与原代码相同）
     let tallyCount = 0;
     let tallySuccessCount = 0;
     let tallyAvgDuration = 'N/A';
@@ -432,7 +588,6 @@ export function exportAllRoundsToMarkdown() {
       }
     }
     
-    // Deactivate stats
     let deactivateCount = 0;
     let deactivateSuccessCount = 0;
     let deactivateAvgDuration = 'N/A';
@@ -448,7 +603,7 @@ export function exportAllRoundsToMarkdown() {
       }
     }
     
-    content += `| ${roundId} | ${tallyCount} | ${tallySuccessCount} | ${tallyAvgDuration} | ${deactivateCount} | ${deactivateSuccessCount} | ${deactivateAvgDuration} |\n`;
+    content += `| ${roundId} | ${power} | ${tallyCount} | ${tallySuccessCount} | ${tallyAvgDuration} | ${deactivateCount} | ${deactivateSuccessCount} | ${deactivateAvgDuration} |\n`;
   }
   
   // 写入文件
@@ -469,6 +624,21 @@ export function getAllRecords(): Record<string, RoundRecord> {
 
 // 命令行导出工具函数
 export function commandLineExport(args: string[]) {
+  // 按 circuit power 分组
+  function groupRoundsByPower(): Record<string, string[]> {
+    const powerGroups: Record<string, string[]> = {};
+    
+    for (const roundId in records) {
+      const power = records[roundId].circuitPower || 'unknown';
+      if (!powerGroups[power]) {
+        powerGroups[power] = [];
+      }
+      powerGroups[power].push(roundId);
+    }
+    
+    return powerGroups;
+  }
+
   // 如果没有参数，则导出所有 rounds
   if (args.length === 0) {
     console.log('Exporting statistics for all rounds...');
@@ -477,12 +647,56 @@ export function commandLineExport(args: string[]) {
     return;
   }
   
-  // 如果有参数，尝试导出特定 round
+  // 如果第一个参数是 --list-powers，列出所有可用的 circuit powers
+  if (args[0] === '--list-powers') {
+    const powerGroups = groupRoundsByPower();
+    console.log('Available circuit powers:');
+    
+    for (const power in powerGroups) {
+      console.log(` - power_${power}: ${powerGroups[power].length} rounds`);
+    }
+    return;
+  }
+  
+  // 如果第一个参数是 --power，导出特定 circuit power 的所有 rounds
+  if (args[0] === '--power' && args.length > 1) {
+    const requestedPower = args[1];
+    const powerGroups = groupRoundsByPower();
+    
+    if (powerGroups[requestedPower]) {
+      console.log(`Exporting statistics for all rounds with circuit power ${requestedPower}...`);
+      
+      // 导出该 power 的所有 round
+      for (const roundId of powerGroups[requestedPower]) {
+        exportRoundToMarkdown(roundId);
+      }
+      
+      // 确定子文件夹
+      const subDir = requestedPower === 'unknown' ? 'unknown_power' : `power_${requestedPower}`;
+      console.log(`Done! Files exported to ${path.join(MARKDOWN_DIR_PATH, subDir)}`);
+    } else {
+      console.log(`No rounds found with circuit power ${requestedPower}`);
+      console.log('Available circuit powers:');
+      
+      for (const power in powerGroups) {
+        console.log(` - power_${power}: ${powerGroups[power].length} rounds`);
+      }
+    }
+    return;
+  }
+  
+  // 单个 round ID 导出
   const roundId = args[0];
   if (records[roundId]) {
     console.log(`Exporting statistics for round ${roundId}...`);
     exportRoundToMarkdown(roundId);
-    console.log(`Done! File exported to ${path.join(MARKDOWN_DIR_PATH, `round_${roundId}.md`)}`);
+    
+    // 确定该 round 的文件路径
+    const power = records[roundId].circuitPower || 'unknown';
+    const subDir = power === 'unknown' ? 'unknown_power' : `power_${power}`;
+    const filePath = path.join(MARKDOWN_DIR_PATH, subDir, `round_${roundId}.md`);
+    
+    console.log(`Done! File exported to ${filePath}`);
   } else {
     console.log(`Round ${roundId} not found in records.`);
     console.log('Available rounds:');
@@ -490,7 +704,13 @@ export function commandLineExport(args: string[]) {
     if (roundIds.length === 0) {
       console.log('No rounds recorded yet.');
     } else {
-      roundIds.forEach(id => console.log(` - ${id}`));
+      // 按 circuit power 分组并显示
+      const powerGroups = groupRoundsByPower();
+      
+      for (const power in powerGroups) {
+        console.log(`Circuit power ${power} (${powerGroups[power].length} rounds):`);
+        powerGroups[power].forEach(id => console.log(`  - ${id}`));
+      }
     }
   }
 } 

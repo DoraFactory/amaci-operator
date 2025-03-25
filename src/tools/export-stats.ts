@@ -4,6 +4,10 @@
  * 使用方法:
  *   - 导出所有 round 的统计: ts-node src/tools/export-stats.ts
  *   - 导出特定 round 的统计: ts-node src/tools/export-stats.ts <roundId>
+ *   - 列出所有可用的 circuit powers: ts-node src/tools/export-stats.ts --list-powers
+ *   - 导出特定 circuit power 的所有 round: ts-node src/tools/export-stats.ts --power <power>
+ * 
+ * 所有文件将按 circuit power 分类保存在子文件夹中，如 round_stats/power_10/ 目录。
  */
 
 import { initMonitor, commandLineExport } from '../lib/monitor';

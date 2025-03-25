@@ -16,7 +16,7 @@ import { getChain } from '../chain'
 import { fetchAllDeactivateLogs, fetchRound } from '../vota/indexer'
 import { adaptToUncompressed } from '../vota/adapt'
 import { Timer } from '../storage/timer'
-import { startOperation, endOperation } from '../lib/monitor'
+import { startOperation, endOperation, setRoundCircuitPower } from '../lib/monitor'
 
 const zkeyPath = './zkey/'
 
@@ -29,6 +29,11 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
   try {
     log('\n\n\ndeactivate', id)
     const maciRound = await fetchRound(id)
+
+    // 保存 round 的 circuit power 信息
+    if (maciRound.circuitPower) {
+      setRoundCircuitPower(id, maciRound.circuitPower);
+    }
 
     const now = Date.now()
 

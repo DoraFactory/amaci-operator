@@ -10,7 +10,7 @@ declare global {
       CODE_IDS: string[]
 
       WORK_PATH: string
-
+      BENCH_DATA: string
       MNEMONIC: string
       PRIVATE: string
     }
