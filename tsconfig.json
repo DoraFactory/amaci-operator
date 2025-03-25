@@ -105,6 +105,10 @@
   "exclude": [
     "node_modules",
     "dist",
-    "eslint.config.mjs"
+    "eslint.config.mjs",
+    "zkey",
+    "zkeys",
+    "**/generate_witness.js",
+    "**/witness_calculator.js"
   ]
 }

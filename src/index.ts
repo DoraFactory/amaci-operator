@@ -11,6 +11,7 @@ import { log } from './log'
 // import { getWallet } from './wallet'
 
 import { init } from './init'
+import { initMonitor, printAllStats, exportAllRoundsToMarkdown } from './lib/monitor'
 
 const DefaultTask: Task = { name: 'inspect' }
 
@@ -30,6 +31,14 @@ if (!process.env.COORDINATOR_PRI_KEY) {
 
 const main = async () => {
   await init()
+  
+  // 初始化监控模块
+  initMonitor()
+  console.log('[MONITOR] Initialized task execution time monitoring')
+  
+  // 导出当前所有 round 的统计数据到 Markdown
+  exportAllRoundsToMarkdown()
+  console.log('[MONITOR] Exported statistics for all rounds to Markdown files')
 
   const storage = new TestStorage()
 
@@ -54,6 +63,10 @@ const main = async () => {
         return T.inspect(storage)
     }
   }
+
+  setInterval(() => {
+    printAllStats();
+  }, 24 * 60 * 60 * 1000);
 
   while (true) {
     const task = tasks.shift() || DefaultTask

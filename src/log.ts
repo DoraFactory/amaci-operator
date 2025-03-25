@@ -20,15 +20,18 @@ updateLogFile()
 export const log = (...msgs: any[]) => {
   updateLogFile()
 
-  fs.appendFileSync(
-    logFile,
-    msgs
-      .map((m) => {
-        if (m instanceof Error) {
-          return m.message + '\n' + (m.stack || '') + (m.cause || '')
-        }
-        return m.toString()
-      })
-      .join(' ') + '\n',
-  )
+  const logMessage = msgs
+    .map((m) => {
+      if (m instanceof Error) {
+        return m.message + '\n' + (m.stack || '') + (m.cause || '')
+      }
+      return m.toString()
+    })
+    .join(' ') + '\n';
+
+  // 写入日志文件
+  fs.appendFileSync(logFile, logMessage);
+  
+  // 同时输出到控制台
+  console.log(...msgs);
 }
