@@ -11,7 +11,8 @@ import { Tree } from './Tree'
 
 import { poseidonDecrypt } from '../js/poseidonCipher.js'
 import { IKeypair } from '../types'
-import { log } from '../log'
+// import { log } from '../log'
+import { info, error as LogError, debug } from '../logger'
 
 interface ICmd {
   nonce: bigint
@@ -149,7 +150,7 @@ export class MACI {
 
     const stateTree = new Tree(5, stateTreeDepth, zeroHash10)
 
-    log(
+    debug(
       [
         '',
         'init MACI '.padEnd(40, '='),
@@ -157,6 +158,7 @@ export class MACI {
         '- state tree root:\t' + stateTree.root,
         '',
       ].join('\n'),
+      'TALLY-TASK',
     )
 
     this.voTreeZeroRoot = emptyVOTree.root
@@ -223,7 +225,7 @@ export class MACI {
       }
       return cmd
     } catch (e: any) {
-      log('[dev] msg decrypt error', e.message)
+      LogError(`[dev] msg decrypt error' ${e.message}`, 'TALLY-TASK')
       return null
     }
   }
@@ -251,13 +253,14 @@ export class MACI {
     ])
     this.stateTree.updateLeaf(leafIdx, hash)
 
-    log(
+    debug(
       [
         `set State { idx: ${leafIdx} } `.padEnd(40, '='),
         '- leaf hash:\t\t' + hash,
         '- new tree root:\t' + this.stateTree.root,
         '',
       ].join('\n'),
+      'TALLY-TASK',
     )
     this.logs.push({
       type: 'setStateLeaf',
@@ -289,13 +292,14 @@ export class MACI {
 
     this.dCommands.push(this.msgToCmd(ciphertext, encPubKey))
 
-    log(
+    debug(
       [
         `push Deactivate Message { idx: ${msgIdx} } `.padEnd(40, '='),
         '- old msg hash:\t' + prevHash,
         '- new msg hash:\t' + hash,
         '',
       ].join('\n'),
+      'TALLY-TASK',
     )
   }
 
@@ -320,13 +324,14 @@ export class MACI {
 
     this.commands.push(this.msgToCmd(ciphertext, encPubKey))
 
-    log(
+    debug(
       [
         `push Message { idx: ${msgIdx} } `.padEnd(40, '='),
         '- old msg hash:\t' + prevHash,
         '- new msg hash:\t' + hash,
         '',
       ].join('\n'),
+      'TALLY-TASK',
     )
     this.logs.push({
       type: 'publishMessage',
@@ -379,8 +384,9 @@ export class MACI {
     const size = Math.min(inputSize, this.dMessages.length - batchStartIdx)
     const batchEndIdx = batchStartIdx + size
 
-    log(
+    debug(
       `= Process d-message [${batchStartIdx}, ${batchEndIdx}) `.padEnd(40, '='),
+      'TALLY-TASK',
     )
 
     const messages = this.dMessages.slice(batchStartIdx, batchEndIdx)
@@ -480,7 +486,7 @@ export class MACI {
         newDeactivate.push(dLeaf)
       }
 
-      log(`- dmessage <${i}> ${error || '√'}`)
+      debug(`- dmessage <${i}> ${error || '√'}`, 'TALLY-TASK')
     }
 
     const newDeactivateRoot = this.deactivateTree.root
@@ -551,7 +557,7 @@ export class MACI {
     this.stateSalt = 0n
     this._stateCommitment = poseidon([this.stateTree.root, 0n])
 
-    log(['Vote End '.padEnd(60, '='), ''].join('\n'))
+    debug(['Vote End '.padEnd(60, '='), ''].join('\n'), 'TALLY-TASK')
 
     if (this.messages.length === 0) {
       this.endProcessingPeriod()
@@ -641,7 +647,7 @@ export class MACI {
       Math.floor((this.msgEndIdx - 1) / batchSize) * batchSize
     const batchEndIdx = Math.min(batchStartIdx + batchSize, this.msgEndIdx)
 
-    log(`= Process message [${batchStartIdx}, ${batchEndIdx}) `.padEnd(40, '='))
+    debug(`= Process message [${batchStartIdx}, ${batchEndIdx}) `.padEnd(40, '='), 'TALLY-TASK')
 
     const messages = this.messages.slice(batchStartIdx, batchEndIdx)
     const commands = this.commands.slice(batchStartIdx, batchEndIdx)
@@ -714,7 +720,7 @@ export class MACI {
         this.stateTree.updateLeaf(stateIdx, hash)
       }
 
-      log(`- message <${i}> ${error || '√'}`)
+      debug(`- message <${i}> ${error || '√'}`, 'TALLY-TASK')
     }
 
     const newStateRoot = this.stateTree.root
@@ -780,7 +786,7 @@ export class MACI {
     this._stateCommitment = newStateCommitment
     this.stateSalt = newStateSalt
 
-    log(['', '* new state root:\n\n' + newStateRoot, ''].join('\n'))
+    debug(['', '* new state root:\n\n' + newStateRoot, ''].join('\n'), 'TALLY-TASK')
 
     if (batchStartIdx === 0) {
       this.endProcessingPeriod()
@@ -799,7 +805,7 @@ export class MACI {
     this.tallySalt = 0n
     this._tallyCommitment = 0n
 
-    log(['Process Finished '.padEnd(60, '='), ''].join('\n'))
+    debug(['Process Finished '.padEnd(60, '='), ''].join('\n'), 'TALLY-TASK')
   }
 
   processTally(tallySalt = 0n) {
@@ -809,7 +815,7 @@ export class MACI {
     const batchStartIdx = this.batchNum * batchSize
     const batchEndIdx = batchStartIdx + batchSize
 
-    log(`= Process tally [${batchStartIdx}, ${batchEndIdx}) `.padEnd(40, '='))
+    debug(`= Process tally [${batchStartIdx}, ${batchEndIdx}) `.padEnd(40, '='), 'TALLY-TASK')
 
     const statePathElements = this.stateTree
       .pathElementOf(batchStartIdx)
@@ -896,11 +902,11 @@ export class MACI {
     this._tallyCommitment = newTallyCommitment
     this.tallySalt = tallySalt
 
-    log(['', '* new tally commitment:\n\n' + newTallyCommitment, ''].join('\n'))
+    debug(['', '* new tally commitment:\n\n' + newTallyCommitment, ''].join('\n'), 'TALLY-TASK')
 
     if (batchEndIdx >= this.numSignUps) {
       this.states = MACI_STATES.ENDED
-      log(['Tally Finished '.padEnd(60, '='), ''].join('\n'))
+      debug(['Tally Finished '.padEnd(60, '='), ''].join('\n'), 'TALLY-TASK')
     }
 
     return input

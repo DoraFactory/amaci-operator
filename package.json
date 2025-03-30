@@ -36,6 +36,7 @@
     "@cosmjs/cosmwasm-stargate": "^0.32.3",
     "@cosmjs/launchpad": "^0.27.1",
     "circomlib": "^0.5.5",
+    "colors": "^1.4.0",
     "ethers": "^6.12.0",
     "express": "^4.19.2",
     "lodash": "^4.17.21",
@@ -43,6 +44,8 @@
     "readline-sync": "^1.4.10",
     "snarkjs": "^0.7.3",
     "tar": "^7.4.0",
-    "web3": "^4.9.0"
+    "web3": "^4.9.0",
+    "winston": "^3.17.0",
+    "winston-daily-rotate-file": "^5.0.0"
   }
 }

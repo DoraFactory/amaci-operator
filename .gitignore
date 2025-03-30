@@ -30,6 +30,6 @@ coverage
 *.tsbuildinfo
 
 contracts
-zkey
+zkey*
 work
 .env
