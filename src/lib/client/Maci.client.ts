@@ -8,8 +8,11 @@ import {
   CosmWasmClient,
   SigningCosmWasmClient,
   ExecuteResult,
+  MsgExecuteContractEncodeObject
 } from '@cosmjs/cosmwasm-stargate'
 import { Coin, StdFee } from '@cosmjs/amino'
+import { MsgExecuteContract } from 'cosmjs-types/cosmwasm/wasm/v1/tx';
+type MixedData<T> = T | Array<MixedData<T>> | { [key: string]: MixedData<T> };
 import {
   Uint256,
   Timestamp,
@@ -85,6 +88,27 @@ export class MaciQueryClient implements MaciReadOnlyInterface {
     this.queryCircuitType = this.queryCircuitType.bind(this)
     this.queryCertSystem = this.queryCertSystem.bind(this)
   }
+
+  stringizing = (
+    o: MixedData<bigint>,
+    path: MixedData<bigint>[] = []
+  ): MixedData<string> => {
+    if (path.includes(o)) {
+      throw new Error('loop nesting!');
+    }
+    const newPath = [...path, o];
+    if (Array.isArray(o)) {
+      return o.map((item) => this.stringizing(item, newPath));
+    } else if (typeof o === 'object') {
+      const output: { [key: string]: MixedData<string> } = {};
+      for (const key in o) {
+        output[key] = this.stringizing(o[key], newPath);
+      }
+      return output;
+    } else {
+      return o.toString();
+    }
+  };
 
   getRoundInfo = async (): Promise<RoundInfo> => {
     return this.client.queryContractSmart(this.contractAddress, {
@@ -400,6 +424,23 @@ export interface MaciInterface extends MaciReadOnlyInterface {
     memo?: string,
     _funds?: Coin[],
   ) => Promise<ExecuteResult>
+  claim: (
+    fee?: number | StdFee | 'auto',
+    memo?: string,
+    _funds?: Coin[],
+  ) => Promise<ExecuteResult>
+  stopTallyingAndClaim: (
+    {
+      results,
+      salt,
+    }: {
+      results: Uint256[]
+      salt: Uint256
+    },
+    fee?: number | StdFee | 'auto',
+    memo?: string,
+    _funds?: Coin[],
+  ) => Promise<ExecuteResult>
 }
 export class MaciClient extends MaciQueryClient implements MaciInterface {
   client: SigningCosmWasmClient
@@ -435,6 +476,8 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     this.revoke = this.revoke.bind(this)
     this.bond = this.bond.bind(this)
     this.withdraw = this.withdraw.bind(this)
+    this.claim = this.claim.bind(this)
+    this.stopTallyingAndClaim = this.stopTallyingAndClaim.bind(this)
   }
 
   setParams = async (
@@ -819,6 +862,22 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
       _funds,
     )
   }
+  claim = async (
+    fee: number | StdFee | 'auto' = 'auto',
+    memo?: string,
+    _funds?: Coin[],
+  ): Promise<ExecuteResult> => {
+    return await this.client.execute(
+      this.sender,
+      this.contractAddress,
+      {
+        claim: {},
+      },
+      fee,
+      memo,
+      _funds,
+    )
+  }
   grant = async (
     {
       maxAmount,
@@ -896,5 +955,62 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
       memo,
       _funds,
     )
+  }
+  stopTallyingAndClaim = async (
+    {
+      results,
+      salt,
+    }: {
+      results: Uint256[]
+      salt: Uint256
+    },
+    fee: number | StdFee | 'auto' = 'auto',
+    memo?: string,
+    _funds?: Coin[],
+  ): Promise<ExecuteResult> => {
+
+    // 创建批量消息
+    const msgs: MsgExecuteContractEncodeObject[] = [
+      {
+        typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
+        value: MsgExecuteContract.fromPartial({
+          sender: this.sender,
+          contract: this.contractAddress,
+          msg: new TextEncoder().encode(
+            JSON.stringify(
+              {
+                stop_tallying_period: {
+                  results,
+                  salt,
+                }
+              }
+            )
+          ),
+        })
+      },
+      {
+        typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
+        value: MsgExecuteContract.fromPartial({
+          sender: this.sender,
+          contract: this.contractAddress,
+          msg: new TextEncoder().encode(
+            JSON.stringify(
+              {
+                claim: {}
+              }
+            )
+          ),
+        })
+      }
+    ];
+
+    const response = await this.client.signAndBroadcast(
+      this.sender,
+      msgs,
+      fee,
+      memo || ''
+    );
+    
+    return response as unknown as ExecuteResult;
   }
 }

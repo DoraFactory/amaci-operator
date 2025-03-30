@@ -239,17 +239,57 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       log('processTally', ui, res)
     }
 
-    await maciClient.stopTallyingPeriod({
-      results: allData.result,
-      salt: allData.salt,
-    })
+    try {
+      console.log('Executing stopTallying and claim as batch operation...')
+      const batchResult = await maciClient.stopTallyingAndClaim({
+        results: allData.result,
+        salt: allData.salt,
+      }, 'auto')
+      console.log('Batch operation completed successfully, tx hash:', batchResult.transactionHash)
+    } catch (error) {
+      console.log('Error during batch operation:', error)
+      
+      console.log('Trying operations separately...')
+      try {
+        await maciClient.stopTallyingPeriod({
+          results: allData.result,
+          salt: allData.salt,
+        })
+        
+        console.log('Executing claim operation.....')
+        const claimResult = await maciClient.claim('auto')
+        console.log('Claim operation completed successfully, tx hash:', claimResult.transactionHash)
+      } catch (fallbackError) {
+        console.log('Error during fallback operations:', fallbackError)
+      }
+    }
   } else {
     const period = await maciClient.getPeriod()
     if (period.status === 'tallying') {
-      await maciClient.stopTallyingPeriod({
-        results: allData.result,
-        salt: allData.salt,
-      })
+      try {
+        console.log('Executing stopTallying and claim as batch operation...')
+        const batchResult = await maciClient.stopTallyingAndClaim({
+          results: allData.result,
+          salt: allData.salt,
+        }, 'auto')
+        console.log('Batch operation completed successfully, tx hash:', batchResult.transactionHash)
+      } catch (error) {
+        console.log('Error during batch operation:', error)
+        
+        console.log('Trying operations separately...')
+        try {
+          await maciClient.stopTallyingPeriod({
+            results: allData.result,
+            salt: allData.salt,
+          })
+          
+          console.log('Executing claim operation.....')
+          const claimResult = await maciClient.claim('auto')
+          console.log('Claim operation completed successfully, tx hash:', claimResult.transactionHash)
+        } catch (fallbackError) {
+          console.log('Error during fallback operations:', fallbackError)
+        }
+      }
     }
   }
 
