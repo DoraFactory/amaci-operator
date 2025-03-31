@@ -121,11 +121,6 @@ export interface IKeypair {
 
 export type Task = {
   name: 'inspect' | 'deactivate' | 'tally'
-  // | 'proof'
-  // | 'txDeactivate'
-  // | 'txStopVoting'
-  // | 'txProof'
-  // | 'txResult'
   params?: any
 }
 
