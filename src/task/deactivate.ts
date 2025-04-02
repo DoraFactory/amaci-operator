@@ -24,6 +24,7 @@ import {
   endOperation,
   setCurrentRound,
 } from '../logger'
+import { recordTaskSuccess, recordTaskStart, recordTaskEnd } from '../metrics'
 
 const zkeyPath = './zkey/'
 
@@ -34,6 +35,9 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
   setCurrentRound(id)
 
   startOperation('deactivate', 'DEACTIVATE-TASK')
+
+  // Metrics: record the task starttrics: record the task start
+  recordTaskStart('deactivate', id);
 
   try {
     const maciRound = await fetchRound(id)
@@ -153,10 +157,17 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
     Timer.set(id, now)
 
     endOperation('deactivate', true, 'DEACTIVATE-TASK')
+    // Metrics: record the task success
+    recordTaskSuccess('deactivate')
+    // 记录任务结束
+    recordTaskEnd('deactivate', id);
     return {}
   } catch (err) {
     logError(err, 'DEACTIVATE-TASK', { operation: 'deactivate' })
     endOperation('deactivate', false, 'DEACTIVATE-TASK')
+    // 记录任务失败和结束
+    // recordTaskFailure('deactivate');
+    recordTaskEnd('deactivate', id);
     throw err
   }
 }

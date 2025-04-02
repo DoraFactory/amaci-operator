@@ -10,11 +10,15 @@ import {
   startOperation, 
   endOperation,
 } from '../logger'
+import { recordTaskSuccess, updateActiveRounds, recordTaskStart, recordTaskEnd, updateRoundStatus, updateInspectedTasksCount } from '../metrics'
 
 const deactivateInterval = Number(process.env.DEACTIVATE_INTERVAL)
 
 export const inspect: TaskAct = async () => {
   const startTime = Date.now()
+  
+  // Metrics: record the task start with a global id which is used for all tasks
+  recordTaskStart('inspect', 'global');
   
   // log the start operation
   startOperation('inspect', 'INSPECT')
@@ -35,10 +39,10 @@ export const inspect: TaskAct = async () => {
         voting: rounds.filter(r => r.period === 'Voting').length,
         processing: rounds.filter(r => r.period === 'Processing').length,
         tallying: rounds.filter(r => r.period === 'Tallying').length,
-        completed: rounds.filter(r => r.period === 'Completed').length
+        // completed: rounds.filter(r => r.period === 'Completed').length
       }
     }
-    
+
     // log the rounds data (detail, for debug)
     debug('Current coordinator and inspect code ids', 'INSPECT', {
       coordinatorPubKey: coordinator.pubKey.map(String).join(','),
@@ -104,14 +108,35 @@ export const inspect: TaskAct = async () => {
       status: statusStr,
       tasksGenerated: tasks
     })
-    
-    endOperation('inspect', true, 'INSPECT')
 
+    // 更新inspect找到的任务数量
+    updateInspectedTasksCount({
+      'deactivate': stats.needDeactivate,
+      'tally': stats.needTally,
+    });
+
+    // Metrics: collect the active rounds
+    const activeRounds = rounds.map(r => ({
+      id: r.id,
+      period: r.period
+    }));
+
+    // 确保这行代码被执行
+    updateRoundStatus(stats.status);
+    // Metrics: update the active rounds
+    updateActiveRounds(activeRounds);
+    // Metrics: record the task success
+    recordTaskSuccess('inspect')
+    // Metrics: record the task end
+    recordTaskEnd('inspect', 'global');
+
+    endOperation('inspect', true, 'INSPECT')
     return { newTasks }
   } catch (err: any) {
     const duration = Date.now() - startTime
     error(`Inspection failed after ${duration}ms: ${err.message || String(err)}`, 'INSPECT')
     endOperation('inspect', false, 'INSPECT')
+    recordTaskEnd('inspect', 'global');
     throw err;
   }
 }
