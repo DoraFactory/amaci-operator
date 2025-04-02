@@ -8,7 +8,7 @@ import {
 } from './logger'
 
 import { init } from './init'
-
+import { startMetricsServer, updateOperatorState, updateActiveTasksCount } from './metrics'
 const DefaultTask: Task = { name: 'inspect' }
 
 const sleep = async (ms: number) =>
@@ -27,6 +27,24 @@ if (!process.env.COORDINATOR_PRI_KEY) {
 
 const main = async () => {
   await init()
+
+  // Start metrics server
+  try {
+    const metricsPort = parseInt(process.env.METRICS_PORT || '3001');
+    startMetricsServer(metricsPort);
+    info(`Started metrics server on port ${metricsPort}`, 'MAIN');
+    
+    // Metrics: Set the status of the operator to inspect
+    updateOperatorState('inspect');
+  
+    // Metrics: Update the number of active tasks (every 10 seconds)
+    setInterval(() => {
+      updateActiveTasksCount();
+    }, 10000);
+    
+  } catch (e) {
+    logError(`Failed to start metrics server: ${e instanceof Error ? e.message : String(e)}`, 'MAIN');
+  }
 
   const storage = new TestStorage()
 

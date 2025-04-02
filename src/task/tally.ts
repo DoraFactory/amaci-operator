@@ -17,6 +17,8 @@ import {
   endOperation,
   setCurrentRound,
 } from '../logger'
+import { recordTaskSuccess, recordRoundCompletion } from '../metrics'
+import { recordTaskStart, recordTaskEnd } from '../metrics'
 
 import { genMaciInputs } from '../operator/genInputs'
 
@@ -47,6 +49,9 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
 
   // 记录操作开始
   startOperation('tally', 'TALLY-TASK')
+
+  // Metrics: Record the task start
+  recordTaskStart('tally', id);
 
   try {
     
@@ -339,10 +344,19 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
 
     info(`Completed round Tally for ${id}`, 'TALLY-TASK')
     endOperation('tally', true, 'TALLY-TASK')
+
+    // Metrics: record the task success
+    recordTaskSuccess('tally')
+    // Metrics: record the round completion
+    recordRoundCompletion(id)
+    // 记录任务结束
+    recordTaskEnd('tally', id);
     return {}
   } catch (err) {
     logError(err, 'TALLY-TASK', { operation: 'tally' })
     endOperation('tally', false, 'TALLY-TASK')
+    // 记录任务失败和结束
+    recordTaskEnd('tally', id);
     throw err
   }
 }

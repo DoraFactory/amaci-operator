@@ -13,6 +13,7 @@ declare global {
       LOG_LEVEL: string
       MNEMONIC: string
       PRIVATE: string
+      METRICS_PORT: string
     }
   }
 }
