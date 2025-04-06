@@ -28,7 +28,7 @@ import { recordTaskSuccess, recordTaskStart, recordTaskEnd } from '../metrics'
 
 const zkeyPath = './zkey/'
 
-const deactivateInterval = Number(process.env.DEACTIVATE_INTERVAL)
+const deactivateInterval = Number(process.env.DEACTIVATE_INTERVAL || 60000)
 
 export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
   // log the round id

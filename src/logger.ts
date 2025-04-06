@@ -33,7 +33,7 @@ const levelColors = {
 colors.setTheme(levelColors);
 
 // determine the log directory
-const logDir = process.env.WORK_PATH || './logs';
+const logDir = process.env.WORK_PATH || './work';
 
 // create the formatter
 const formats = {
@@ -158,7 +158,7 @@ setInterval(cleanupTransports, 60 * 60 * 1000);
 function getRoundTransport(roundId: string): winston.transport {
   if (!roundTransports.has(roundId)) {
     // 创建 round 专用的日志文件
-    const roundLogPath = path.join(process.env.WORK_PATH, `round_${roundId}.log`);
+    const roundLogPath = path.join(process.env.WORK_PATH || "./work", `round_${roundId}.log`);
     
     // 创建该 round 的传输器
     const transport = new winston.transports.File({

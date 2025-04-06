@@ -12,8 +12,8 @@ export async function init() {
 
   info('Init your coordinator info', 'INIT')
 
-  if (!fs.existsSync(process.env.WORK_PATH)) {
-    fs.mkdirSync(process.env.WORK_PATH)
+  if (!fs.existsSync(process.env.WORK_PATH || './work')) {
+    fs.mkdirSync(process.env.WORK_PATH || './work')
   }
 
   const coordinator = genKeypair(BigInt(process.env.COORDINATOR_PRI_KEY))

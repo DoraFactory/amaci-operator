@@ -24,7 +24,7 @@ import { genMaciInputs } from '../operator/genInputs'
 
 const zkeyPath = './zkey/'
 
-const inputsPath = path.join(process.env.WORK_PATH, 'inputs')
+const inputsPath = path.join(process.env.WORK_PATH || "./work", 'inputs')
 if (!fs.existsSync(inputsPath)) {
   fs.mkdirSync(inputsPath)
 }

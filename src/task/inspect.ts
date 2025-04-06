@@ -12,7 +12,7 @@ import {
 } from '../logger'
 import { recordTaskSuccess, updateActiveRounds, recordTaskStart, recordTaskEnd, updateRoundStatus, updateInspectedTasksCount } from '../metrics'
 
-const deactivateInterval = Number(process.env.DEACTIVATE_INTERVAL)
+const deactivateInterval = Number(process.env.DEACTIVATE_INTERVAL || 60000)
 
 export const inspect: TaskAct = async () => {
   const startTime = Date.now()
