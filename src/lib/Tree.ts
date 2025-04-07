@@ -1,4 +1,5 @@
 import { poseidon } from 'circomlib'
+import { log } from '../log'
 
 export class Tree {
   public readonly DEPTH: number
@@ -78,6 +79,8 @@ export class Tree {
 
   leaf(leafIdx: number) {
     if (leafIdx > this.LEAVES_COUNT || leafIdx < 0) {
+      log('leafIdx is ', leafIdx)
+      log('this.LEAVES_COUNT is ', this.LEAVES_COUNT)
       throw new Error('wrong leaf index')
     }
     const nodeIdx = this.LEAVES_IDX_0 + leafIdx
@@ -90,6 +93,8 @@ export class Tree {
 
   updateLeaf(leafIdx: number, leaf: bigint) {
     if (leafIdx > this.LEAVES_COUNT || leafIdx < 0) {
+      log('leafIdx is ', leafIdx)
+      log('this.LEAVES_COUNT is ', this.LEAVES_COUNT)
       throw new Error('wrong leaf index')
     }
     const nodeIdx = this.LEAVES_IDX_0 + leafIdx
@@ -100,6 +105,8 @@ export class Tree {
 
   pathIdxOf(leafIdx: number) {
     if (leafIdx > this.LEAVES_COUNT || leafIdx < 0) {
+      log('leafIdx is ', leafIdx)
+      log('this.LEAVES_COUNT is ', this.LEAVES_COUNT)
       throw new Error('wrong leaf index')
     }
     let idx = this.LEAVES_IDX_0 + leafIdx
@@ -119,6 +126,8 @@ export class Tree {
 
   pathElementOf(leafIdx: number) {
     if (leafIdx > this.LEAVES_COUNT || leafIdx < 0) {
+      log('leafIdx is ', leafIdx)
+      log('this.LEAVES_COUNT is ', this.LEAVES_COUNT)
       throw new Error('wrong leaf index')
     }
     let idx = this.LEAVES_IDX_0 + leafIdx
