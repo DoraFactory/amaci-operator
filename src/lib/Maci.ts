@@ -443,7 +443,17 @@ export class MACI {
         s.d2[1],
         0,
       ]
-      currentStateLeavesPathElements[i] = subStateTree.pathElementOf(stateIdx)
+
+
+      if (stateIdx > 625) {
+        log('stateIdx is ', stateIdx)
+        log('subStateTree is ', subStateTree)
+        log('i is ', i)
+        log('cmd is ', cmd)
+        log('error is ', error)
+        currentStateLeavesPathElements[i] = subStateTree.pathElementOf(stateIdx)  
+      }
+      
       activeStateLeavesPathElements[i] =
         this.activeStateTree.pathElementOf(stateIdx)
       deactivateLeavesPathElements[i] = this.deactivateTree.pathElementOf(
