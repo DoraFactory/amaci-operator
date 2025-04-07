@@ -79,7 +79,7 @@ export class Tree {
 
   leaf(leafIdx: number) {
     if (leafIdx > this.LEAVES_COUNT || leafIdx < 0) {
-      log('leafIdx is ', leafIdx)
+      log('leaf function leafIdx is ', leafIdx)
       log('this.LEAVES_COUNT is ', this.LEAVES_COUNT)
       throw new Error('wrong leaf index')
     }
@@ -93,7 +93,7 @@ export class Tree {
 
   updateLeaf(leafIdx: number, leaf: bigint) {
     if (leafIdx > this.LEAVES_COUNT || leafIdx < 0) {
-      log('leafIdx is ', leafIdx)
+      log('updateLeaf function leafIdx is ', leafIdx)
       log('this.LEAVES_COUNT is ', this.LEAVES_COUNT)
       throw new Error('wrong leaf index')
     }
@@ -105,7 +105,7 @@ export class Tree {
 
   pathIdxOf(leafIdx: number) {
     if (leafIdx > this.LEAVES_COUNT || leafIdx < 0) {
-      log('leafIdx is ', leafIdx)
+      log(' pathIdxOf function leafIdx is ', leafIdx)
       log('this.LEAVES_COUNT is ', this.LEAVES_COUNT)
       throw new Error('wrong leaf index')
     }
@@ -126,7 +126,7 @@ export class Tree {
 
   pathElementOf(leafIdx: number) {
     if (leafIdx > this.LEAVES_COUNT || leafIdx < 0) {
-      log('leafIdx is ', leafIdx)
+      log(' pathElementOf function leafIdx is ', leafIdx)
       log('this.LEAVES_COUNT is ', this.LEAVES_COUNT)
       throw new Error('wrong leaf index')
     }
