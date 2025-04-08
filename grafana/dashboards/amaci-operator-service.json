@@ -310,11 +310,9 @@
       },
       "id": 17,
       "options": {
-        "displayMode": "gradient",
-        "maxVizHeight": 300,
-        "minVizHeight": 75,
-        "minVizWidth": 75,
-        "namePlacement": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
           "calcs": [
@@ -323,12 +321,8 @@
           "fields": "",
           "values": false
         },
-        "showUnfilled": true,
-        "sizing": "auto",
-        "text": {
-          "valueSize": 58
-        },
-        "valueMode": "color"
+        "textMode": "auto",
+        "wideLayout": true
       },
       "pluginVersion": "10.2.3",
       "targets": [
@@ -346,7 +340,7 @@
         }
       ],
       "title": "Processed Tally Tasks",
-      "type": "bargauge"
+      "type": "stat"
     },
     {
       "datasource": {
@@ -545,7 +539,6 @@
         "graphMode": "area",
         "justifyMode": "auto",
         "orientation": "auto",
-        "percentChangeColorMode": "standard",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -553,7 +546,6 @@
           "fields": "",
           "values": false
         },
-        "showPercentChange": false,
         "textMode": "auto",
         "wideLayout": true
       },
@@ -771,11 +763,11 @@
   "templating": {
     "list": [
       {
-        "allValue": "blank=amaci-operator3-testnet-metrics",
+        "allValue": "",
         "current": {
-          "selected": true,
-          "text": "amaci-operator3-testnet-metrics",
-          "value": "amaci-operator3-testnet-metrics"
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
         },
         "datasource": {
           "type": "prometheus",
@@ -808,7 +800,7 @@
   "timepicker": {},
   "timezone": "",
   "title": "AMACI Operator Monitor",
-  "uid": "amaci-operator666444",
-  "version": 14,
+  "uid": "amaci-operator",
+  "version": 1,
   "weekStart": ""
 }
