@@ -7,7 +7,6 @@ import { adaptToUncompressed } from '../vota/adapt'
 import { fetchAllVotesLogs, fetchRound } from '../vota/indexer'
 import { getContractSignerClient } from '../lib/client/utils'
 import { maciParamsFromCircuitPower, ProofData, TaskAct } from '../types'
-// import { log } from '../log'
 import {
   info,
   error as logError,
@@ -24,7 +23,7 @@ import { genMaciInputs } from '../operator/genInputs'
 
 const zkeyPath = './zkey/'
 
-const inputsPath = path.join(process.env.WORK_PATH || "./work", 'inputs')
+const inputsPath = path.join(process.env.WORK_PATH || './work', 'inputs')
 if (!fs.existsSync(inputsPath)) {
   fs.mkdirSync(inputsPath)
 }
@@ -44,17 +43,16 @@ const sleep = async (ms: number) =>
   })
 
 export const tally: TaskAct = async (_, { id }: { id: string }) => {
-  // 设置当前处理的 round ID
+  // logger: set the current round ID
   setCurrentRound(id)
 
-  // 记录操作开始
+  // logger: start the operation
   startOperation('tally', 'TALLY-TASK')
 
   // Metrics: Record the task start
-  recordTaskStart('tally', id);
+  recordTaskStart('tally', id)
 
   try {
-    
     const maciRound = await fetchRound(id)
     info(`Current round period:' ${maciRound.period}`, 'TALLY-TASK')
 
@@ -71,14 +69,10 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       return { error: { msg: 'error status: not end' } }
     }
 
-    /**
-     * 主要和 vota 交互的对象
-     */
+    // Get the maci contract signer client
     const maciClient = await getContractSignerClient(id)
 
-    /**
-     * 先结束当前 round
-     */
+    // If the round is pending or voting, start the process period
     if (['Pending', 'Voting'].includes(maciRound.period)) {
       const preiod = await maciClient.getPeriod()
       if (['pending', 'voting'].includes(preiod.status)) {
@@ -204,9 +198,9 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       }
 
       const tally: ProofData[] = []
-      info('Start to generate proof for tally', 'TALLY-TASK',{
-          period: maciRound.period,
-          circuitPower: maciRound.circuitPower,
+      info('Start to generate proof for tally', 'TALLY-TASK', {
+        period: maciRound.period,
+        circuitPower: maciRound.circuitPower,
       })
       for (let i = 0; i < res.tallyInputs.length; i++) {
         const input = res.tallyInputs[i]
@@ -245,7 +239,10 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
           groth16Proof: proofHex,
           newStateCommitment: commitment,
         })
-        debug(`processedMessage #${mi} 🛠️🛠️🛠️🛠️ with tx hash successfully ✅: ${res.transactionHash}`, 'TALLY-TASK')
+        debug(
+          `processedMessage #${mi} 🛠️🛠️🛠️🛠️ with tx hash successfully ✅: ${res.transactionHash}`,
+          'TALLY-TASK',
+        )
       }
 
       await maciClient.stopProcessingPeriod()
@@ -267,11 +264,17 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
           groth16Proof: proofHex,
           newTallyCommitment: commitment,
         })
-        debug(`processedTally #${ui} 🛠️🛠️🛠️🛠️ with tx hash successfully ✅: ${res.transactionHash}`, 'TALLY-TASK')
+        debug(
+          `processedTally #${ui} 🛠️🛠️🛠️🛠️ with tx hash successfully ✅: ${res.transactionHash}`,
+          'TALLY-TASK',
+        )
       }
 
       try {
-        info('Executing stopTallying and claim as batch operation...', 'TALLY-TASK')
+        info(
+          'Executing stopTallying and claim as batch operation...',
+          'TALLY-TASK',
+        )
         const batchResult = await maciClient.stopTallyingAndClaim(
           {
             results: allData.result,
@@ -307,7 +310,10 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       const period = await maciClient.getPeriod()
       if (period.status === 'tallying') {
         try {
-          info('Executing stopTallying and claim as batch operation...', 'TALLY-TASK')
+          info(
+            'Executing stopTallying and claim as batch operation...',
+            'TALLY-TASK',
+          )
           const batchResult = await maciClient.stopTallyingAndClaim(
             {
               results: allData.result,
@@ -336,27 +342,33 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
               'TALLY-TASK',
             )
           } catch (fallbackError) {
-            logError(`Error during fallback operations: ${fallbackError}`, 'TALLY-TASK')
+            logError(
+              `Error during fallback operations: ${fallbackError}`,
+              'TALLY-TASK',
+            )
           }
         }
       }
     }
 
     info(`Completed round Tally for ${id}`, 'TALLY-TASK')
-    endOperation('tally', true, 'TALLY-TASK')
 
+    // logger: end the operation
+    endOperation('tally', true, 'TALLY-TASK')
     // Metrics: record the task success
     recordTaskSuccess('tally')
     // Metrics: record the round completion
     recordRoundCompletion(id)
-    // 记录任务结束
-    recordTaskEnd('tally', id);
+    // Metrics: record the task end
+    recordTaskEnd('tally', id)
     return {}
   } catch (err) {
+    // logger: log the error
     logError(err, 'TALLY-TASK', { operation: 'tally' })
+    // logger: end the operation
     endOperation('tally', false, 'TALLY-TASK')
-    // 记录任务失败和结束
-    recordTaskEnd('tally', id);
+    // Metrics: record the task end
+    recordTaskEnd('tally', id)
     throw err
   }
 }

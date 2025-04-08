@@ -2,7 +2,6 @@ import fs from 'fs'
 import path from 'path'
 import { groth16 } from 'snarkjs'
 
-// import { log } from '../log'
 import { getContractSignerClient } from '../lib/client/utils'
 import { uploadDeactivateHistory } from '../lib/client/Deactivate.client'
 import { genDeacitveMaciInputs } from '../operator/genDeactivateInputs'
@@ -37,7 +36,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
   startOperation('deactivate', 'DEACTIVATE-TASK')
 
   // Metrics: record the task starttrics: record the task start
-  recordTaskStart('deactivate', id);
+  recordTaskStart('deactivate', id)
 
   try {
     const maciRound = await fetchRound(id)
@@ -130,7 +129,10 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
         dmsg.push({ proofHex, commitment, root, size })
       }
 
-      info(`Prepare to send ${dmsg.length} deactivate messages`, 'DEACTIVATE-TASK')
+      info(
+        `Prepare to send ${dmsg.length} deactivate messages`,
+        'DEACTIVATE-TASK',
+      )
 
       for (let i = 0; i < dmsg.length; i++) {
         const { proofHex, commitment, root, size } = dmsg[i]
@@ -140,34 +142,40 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
           newDeactivateRoot: root,
           size,
         })
-        info(`Processed deactivate message #${i} successfully✅`, 'DEACTIVATE-TASK', {
-          txHash: res.transactionHash,
-        })
+        info(
+          `Processed deactivate message #${i} successfully✅`,
+          'DEACTIVATE-TASK',
+          {
+            txHash: res.transactionHash,
+          },
+        )
       }
 
       const uploadRes = await uploadDeactivateHistory(
         id,
         res.newDeactivates.map((d) => d.map(String)),
       )
-      info('Uploaded deactivate history successfully✅', 'DEACTIVATE-TASK', { uploadResult: uploadRes.transactionHash })
+      info('Uploaded deactivate history successfully✅', 'DEACTIVATE-TASK', {
+        uploadResult: uploadRes.transactionHash,
+      })
     } else {
       info('No new deactivate messages to process 👀', 'DEACTIVATE-TASK')
     }
 
     Timer.set(id, now)
 
+    // logger: end the task
     endOperation('deactivate', true, 'DEACTIVATE-TASK')
     // Metrics: record the task success
     recordTaskSuccess('deactivate')
-    // 记录任务结束
-    recordTaskEnd('deactivate', id);
+    // Metrics: end the task
+    recordTaskEnd('deactivate', id)
     return {}
   } catch (err) {
-    logError(err, 'DEACTIVATE-TASK', { operation: 'deactivate' })
+    // logger: end the task
     endOperation('deactivate', false, 'DEACTIVATE-TASK')
-    // 记录任务失败和结束
-    // recordTaskFailure('deactivate');
-    recordTaskEnd('deactivate', id);
+    // Metrics: record the task end
+    recordTaskEnd('deactivate', id)
     throw err
   }
 }

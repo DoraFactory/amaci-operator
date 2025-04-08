@@ -2,25 +2,32 @@ import { fetchRounds } from '../vota/indexer'
 import { Task, TaskAct } from '../types'
 import { Timer } from '../storage/timer'
 import { genKeypair } from '../lib/keypair'
-import { 
-  info, 
+import {
+  info,
   debug,
   warn,
   error,
-  startOperation, 
+  startOperation,
   endOperation,
 } from '../logger'
-import { recordTaskSuccess, updateActiveRounds, recordTaskStart, recordTaskEnd, updateRoundStatus, updateInspectedTasksCount } from '../metrics'
+import {
+  recordTaskSuccess,
+  updateActiveRounds,
+  recordTaskStart,
+  recordTaskEnd,
+  updateRoundStatus,
+  updateInspectedTasksCount,
+} from '../metrics'
 
 const deactivateInterval = Number(process.env.DEACTIVATE_INTERVAL || 60000)
 
 export const inspect: TaskAct = async () => {
   const startTime = Date.now()
-  
+
   // Metrics: record the task start with a global id which is used for all tasks
-  recordTaskStart('inspect', 'global');
-  
-  // log the start operation
+  recordTaskStart('inspect', 'global')
+
+  // logger: start the inspection
   startOperation('inspect', 'INSPECT')
   info('Starting rounds inspection', 'INSPECT')
 
@@ -29,18 +36,18 @@ export const inspect: TaskAct = async () => {
     const coordinator = genKeypair(BigInt(process.env.COORDINATOR_PRI_KEY))
 
     const rounds = await fetchRounds(coordinator.pubKey.map(String))
-    
+
     const stats = {
       totalRounds: rounds.length,
       needDeactivate: 0,
       needTally: 0,
       status: {
-        pending: rounds.filter(r => r.period === 'Pending').length,
-        voting: rounds.filter(r => r.period === 'Voting').length,
-        processing: rounds.filter(r => r.period === 'Processing').length,
-        tallying: rounds.filter(r => r.period === 'Tallying').length,
+        pending: rounds.filter((r) => r.period === 'Pending').length,
+        voting: rounds.filter((r) => r.period === 'Voting').length,
+        processing: rounds.filter((r) => r.period === 'Processing').length,
+        tallying: rounds.filter((r) => r.period === 'Tallying').length,
         // completed: rounds.filter(r => r.period === 'Completed').length
-      }
+      },
     }
 
     // log the rounds data (detail, for debug)
@@ -48,7 +55,7 @@ export const inspect: TaskAct = async () => {
       coordinatorPubKey: coordinator.pubKey.map(String).join(','),
       codeIds: process.env.CODE_IDS,
     })
-    
+
     const newTasks: Task[] = []
 
     let tasks = 0
@@ -63,7 +70,7 @@ export const inspect: TaskAct = async () => {
         tasks++
         stats.needDeactivate++
         newTasks.push({ name: 'deactivate', params: { id: maciRound.id } })
-        
+
         info(`Adding deactivate task for round ${maciRound.id}`, 'INSPECT', {
           round: maciRound.id,
           period: maciRound.period,
@@ -96,47 +103,54 @@ export const inspect: TaskAct = async () => {
       }
     }
 
-    // 将 status 对象转换为更易读的格式
+    // Metrics: convert the status object to a more readable format
     const statusStr = Object.entries(stats.status)
       .map(([key, value]) => `${key}:${value}`)
-      .join(', ');
+      .join(', ')
 
-    info(`Inspection found ${rounds.length} rounds with ${tasks} tasks`, 'INSPECT', {
-      totalRounds: stats.totalRounds,
-      needDeactivate: stats.needDeactivate,
-      needTally: stats.needTally,
-      status: statusStr,
-      tasksGenerated: tasks
+    info(
+      `Inspection found ${rounds.length} rounds with ${tasks} tasks`,
+      'INSPECT',
+      {
+        totalRounds: stats.totalRounds,
+        needDeactivate: stats.needDeactivate,
+        needTally: stats.needTally,
+        status: statusStr,
+        tasksGenerated: tasks,
+      },
+    )
+
+    // Metrics: update the inspected tasks count
+    updateInspectedTasksCount({
+      deactivate: stats.needDeactivate,
+      tally: stats.needTally,
     })
 
-    // 更新inspect找到的任务数量
-    updateInspectedTasksCount({
-      'deactivate': stats.needDeactivate,
-      'tally': stats.needTally,
-    });
-
     // Metrics: collect the active rounds
-    const activeRounds = rounds.map(r => ({
+    const activeRounds = rounds.map((r) => ({
       id: r.id,
-      period: r.period
-    }));
+      period: r.period,
+    }))
 
-    // 确保这行代码被执行
-    updateRoundStatus(stats.status);
+    // Metrics: update the round status
+    updateRoundStatus(stats.status)
     // Metrics: update the active rounds
-    updateActiveRounds(activeRounds);
-    // Metrics: record the task success
+    updateActiveRounds(activeRounds)
+    // Metrics: record the inspection success
     recordTaskSuccess('inspect')
-    // Metrics: record the task end
-    recordTaskEnd('inspect', 'global');
+    // Metrics: record the inspection end
+    recordTaskEnd('inspect', 'global')
 
     endOperation('inspect', true, 'INSPECT')
     return { newTasks }
   } catch (err: any) {
     const duration = Date.now() - startTime
-    error(`Inspection failed after ${duration}ms: ${err.message || String(err)}`, 'INSPECT')
+    error(
+      `Inspection failed after ${duration}ms: ${err.message || String(err)}`,
+      'INSPECT',
+    )
     endOperation('inspect', false, 'INSPECT')
-    recordTaskEnd('inspect', 'global');
-    throw err;
+    recordTaskEnd('inspect', 'global')
+    throw err
   }
 }
