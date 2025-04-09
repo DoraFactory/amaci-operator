@@ -29,10 +29,10 @@ export async function init() {
 
   console.log('\nStart to download zkey:')
 
-  // if (!fs.existsSync('./zkey/2-1-1-5_v3')) {
-  //   console.log('download zkey: 2-1-1-5_v3')
-  //   await downloadAndExtractZKeys('2-1-1-5_v3')
-  // }
+  if (!fs.existsSync('./zkey/2-1-1-5_v3')) {
+    console.log('download zkey: 2-1-1-5_v3')
+    await downloadAndExtractZKeys('2-1-1-5_v3')
+  }
 
   if (!fs.existsSync('./zkey/4-2-2-25_v3')) {
     console.log('download zkey: 4-2-2-25_v3')
