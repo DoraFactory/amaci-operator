@@ -32,7 +32,23 @@
           "color": {
             "mode": "thresholds"
           },
-          "mappings": [],
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "color": "semi-dark-red",
+                  "index": 1,
+                  "text": "Down"
+                },
+                "1": {
+                  "color": "green",
+                  "index": 0,
+                  "text": "Up"
+                }
+              },
+              "type": "value"
+            }
+          ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -42,7 +58,7 @@
               }
             ]
           },
-          "unit": "s"
+          "unit": "none"
         },
         "overrides": []
       },
@@ -79,7 +95,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "amaci_operator_uptime_seconds{job=\"$job\"}",
+          "expr": "amaci_operator_status{job=\"$job\"}",
           "interval": "",
           "legendFormat": "",
           "range": true,
@@ -347,6 +363,94 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
+      "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "fieldMinMax": false,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "DORA"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "amaci_operator_balance_dora"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "semi-dark-green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 5,
+        "x": 0,
+        "y": 6
+      },
+      "id": 19,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "10.2.3",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "editorMode": "code",
+          "expr": "amaci_operator_balance_dora{job=\"$job\"}",
+          "instant": false,
+          "interval": "",
+          "legendFormat": "__auto",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Operator balance",
+      "transformations": [],
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -379,8 +483,8 @@
       },
       "gridPos": {
         "h": 6,
-        "w": 6,
-        "x": 0,
+        "w": 3,
+        "x": 5,
         "y": 6
       },
       "id": 10,
@@ -398,6 +502,9 @@
           "values": false
         },
         "showPercentChange": false,
+        "text": {
+          "valueSize": 68
+        },
         "textMode": "auto",
         "wideLayout": true
       },
@@ -460,8 +567,8 @@
       },
       "gridPos": {
         "h": 6,
-        "w": 5,
-        "x": 6,
+        "w": 3,
+        "x": 8,
         "y": 6
       },
       "id": 18,
@@ -479,6 +586,9 @@
           "values": false
         },
         "showPercentChange": false,
+        "text": {
+          "valueSize": 68
+        },
         "textMode": "auto",
         "wideLayout": true
       },
@@ -765,9 +875,9 @@
       {
         "allValue": "",
         "current": {
-          "selected": false,
-          "text": "All",
-          "value": "$__all"
+          "selected": true,
+          "text": "",
+          "value": ""
         },
         "datasource": {
           "type": "prometheus",
