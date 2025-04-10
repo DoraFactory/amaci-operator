@@ -10,6 +10,7 @@ import {
   updateOperatorState,
   updateActiveTasksCount,
   updateOperatorBalance,
+  updateOperatorStatus
 } from './metrics'
 import { getAccountBalance } from './lib/client/utils'
 import { GenerateWallet } from './wallet'
@@ -64,8 +65,24 @@ const checkOperatorBalance = async (
   }
 }
 
+// Add process exit handler process exit handler
+process.on('SIGINT', () => {
+  info('Received SIGINT, shutting down...', 'MAIN')
+  updateOperatorStatus(false)
+  process.exit(0)
+})
+
+process.on('SIGTERM', () => {
+  info('Received SIGTERM, shutting down...', 'MAIN')
+  updateOperatorStatus(false)
+  process.exit(0)
+})
+
 const main = async () => {
   await init()
+
+  // Set operator status to UP
+  updateOperatorStatus(true)
 
   // Start metrics server
   try {
@@ -84,6 +101,8 @@ const main = async () => {
       `Failed to start metrics server: ${e instanceof Error ? e.message : String(e)}`,
       'MAIN',
     )
+    // If startup fails, set status to down
+    updateOperatorStatus(false)
   }
 
   const storage = new TestStorage()
@@ -113,6 +132,7 @@ const main = async () => {
       logError(
         'Operator has no enoughbalance, exited...Please recharge your balance and restart the operator service',
       )
+      updateOperatorStatus(false) // Update status to down
       process.exit(1)
     }
 

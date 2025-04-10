@@ -8,10 +8,10 @@ const register = new client.Registry()
 // Add default metrics
 client.collectDefaultMetrics({ register })
 
-// Service uptime metric
-const uptime = new client.Gauge({
-  name: 'amaci_operator_uptime_seconds',
-  help: 'The uptime of the service in seconds',
+// Replace uptime with operator status metric
+const operatorStatus = new client.Gauge({
+  name: 'amaci_operator_status',
+  help: 'Status of the operator service (1 = up, 0 = down)',
   registers: [register],
 })
 
@@ -109,10 +109,11 @@ const taskDurationGauge = new client.Gauge({
 // Task start times map
 const taskStartTimes = new Map<string, Map<string, number>>()
 
-// Update service uptime periodically
+// Update service status periodically instead of uptime
 const startTime = Date.now()
 setInterval(() => {
-  uptime.set((Date.now() - startTime) / 1000)
+  // If this code executes, operator is up
+  operatorStatus.set(1)
 }, 10000)
 
 /**
@@ -322,6 +323,15 @@ export const updateOperatorBalance = (balance: number) => {
   
   // Add log for debugging
   info(`Updated operator balance metrics: ${balance} DORA`, 'METRICS')
+}
+
+/**
+ * Update operator status
+ * @param isUp Whether the operator is up (true) or down (false)
+ */
+export const updateOperatorStatus = (isUp: boolean) => {
+  operatorStatus.set(isUp ? 1 : 0)
+  info(`Updated operator status to ${isUp ? 'UP' : 'DOWN'}`, 'METRICS')
 }
 
 /**
