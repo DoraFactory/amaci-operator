@@ -15,6 +15,13 @@ const uptime = new client.Gauge({
   registers: [register],
 })
 
+// Operator balance metric
+const operatorBalanceGauge = new client.Gauge({
+  name: 'amaci_operator_balance_dora',
+  help: 'Current operator balance in DORA tokens',
+  registers: [register],
+})
+
 // Last successful inspection timestamp
 const lastSuccessfulInspection = new client.Gauge({
   name: 'amaci_operator_last_successful_inspection_timestamp',
@@ -304,6 +311,17 @@ export const updateInspectedTasksCount = (taskCounts: Record<string, number>) =>
   Object.entries(taskCounts).forEach(([taskType, count]) => {
     inspectedTasksGauge.set({ task_type: taskType }, count)
   })
+}
+
+/**
+ * Update operator balance metrics
+ * @param balance Current operator balance in DORA
+ */
+export const updateOperatorBalance = (balance: number) => {
+  operatorBalanceGauge.set(balance)
+  
+  // Add log for debugging
+  info(`Updated operator balance metrics: ${balance} DORA`, 'METRICS')
 }
 
 /**

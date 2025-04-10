@@ -9,6 +9,7 @@ import {
   startMetricsServer,
   updateOperatorState,
   updateActiveTasksCount,
+  updateOperatorBalance,
 } from './metrics'
 import { getAccountBalance } from './lib/client/utils'
 import { GenerateWallet } from './wallet'
@@ -23,20 +24,21 @@ const sleep = async (ms: number) =>
 
 let prevTaskName = ''
 
-
 const checkOperatorBalance = async (
   operatorAddress: string,
 ): Promise<boolean> => {
   try {
     const balance = await getAccountBalance(operatorAddress)
     const amount = BigInt(balance.amount)
-    // 简化计算，只获取整数部分
-    const amountInDora = Number(amount / BigInt(10**18))
+    const amountInDora = Number(amount / BigInt(10 ** 18))
+
+    // Metrics: Update operator balance
+    updateOperatorBalance(amountInDora)
 
     info(`Current operator balance: ${amountInDora} DORA`, 'BALANCE')
 
     // when operator balance is between 100000000000000000000 and 50000000000000000000, it will be warned
-    if (amountInDora <= BigInt('200') && amountInDora >= BigInt('50')) {
+    if (amountInDora <= 200 && amountInDora >= 50) {
       logWarn(
         `🚨Operator won't have enough balance to perform the task: ${amountInDora} DORA, Please recharge your balance`,
         'OPERATOR_BALANCE',
@@ -44,7 +46,7 @@ const checkOperatorBalance = async (
       return true
     }
 
-    if (amountInDora <= BigInt('50')) {
+    if (amountInDora <= 50) {
       logError(
         `🚫Operator has insufficient balance(below 50 DORA): ${amountInDora} DORA, Please recharge your balance`,
         'OPERATOR_BALANCE',
@@ -103,12 +105,14 @@ const main = async () => {
   while (true) {
     // get operator account by mnemonic
     const operatorWallet = await GenerateWallet(0)
-    const [{address}] = await operatorWallet.getAccounts()
+    const [{ address }] = await operatorWallet.getAccounts()
 
     // check operator balance
     const hasBalance = await checkOperatorBalance(address)
     if (!hasBalance) {
-      logError('Operator has no enoughbalance, exited...Please recharge your balance and restart the operator service')
+      logError(
+        'Operator has no enoughbalance, exited...Please recharge your balance and restart the operator service',
+      )
       process.exit(1)
     }
 
