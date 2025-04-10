@@ -1,11 +1,10 @@
 import {
-  CosmWasmClient,
   SigningCosmWasmClient,
   SigningCosmWasmClientOptions,
 } from '@cosmjs/cosmwasm-stargate'
 import { GasPrice } from '@cosmjs/stargate'
 
-import { getWallet } from '../../wallet'
+import { GenerateWallet } from '../../wallet'
 
 export const uploadDeactivateHistory = async (
   contract: string,
@@ -16,9 +15,8 @@ export const uploadDeactivateHistory = async (
     broadcastTimeoutMs: 16_000,
     gasPrice: GasPrice.fromString('100000000000peaka'),
   }
-  // const contractAddress = process.env.DEACTIVATE_RECORDER
   const contractAddress = contract
-  const wallet = await getWallet()
+  const wallet = await GenerateWallet(0)
   const signingCosmWasmClient = await SigningCosmWasmClient.connectWithSigner(
     process.env.RPC_ENDPOINT,
     wallet,

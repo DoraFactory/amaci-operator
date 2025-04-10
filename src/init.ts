@@ -2,22 +2,44 @@ import fs from 'fs'
 // import { Secp256k1HdWallet } from '@cosmjs/launchpad'
 import { downloadAndExtractZKeys } from './lib/downloadZkeys'
 import { genKeypair } from './lib/keypair'
-import { getWallet } from './wallet'
-
-import {
-  info,
-} from './logger'
+import { GenerateWallet } from './wallet'
+import { info, error as logError } from './logger'
 
 export async function init() {
-
   info('Init your coordinator info', 'INIT')
+
+  // check if env params are set
+  if (!process.env.COORDINATOR_PRI_KEY) {
+    logError('empty COORDINATOR_PRI_KEY in .env file!')
+    process.exit(1)
+  }
+
+  if (!process.env.MNEMONIC) {
+    logError('empty MNEMONIC in .env file!')
+    process.exit(1)
+  }
+
+  if (!process.env.RPC_ENDPOINT) {
+    logError('empty RPC_ENDPOINT in .env file!')
+    process.exit(1)
+  }
+
+  if (!process.env.IND_ENDPOINT) {
+    logError('empty IND_ENDPOINT in .env file!')
+    process.exit(1)
+  }
+
+  if (!process.env.DEACTIVATE_RECORDER) {
+    logError('empty DEACTIVATE_RECORDER in .env file!')
+    process.exit(1)
+  }
 
   if (!fs.existsSync(process.env.WORK_PATH || './work')) {
     fs.mkdirSync(process.env.WORK_PATH || './work')
   }
 
   const coordinator = genKeypair(BigInt(process.env.COORDINATOR_PRI_KEY))
-  const wallet = await getWallet()
+  const wallet = await GenerateWallet(0)
   const [{ address }] = await wallet.getAccounts()
 
   info('************************************************', 'INIT')

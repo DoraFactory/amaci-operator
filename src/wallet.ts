@@ -1,14 +1,21 @@
-import { Secp256k1HdWallet, Secp256k1Wallet } from '@cosmjs/launchpad'
+import { HdPath, stringToPath } from '@cosmjs/crypto';
+import { DirectSecp256k1HdWallet } from '@cosmjs/proto-signing';
 
-export const getWallet = async () => {
-  const mnemonic = process.env.MNEMONIC
-  const privKey = process.env.PRIVATE
+export async function GenerateWallet(index: number) {
+	const mnemonic = process.env.MNEMONIC;
 
-  if (mnemonic) {
-    return Secp256k1HdWallet.fromMnemonic(mnemonic, {
-      prefix: 'dora',
-    })
-  } else {
-    return Secp256k1Wallet.fromKey(Buffer.from(privKey, 'hex'), 'dora')
-  }
+	if (!mnemonic) {
+		console.log('Missing MNEMONIC in .env');
+		process.exit(0);
+	}
+
+	const path: HdPath = stringToPath(
+		"m/44'/" + '118' + "'/0'/0/" + index.toString()
+	);
+	const wallet = await DirectSecp256k1HdWallet.fromMnemonic(mnemonic, {
+		prefix: 'dora',
+		hdPaths: [path],
+	});
+
+	return wallet;
 }
