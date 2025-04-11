@@ -119,9 +119,9 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
           }
         }
 
+        log('input', input)
         // 在调用fullProve前
         validateInput(input)
-
         const { proof } = await groth16.fullProve(
           input,
           zkeyPath + maciRound.circuitPower + '_v3/deactivate.wasm',
