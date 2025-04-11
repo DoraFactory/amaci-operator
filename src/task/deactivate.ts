@@ -16,7 +16,11 @@ import { getChain } from '../chain'
 import { fetchAllDeactivateLogs, fetchRound } from '../vota/indexer'
 import { adaptToUncompressed } from '../vota/adapt'
 import { Timer } from '../storage/timer'
-import { startOperation, endOperation, setRoundCircuitPower } from '../lib/monitor'
+import {
+  startOperation,
+  endOperation,
+  setRoundCircuitPower,
+} from '../lib/monitor'
 
 const zkeyPath = './zkey/'
 
@@ -24,15 +28,15 @@ const deactivateInterval = Number(process.env.DEACTIVATE_INTERVAL)
 
 export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
   // 开始记录 deactivate 操作时间
-  const startTime = startOperation(id, 'deactivate');
-  
+  const startTime = startOperation(id, 'deactivate')
+
   try {
     log('\n\n\ndeactivate', id)
     const maciRound = await fetchRound(id)
 
     // 保存 round 的 circuit power 信息
     if (maciRound.circuitPower) {
-      setRoundCircuitPower(id, maciRound.circuitPower);
+      setRoundCircuitPower(id, maciRound.circuitPower)
     }
 
     const now = Date.now()
@@ -42,7 +46,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
     if (now < Number(maciRound.votingEnd) / 1e6) {
       if (!['Pending', 'Voting'].includes(maciRound.period)) {
         // 记录失败的操作
-        endOperation(id, 'deactivate', false, startTime, 'error status');
+        endOperation(id, 'deactivate', false, startTime, 'error status')
         return { error: { msg: 'error status' } }
       }
 
@@ -50,7 +54,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
 
       if (latestdeactivateAt + deactivateInterval > now) {
         // 记录失败的操作
-        endOperation(id, 'deactivate', false, startTime, 'too earlier');
+        endOperation(id, 'deactivate', false, startTime, 'too earlier')
         return { error: { msg: 'too earlier' } }
       }
     }
@@ -101,6 +105,20 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
       log('start to gen proof | deactivate')
       for (let i = 0; i < res.dMsgInputs.length; i++) {
         const { input, size } = res.dMsgInputs[i]
+        // 验证输入对象中的每个字段
+        const validateInput = (input: any) => {
+          for (const [key, value] of Object.entries(input)) {
+            if (value === undefined) {
+              throw new Error(`Input field ${key} is undefined`)
+            }
+            if (typeof value === 'object' && value !== null) {
+              validateInput(value)
+            }
+          }
+        }
+
+        // 在调用fullProve前
+        validateInput(input)
 
         const { proof } = await groth16.fullProve(
           input,
@@ -140,11 +158,11 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
     Timer.set(id, now)
 
     // 记录成功的操作
-    endOperation(id, 'deactivate', true, startTime, undefined);
+    endOperation(id, 'deactivate', true, startTime, undefined)
     return {}
   } catch (error: any) {
     // 记录失败的操作
-    endOperation(id, 'deactivate', false, startTime, error.message);
-    throw error;
+    endOperation(id, 'deactivate', false, startTime, error.message)
+    throw error
   }
 }
