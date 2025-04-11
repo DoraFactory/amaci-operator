@@ -5,7 +5,7 @@ import { GasPrice, calculateFee } from '@cosmjs/stargate'
 
 import { adaptToUncompressed } from '../vota/adapt'
 import { fetchAllVotesLogs, fetchRound } from '../vota/indexer'
-import { getContractSignerClient } from '../lib/client/utils'
+import { getContractSignerClient, withRetry } from '../lib/client/utils'
 import { maciParamsFromCircuitPower, ProofData, TaskAct } from '../types'
 import {
   info,
@@ -53,7 +53,13 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
   recordTaskStart('tally', id)
 
   try {
-    const maciRound = await fetchRound(id)
+    const maciRound = await withRetry(
+      () => fetchRound(id),
+      { 
+        context: 'INDEXER-FETCH-ROUND',
+        maxRetries: 3
+      }
+    );
     info(`Current round period:' ${maciRound.period}`, 'TALLY-TASK')
 
     info('Start round Tally ', 'TALLY-TASK')
@@ -74,11 +80,25 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
 
     // If the round is pending or voting, start the process period
     if (['Pending', 'Voting'].includes(maciRound.period)) {
-      const preiod = await maciClient.getPeriod()
+      const preiod = await withRetry(
+        () => maciClient.getPeriod(),
+        { 
+          context: 'RPC-GET-PERIOD',
+          maxRetries: 3
+        }
+      );
+      
       if (['pending', 'voting'].includes(preiod.status)) {
         const spGasPrice = GasPrice.fromString('100000000000peaka')
         const spGfee = calculateFee(20000000, spGasPrice)
-        const startProcessRes = await maciClient.startProcessPeriod(spGfee)
+        
+        const startProcessRes = await withRetry(
+          () => maciClient.startProcessPeriod(spGfee),
+          { 
+            context: 'RPC-START-PROCESS-PERIOD',
+            maxRetries: 3
+          }
+        );
 
         await sleep(6000)
 
@@ -105,10 +125,29 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       // } catch {}
     }
 
-    const dc = await maciClient.getProcessedDMsgCount()
+    const dc = await withRetry(
+      () => maciClient.getProcessedDMsgCount(),
+      { 
+        context: 'RPC-GET-DMSG-COUNT',
+        maxRetries: 3
+      }
+    );
 
-    const mc = await maciClient.getProcessedMsgCount()
-    const uc = await maciClient.getProcessedUserCount()
+    const mc = await withRetry(
+      () => maciClient.getProcessedMsgCount(),
+      { 
+        context: 'RPC-GET-MSG-COUNT',
+        maxRetries: 3
+      }
+    );
+    
+    const uc = await withRetry(
+      () => maciClient.getProcessedUserCount(),
+      { 
+        context: 'RPC-GET-USER-COUNT',
+        maxRetries: 3
+      }
+    );
 
     /**
      * 如果线上还没有开始处理交易，则总是重新生成证明
@@ -121,14 +160,27 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     }
 
     if (!allData) {
-      const logs = await fetchAllVotesLogs(id)
+      const logs = await withRetry(
+        () => fetchAllVotesLogs(id),
+        { 
+          context: 'INDEXER-FETCH-VOTES-LOGS',
+          maxRetries: 3
+        }
+      );
 
       info(
         `The current round has ${logs.signup.length} signups, ${logs.msg.length} messages, ${logs.dmsg.length} dmessages`,
         'TALLY-TASK',
       )
 
-      const maxVoteOptions = await maciClient.maxVoteOptions()
+      const maxVoteOptions = await withRetry(
+        () => maciClient.maxVoteOptions(),
+        { 
+          context: 'RPC-GET-MAX-VOTE-OPTIONS',
+          maxRetries: 3
+        }
+      );
+      
       const res = genMaciInputs(
         {
           ...params,
@@ -235,21 +287,45 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     if (mi < allData.msg.length) {
       for (; mi < allData.msg.length; mi++) {
         const { proofHex, commitment } = allData.msg[mi]
-        const res = await maciClient.processMessage({
-          groth16Proof: proofHex,
-          newStateCommitment: commitment,
-        })
+        const res = await withRetry(
+          () => maciClient.processMessage({
+            groth16Proof: proofHex,
+            newStateCommitment: commitment,
+          }),
+          {
+            context: 'RPC-PROCESS-MESSAGE',
+            maxRetries: 3
+          }
+        );
         debug(
           `processedMessage #${mi} 🛠️🛠️🛠️🛠️ with tx hash successfully ✅: ${res.transactionHash}`,
           'TALLY-TASK',
         )
       }
 
-      await maciClient.stopProcessingPeriod()
+      await withRetry(
+        () => maciClient.stopProcessingPeriod(),
+        {
+          context: 'RPC-STOP-PROCESSING-PERIOD',
+          maxRetries: 3
+        }
+      );
     } else {
-      const period = await maciClient.getPeriod()
+      const period = await withRetry(
+        () => maciClient.getPeriod(),
+        {
+          context: 'RPC-GET-PERIOD-FINAL',
+          maxRetries: 3
+        }
+      );
       if (period.status === 'processing') {
-        await maciClient.stopProcessingPeriod()
+        await withRetry(
+          () => maciClient.stopProcessingPeriod(),
+          {
+            context: 'RPC-STOP-PROCESSING-PERIOD',
+            maxRetries: 3
+          }
+        );
 
         await sleep(6000)
       }
@@ -260,10 +336,16 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     if (ui < allData.tally.length) {
       for (; ui < allData.tally.length; ui++) {
         const { proofHex, commitment } = allData.tally[ui]
-        const res = await maciClient.processTally({
-          groth16Proof: proofHex,
-          newTallyCommitment: commitment,
-        })
+        const res = await withRetry(
+          () => maciClient.processTally({
+            groth16Proof: proofHex,
+            newTallyCommitment: commitment,
+          }),
+          {
+            context: 'RPC-PROCESS-TALLY',
+            maxRetries: 3
+          }
+        );
         debug(
           `processedTally #${ui} 🛠️🛠️🛠️🛠️ with tx hash successfully ✅: ${res.transactionHash}`,
           'TALLY-TASK',
@@ -275,13 +357,19 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
           'Executing stopTallying and claim as batch operation...',
           'TALLY-TASK',
         )
-        const batchResult = await maciClient.stopTallyingAndClaim(
+        const batchResult = await withRetry(
+          () => maciClient.stopTallyingAndClaim(
+            {
+              results: allData.result,
+              salt: allData.salt,
+            },
+            'auto',
+          ),
           {
-            results: allData.result,
-            salt: allData.salt,
-          },
-          'auto',
-        )
+            context: 'RPC-STOP-TALLYING-AND-CLAIM',
+            maxRetries: 3
+          }
+        );
         info(
           `Batch operation completed successfully✅, tx hash: ${batchResult.transactionHash}`,
           'TALLY-TASK',
@@ -291,13 +379,25 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
 
         info('Trying operations separately...', 'TALLY-TASK')
         try {
-          await maciClient.stopTallyingPeriod({
-            results: allData.result,
-            salt: allData.salt,
-          })
+          await withRetry(
+            () => maciClient.stopTallyingPeriod({
+              results: allData.result,
+              salt: allData.salt,
+            }),
+            {
+              context: 'RPC-STOP-TALLYING-PERIOD',
+              maxRetries: 3
+            }
+          );
 
           info('Executing claim operation.....', 'TALLY-TASK')
-          const claimResult = await maciClient.claim('auto')
+          const claimResult = await withRetry(
+            () => maciClient.claim('auto'),
+            {
+              context: 'RPC-CLAIM',
+              maxRetries: 3
+            }
+          );
           info(
             `Claim operation completed successfully✅, tx hash: ${claimResult.transactionHash}`,
             'TALLY-TASK',
@@ -307,20 +407,32 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         }
       }
     } else {
-      const period = await maciClient.getPeriod()
+      const period = await withRetry(
+        () => maciClient.getPeriod(),
+        {
+          context: 'RPC-GET-PERIOD-FINAL',
+          maxRetries: 3
+        }
+      );
       if (period.status === 'tallying') {
         try {
           info(
             'Executing stopTallying and claim as batch operation...',
             'TALLY-TASK',
           )
-          const batchResult = await maciClient.stopTallyingAndClaim(
+          const batchResult = await withRetry(
+            () => maciClient.stopTallyingAndClaim(
+              {
+                results: allData.result,
+                salt: allData.salt,
+              },
+              'auto',
+            ),
             {
-              results: allData.result,
-              salt: allData.salt,
-            },
-            'auto',
-          )
+              context: 'RPC-STOP-TALLYING-AND-CLAIM-FINAL',
+              maxRetries: 3
+            }
+          );
           info(
             `Batch operation completed successfully✅, tx hash: ${batchResult.transactionHash}`,
             'TALLY-TASK',
@@ -330,13 +442,25 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
 
           info('Trying operations separately...', 'TALLY-TASK')
           try {
-            await maciClient.stopTallyingPeriod({
-              results: allData.result,
-              salt: allData.salt,
-            })
+            await withRetry(
+              () => maciClient.stopTallyingPeriod({
+                results: allData.result,
+                salt: allData.salt,
+              }),
+              {
+                context: 'RPC-STOP-TALLYING-PERIOD-FINAL',
+                maxRetries: 3
+              }
+            );
 
             info('Executing claim operation.....', 'TALLY-TASK')
-            const claimResult = await maciClient.claim('auto')
+            const claimResult = await withRetry(
+              () => maciClient.claim('auto'),
+              {
+                context: 'RPC-CLAIM',
+                maxRetries: 3
+              }
+            );
             info(
               `Claim operation completed successfully✅, tx hash: ${claimResult.transactionHash}`,
               'TALLY-TASK',

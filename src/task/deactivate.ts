@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { groth16 } from 'snarkjs'
 
-import { getContractSignerClient } from '../lib/client/utils'
+import { getContractSignerClient, withRetry } from '../lib/client/utils'
 import { uploadDeactivateHistory } from '../lib/client/Deactivate.client'
 import { genDeacitveMaciInputs } from '../operator/genDeactivateInputs'
 import {
@@ -39,7 +39,10 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
   recordTaskStart('deactivate', id)
 
   try {
-    const maciRound = await fetchRound(id)
+    const maciRound = await withRetry(() => fetchRound(id), {
+      context: 'INDEXER-FETCH-ROUND',
+      maxRetries: 3,
+    })
     info(`Current round period: ${maciRound.period}`, 'DEACTIVATE-TASK')
 
     info('Start round deactivate', 'DEACTIVATE-TASK')
@@ -65,9 +68,17 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
     const params = maciParamsFromCircuitPower(maciRound.circuitPower)
 
     const maciClient = await getContractSignerClient(id)
-    const dc = await maciClient.getProcessedDMsgCount()
 
-    const logs = await fetchAllDeactivateLogs(id)
+    const dc = await withRetry(() => maciClient.getProcessedDMsgCount(), {
+      context: 'RPC-GET-DMSG-COUNT',
+      maxRetries: 3,
+    })
+
+    const logs = await withRetry(() => fetchAllDeactivateLogs(id), {
+      context: 'INDEXER-FETCH-DEACTIVATE-LOGS',
+      maxRetries: 3,
+    })
+
     info('Fetched deactivate logs', 'DEACTIVATE-TASK', {
       signup: logs.signup.length,
       dmsg: logs.dmsg.length,
@@ -75,7 +86,13 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
     })
 
     if (logs.dmsg.length > Number(dc)) {
-      const maxVoteOptions = await maciClient.maxVoteOptions()
+      const maxVoteOptions = await withRetry(
+        () => maciClient.maxVoteOptions(),
+        {
+          context: 'RPC-GET-MAX-VOTE-OPTIONS',
+          maxRetries: 3,
+        },
+      )
 
       const res = genDeacitveMaciInputs(
         {
@@ -136,12 +153,21 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
 
       for (let i = 0; i < dmsg.length; i++) {
         const { proofHex, commitment, root, size } = dmsg[i]
-        const res = await maciClient.processDeactivateMessage({
-          groth16Proof: proofHex,
-          newDeactivateCommitment: commitment,
-          newDeactivateRoot: root,
-          size,
-        })
+
+        const res = await withRetry(
+          () =>
+            maciClient.processDeactivateMessage({
+              groth16Proof: proofHex,
+              newDeactivateCommitment: commitment,
+              newDeactivateRoot: root,
+              size,
+            }),
+          {
+            context: 'RPC-PROCESS-DEACTIVATE',
+            maxRetries: 3,
+          },
+        )
+
         info(
           `Processed deactivate message #${i} successfully✅`,
           'DEACTIVATE-TASK',
