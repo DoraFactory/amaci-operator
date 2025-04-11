@@ -66,6 +66,8 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
 
     const logs = await fetchAllDeactivateLogs(id)
 
+    log('logs', logs)
+
     if (logs.dmsg.length > Number(dc)) {
       const maxVoteOptions = await maciClient.maxVoteOptions()
 
