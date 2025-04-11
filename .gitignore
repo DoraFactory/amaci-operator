@@ -36,3 +36,4 @@ work
 .env
 zkey-backend
 zkeys-backend
+bench-data

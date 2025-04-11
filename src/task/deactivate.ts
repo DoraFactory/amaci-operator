@@ -110,6 +110,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
         // 验证输入对象中的每个字段
         const validateInput = (input: any) => {
           for (const [key, value] of Object.entries(input)) {
+            // log('key', key, 'value', value)
             if (value === undefined) {
               throw new Error(`Input field ${key} is undefined`)
             }
@@ -119,14 +120,21 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
           }
         }
 
-        log('input', input)
         // 在调用fullProve前
         validateInput(input)
+
+
+        const wasmPath = zkeyPath + maciRound.circuitPower + '_v3/deactivate.wasm';
+        const zkeyFilePath = zkeyPath + maciRound.circuitPower + '_v3/deactivate.zkey';
+        console.log(`Checking if WASM exists: ${fs.existsSync(wasmPath)}`);
+        console.log(`Checking if ZKEY exists: ${fs.existsSync(zkeyFilePath)}`);
+        
         const { proof } = await groth16.fullProve(
           input,
           zkeyPath + maciRound.circuitPower + '_v3/deactivate.wasm',
           zkeyPath + maciRound.circuitPower + '_v3/deactivate.zkey',
         )
+        log('proof is .....', proof)
         const proofHex = await adaptToUncompressed(proof)
         const commitment = input.newDeactivateCommitment.toString()
         const root = input.newDeactivateRoot.toString()
