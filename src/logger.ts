@@ -10,8 +10,15 @@ EventEmitter.defaultMaxListeners = 200;
 
 // 添加写入计数器 - 用于追踪写入次数并触发传输器重建
 const writeCounters = new Map<string, number>();
-// 降低最大写入次数阈值，更频繁地重建传输器以防止监听器累积
-const MAX_WRITES_BEFORE_REBUILD = 100;
+// 增加最大写入次数阈值，减少重建频率
+const MAX_WRITES_BEFORE_REBUILD = 10000;  // 增加到10000次写入后才考虑重建
+
+// 添加最小重建间隔时间(毫秒)，防止过于频繁的重建
+const MIN_REBUILD_INTERVAL = 5 * 60 * 1000;  // 最小重建间隔5分钟
+const lastRebuildTimes = new Map<string, number>();
+
+// 跟踪日志重建次数，用于减少日志输出
+const rebuildCounters = new Map<string, number>();
 
 // 添加监听器追踪Map
 const transportListenerCounts = new Map<string, number>();
@@ -152,63 +159,102 @@ const roundTransports = new Map<string, winston.transport>();
 const TRANSPORT_IDLE_TIMEOUT = 5 * 60 * 1000; // 5分钟
 // 定期清理不再使用的传输器
 const cleanupTransports = (forceCleanAll = false) => {
-  console.log(`[LOGGER] Running cleanup, force=${forceCleanAll}, transports=${roundTransports.size}`);
+  const transportCount = roundTransports.size;
+  const loggersCount = roundLoggers.size;
+  
+  // 只有当有东西需要清理时才输出日志
+  if (transportCount > 0 || loggersCount > 0) {
+    console.log(`[LOGGER] Running cleanup, force=${forceCleanAll}, transports=${transportCount}, loggers=${loggersCount}`);
+  } else if (!forceCleanAll) {
+    // 如果没有需要清理的内容且不是强制清理，则直接返回
+    return;
+  }
   
   const now = Date.now();
-  // 获取所有传输器
-  const transportEntries = Array.from(roundTransports.entries());
   
-  // 如果强制清理，则清理所有传输器
+  // 如果强制清理，则清理所有传输器和日志记录器
   if (forceCleanAll) {
-    console.log(`[LOGGER] Force cleaning all ${transportEntries.length} transports`);
-    for (const [roundId, transport] of transportEntries) {
+    console.log(`[LOGGER] Force cleaning all resources (${transportCount} transports, ${loggersCount} loggers)`);
+    
+    // 清理日志记录器
+    for (const [roundId, logger] of roundLoggers.entries()) {
+      try {
+        logger.close();
+        roundLoggers.delete(roundId);
+        writeCounters.delete(roundId);
+        lastRebuildTimes.delete(roundId);
+        rebuildCounters.delete(roundId);
+        transportListenerCounts.delete(roundId);
+      } catch (e) {
+        console.error(`[LOGGER] Error during force cleanup of logger ${roundId}: ${e}`);
+      }
+    }
+    
+    // 清理传输器
+    for (const [roundId, transport] of roundTransports.entries()) {
       try {
         if (typeof (transport as any).close === 'function') {
           (transport as any).close();
         }
         roundTransports.delete(roundId);
-        writeCounters.delete(roundId);
-        transportListenerCounts.delete(roundId);
-        console.log(`[LOGGER] Force cleaned transport for round ${roundId}`);
       } catch (e) {
-        console.error(`[LOGGER] Error during force cleanup of ${roundId}: ${e}`);
+        console.error(`[LOGGER] Error during force cleanup of transport ${roundId}: ${e}`);
       }
     }
+    
     // 额外的GC建议
     if (global.gc) {
       try {
         global.gc();
-        console.log('[LOGGER] Forced garbage collection after transport cleanup');
       } catch (e) {
-        console.error(`[LOGGER] Error during forced GC: ${e}`);
+        // 不输出GC错误
       }
     }
+    
+    console.log(`[LOGGER] Force cleanup completed`);
     return;
   }
   
-  // 常规清理 - 检查每个传输器的最后使用时间
+  // 常规清理 - 检查每个日志记录器的最后使用时间
   let cleanedCount = 0;
-  for (const [roundId, transport] of transportEntries) {
+  
+  // 清理日志记录器
+  for (const [roundId, logger] of roundLoggers.entries()) {
+    const lastUsed = lastRebuildTimes.get(roundId) || 0;
+    if (now - lastUsed > TRANSPORT_IDLE_TIMEOUT) {
+      try {
+        logger.close();
+        roundLoggers.delete(roundId);
+        writeCounters.delete(roundId);
+        lastRebuildTimes.delete(roundId);
+        rebuildCounters.delete(roundId);
+        transportListenerCounts.delete(roundId);
+        cleanedCount++;
+      } catch (e) {
+        // 减少错误日志
+      }
+    }
+  }
+  
+  // 清理传输器
+  for (const [roundId, transport] of roundTransports.entries()) {
     const lastUsed = (transport as any).lastUsed || 0;
     if (now - lastUsed > TRANSPORT_IDLE_TIMEOUT) {
-      // 关闭传输器
       try {
         if (typeof (transport as any).close === 'function') {
           (transport as any).close();
         }
-        // 从Map中移除
         roundTransports.delete(roundId);
-        writeCounters.delete(roundId);
-        transportListenerCounts.delete(roundId);
         cleanedCount++;
       } catch (e) {
-        console.error(`[LOGGER] Error during cleanup of ${roundId}: ${e}`);
+        // 减少错误日志
       }
     }
   }
   
+  // 只有当清理了资源时才输出日志
   if (cleanedCount > 0) {
-    console.log(`[LOGGER] Cleaned up ${cleanedCount} inactive transports`);
+    console.log(`[LOGGER] Cleaned up ${cleanedCount} inactive resources`);
   }
 };
 
@@ -257,7 +303,10 @@ function getRoundLogger(roundId: string, forceRebuild = false): winston.Logger {
         oldLogger.close();
         roundLoggers.delete(roundId);
       } catch (e) {
-        console.error(`[LOGGER] Error closing logger for ${roundId}: ${e}`);
+        // 减少错误日志输出，只在真正影响功能时输出
+        if (e instanceof Error && !e.message.includes('not found')) {
+          console.error(`[LOGGER] Error closing logger for ${roundId}: ${e}`);
+        }
       }
     }
     
@@ -317,7 +366,7 @@ export const closeAllTransports = () => {
   });
 });
 
-// 修改 logWithContext 函数，使用Winston标准API而不是直接操作传输器
+// 修改 logWithContext 函数，优化写入方式
 const logWithContext = (
   level: string,
   message: string | any,
@@ -365,19 +414,35 @@ const logWithContext = (
     let writeCount = writeCounters.get(roundId) || 0;
     writeCount++;
     
-    // 如果写入次数超过阈值，强制重建日志记录器
-    const forceRebuild = writeCount >= MAX_WRITES_BEFORE_REBUILD;
-    if (forceRebuild) {
-      console.log(`[LOGGER] Rebuilding logger for round ${roundId} after ${writeCount} writes`);
-      writeCount = 0;
-    }
-    
     // 更新计数器
     writeCounters.set(roundId, writeCount);
+    
+    // 检查是否需要重建 - 同时满足计数和时间间隔条件
+    const lastRebuildTime = lastRebuildTimes.get(roundId) || 0;
+    const timeSinceLastRebuild = Date.now() - lastRebuildTime;
+    const forceRebuild = writeCount >= MAX_WRITES_BEFORE_REBUILD && timeSinceLastRebuild > MIN_REBUILD_INTERVAL;
     
     try {
       // 获取或创建该round的日志记录器
       const roundLogger = getRoundLogger(roundId, forceRebuild);
+      
+      // 如果需要重建，记录重建信息（但减少输出频率）
+      if (forceRebuild) {
+        // 重置写入计数
+        writeCounters.set(roundId, 0);
+        
+        // 更新最后重建时间
+        lastRebuildTimes.set(roundId, Date.now());
+        
+        // 更新并检查重建计数器，每10次只输出一次日志
+        let rebuildCount = rebuildCounters.get(roundId) || 0;
+        rebuildCount++;
+        rebuildCounters.set(roundId, rebuildCount);
+        
+        if (rebuildCount % 10 === 1) {
+          console.log(`[LOGGER] Rebuilding logger for round ${roundId} (rebuild #${rebuildCount}, after ${writeCount} writes)`);
+        }
+      }
       
       // 使用标准Winston API记录日志
       roundLogger.log({
@@ -419,7 +484,7 @@ export const log = (...msgs: any[]) => {
 
 // 添加周期性强制重建所有活跃日志记录器的功能
 // 每小时执行一次彻底的重建，无论写入计数如何
-const FORCE_REBUILD_INTERVAL = 60 * 60 * 1000; // 1小时
+const FORCE_REBUILD_INTERVAL = 3 * 60 * 60 * 1000; // 改为3小时
 setInterval(() => {
   const activeRoundIds = Array.from(roundLoggers.keys());
   if (activeRoundIds.length > 0) {
@@ -434,71 +499,80 @@ setInterval(() => {
   }
 }, FORCE_REBUILD_INTERVAL);
 
-// trace the operation of specific constract operation tasks
-export const startOperation = (operation: string, module?: string, context?: Record<string, any>) => {
-  const startTimestamp = Date.now();
-  // 转换为标准的年月日时分秒格式，不指定特定时区
-  const date = new Date(startTimestamp);
-  const startTimeFormatted = 
-    `${date.getFullYear()}-` + 
-    `${String(date.getMonth() + 1).padStart(2, '0')}-` +
-    `${String(date.getDate()).padStart(2, '0')} ` +
-    `${String(date.getHours()).padStart(2, '0')}:` +
-    `${String(date.getMinutes()).padStart(2, '0')}:` +
-    `${String(date.getSeconds()).padStart(2, '0')}.` +
-    `${String(date.getMilliseconds()).padStart(3, '0')}`;
-  
-  const opContext = { 
-    operation, 
-    operationStartTime: startTimeFormatted,
-    ...context
-  };
+// 定期强制重建机制只需保留一个，删除重复的方法
+// 降低清理间隔到30分钟，减少资源消耗
+const CLEANUP_INTERVAL_MS = 30 * 60 * 1000; // 30分钟
+setInterval(() => cleanupTransports(), CLEANUP_INTERVAL_MS);
 
-  // 如果是 inspect 操作，清除 round 上下文
-  if (operation === 'inspect') {
-    clearContext(['round', 'roundId']);
+// 添加格式化时间函数
+function formatDuration(ms: number): string {
+  if (ms < 1000) {
+    return `${ms}ms`;
+  } else if (ms < 60000) {
+    return `${(ms / 1000).toFixed(2)}s`;
+  } else {
+    const minutes = Math.floor(ms / 60000);
+    const seconds = ((ms % 60000) / 1000).toFixed(2);
+    return `${minutes}m ${seconds}s`;
   }
+}
 
-  return info(`=== START: ${operation} ===`, module, opContext);
+// startOperation, endOperation和separator函数
+export const startOperation = (operationName: string, context: Record<string, any> = {}) => {
+  const timestamp = new Date();
+  const timestampStr = timestamp.toISOString();
+  const formattedTimestamp = colors.cyan(timestampStr);
+  
+  // 创建上下文副本，避免修改原始对象
+  const operationContext: Record<string, any> = { ...context, operation: operationName, startTime: timestamp };
+  
+  // 设置操作开始时间以便后续计算持续时间
+  if (!operationContext.operations) {
+    operationContext.operations = {};
+  }
+  operationContext.operations[operationName] = { startTime: timestamp };
+  
+  // 记录日志
+  logWithContext('info', `${colors.bold('▶')} Starting ${colors.bold(operationName)}`, operationContext);
+  
+  return operationContext;
 };
 
-export const endOperation = (operation: string, success: boolean, module?: string, context?: Record<string, any>) => {
-  const endTimestamp = Date.now();
-  // 转换为标准的年月日时分秒格式，不指定特定时区
-  const date = new Date(endTimestamp);
-  const endTimeFormatted = 
-    `${date.getFullYear()}-` + 
-    `${String(date.getMonth() + 1).padStart(2, '0')}-` +
-    `${String(date.getDate()).padStart(2, '0')} ` +
-    `${String(date.getHours()).padStart(2, '0')}:` +
-    `${String(date.getMinutes()).padStart(2, '0')}:` +
-    `${String(date.getSeconds()).padStart(2, '0')}.` +
-    `${String(date.getMilliseconds()).padStart(3, '0')}`;
+export const endOperation = (operationName: string, success: boolean, operationContext: Record<string, any> = {}) => {
+  const endTime = new Date();
+  let duration = 0;
   
-  const status = success ? 'SUCCESS' : 'FAILED';
-  const opContext: Record<string, any> = { 
-    operation,
-    operationEndTime: endTimeFormatted,
-    operationStatus: status,
-    ...context
-  };
-  
-  // 如果上下文中有开始时间，计算持续时间
-  if (currentContext.operationStart) {
-    const duration = endTimestamp - currentContext.operationStart;
-    opContext.operationDuration = `${duration}ms`;
+  // 计算操作持续时间
+  if (operationContext.operations && operationContext.operations[operationName]?.startTime) {
+    const startTime = operationContext.operations[operationName].startTime;
+    duration = endTime.getTime() - startTime.getTime();
   }
   
-  const level = success ? LogLevel.INFO : LogLevel.ERROR;
-  return logWithContext(level, `=== END: ${operation} (${status}) ===`, module, opContext);
+  const durationStr = formatDuration(duration);
+  const status = success ? colors.green('✓ Success') : colors.red('✗ Failed');
+  
+  // 记录日志
+  logWithContext(
+    success ? 'info' : 'error',
+    `${success ? colors.bold('✓') : colors.bold('✗')} ${colors.bold(operationName)} ${status} (${durationStr})`,
+    operationContext
+  );
+  
+  return operationContext;
 };
 
-// add separator
-export const separator = (title?: string, module?: string) => {
-  const line = title 
-    ? `========== ${title} ==========` 
-    : '==============================';
-  return info(line, module);
+export const separator = (title?: string) => {
+  const lineWidth = 80;
+  let line = '';
+  
+  if (title) {
+    const padding = Math.max(0, Math.floor((lineWidth - title.length - 2) / 2));
+    line = '='.repeat(padding) + ' ' + title + ' ' + '='.repeat(lineWidth - padding - title.length - 2);
+  } else {
+    line = '='.repeat(lineWidth);
+  }
+  
+  logWithContext('info', colors.yellow(line));
 };
 
 // 添加用于设置当前 round 的辅助函数
