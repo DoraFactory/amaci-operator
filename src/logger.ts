@@ -5,6 +5,27 @@ import path from 'path';
 import colors from 'colors/safe';
 import { EventEmitter } from 'events';
 
+// 大幅增加监听器限制，避免警告
+EventEmitter.defaultMaxListeners = 200;
+
+// 添加写入计数器 - 用于追踪写入次数并触发传输器重建
+const writeCounters = new Map<string, number>();
+// 降低最大写入次数阈值，更频繁地重建传输器以防止监听器累积
+const MAX_WRITES_BEFORE_REBUILD = 100;
+
+// 添加监听器追踪Map
+const transportListenerCounts = new Map<string, number>();
+
+// 添加警告监听
+process.on('warning', (warning) => {
+  if (warning.name === 'MaxListenersExceededWarning') {
+    console.error(`[CRITICAL] Memory leak warning: ${warning.message}`);
+    console.error(`Round transports cache size: ${roundTransports.size}`);
+    // 触发全量清理
+    cleanupTransports(true);
+  }
+});
+
 // define the log level
 export enum LogLevel {
   ERROR = 'error',
@@ -127,90 +148,176 @@ export const getContext = () => ({ ...currentContext });
 // 为每个 round 创建专用的文件传输器
 const roundTransports = new Map<string, winston.transport>();
 
-// 设置更高的最大监听器数量
-EventEmitter.defaultMaxListeners = 50;
-
+// 修改清理时间间隔为5分钟
+const TRANSPORT_IDLE_TIMEOUT = 5 * 60 * 1000; // 5分钟
 // 定期清理不再使用的传输器
-const cleanupTransports = () => {
+const cleanupTransports = (forceCleanAll = false) => {
+  console.log(`[LOGGER] Running cleanup, force=${forceCleanAll}, transports=${roundTransports.size}`);
+  
   const now = Date.now();
   // 获取所有传输器
   const transportEntries = Array.from(roundTransports.entries());
   
-  // 检查每个传输器的最后使用时间，如果超过1小时则关闭并移除
+  // 如果强制清理，则清理所有传输器
+  if (forceCleanAll) {
+    console.log(`[LOGGER] Force cleaning all ${transportEntries.length} transports`);
+    for (const [roundId, transport] of transportEntries) {
+      try {
+        if (typeof (transport as any).close === 'function') {
+          (transport as any).close();
+        }
+        roundTransports.delete(roundId);
+        writeCounters.delete(roundId);
+        transportListenerCounts.delete(roundId);
+        console.log(`[LOGGER] Force cleaned transport for round ${roundId}`);
+      } catch (e) {
+        console.error(`[LOGGER] Error during force cleanup of ${roundId}: ${e}`);
+      }
+    }
+    // 额外的GC建议
+    if (global.gc) {
+      try {
+        global.gc();
+        console.log('[LOGGER] Forced garbage collection after transport cleanup');
+      } catch (e) {
+        console.error(`[LOGGER] Error during forced GC: ${e}`);
+      }
+    }
+    return;
+  }
+  
+  // 常规清理 - 检查每个传输器的最后使用时间
+  let cleanedCount = 0;
   for (const [roundId, transport] of transportEntries) {
     const lastUsed = (transport as any).lastUsed || 0;
-    if (now - lastUsed > 60 * 60 * 1000) { // 1小时
+    if (now - lastUsed > TRANSPORT_IDLE_TIMEOUT) {
       // 关闭传输器
-      if (typeof (transport as any).close === 'function') {
-        (transport as any).close();
+      try {
+        if (typeof (transport as any).close === 'function') {
+          (transport as any).close();
+        }
+        // 从Map中移除
+        roundTransports.delete(roundId);
+        writeCounters.delete(roundId);
+        transportListenerCounts.delete(roundId);
+        cleanedCount++;
+      } catch (e) {
+        console.error(`[LOGGER] Error during cleanup of ${roundId}: ${e}`);
       }
-      // 从Map中移除
-      roundTransports.delete(roundId);
-      console.log(`[LOGGER] Cleaned up transport for round ${roundId}`);
     }
+  }
+  
+  if (cleanedCount > 0) {
+    console.log(`[LOGGER] Cleaned up ${cleanedCount} inactive transports`);
   }
 };
 
-// 每小时执行一次清理
-setInterval(cleanupTransports, 60 * 60 * 1000);
+// 更频繁地执行清理 - 每5分钟
+setInterval(() => cleanupTransports(), TRANSPORT_IDLE_TIMEOUT);
 
-// 获取或创建特定 round 的日志传输器
-function getRoundTransport(roundId: string): winston.transport {
-  if (!roundTransports.has(roundId)) {
-    // 创建 round 专用的日志文件
-    const roundLogPath = path.join(process.env.WORK_PATH || "./work", `round_${roundId}.log`);
+// 创建专用的round日志记录器
+function createRoundLogger(roundId: string): winston.Logger {
+  const roundLogPath = path.join(process.env.WORK_PATH || "./work", `round_${roundId}.log`);
+  
+  // 创建一个单独的Winston logger实例
+  const roundLogger = winston.createLogger({
+    level: 'info',
+    format: winston.format.combine(
+      winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss.SSS' }),
+      winston.format.printf(({ timestamp, level, message, operation }) => {
+        const opStr = operation ? `[${operation}]` : '';
+        const levelStr = String(level || 'INFO').toUpperCase();
+        const messageStr = message || '';
+        return `[${timestamp}] [${levelStr}] ${opStr} ${messageStr}`;
+      })
+    ),
+    transports: [
+      new winston.transports.File({
+        filename: roundLogPath,
+        maxsize: 10 * 1024 * 1024, // 10MB
+        maxFiles: 3
+      })
+    ]
+  });
+  
+  return roundLogger;
+}
+
+// 创建一个Map来存储round的logger实例
+const roundLoggers = new Map<string, winston.Logger>();
+
+// 获取或创建特定 round 的日志传输器 (使用winston logger API而不是直接访问传输器)
+function getRoundLogger(roundId: string, forceRebuild = false): winston.Logger {
+  // 如果要求强制重建或者不存在此日志记录器
+  if (forceRebuild || !roundLoggers.has(roundId)) {
+    // 如果已存在则先关闭
+    if (roundLoggers.has(roundId)) {
+      try {
+        const oldLogger = roundLoggers.get(roundId)!;
+        oldLogger.close();
+        roundLoggers.delete(roundId);
+      } catch (e) {
+        console.error(`[LOGGER] Error closing logger for ${roundId}: ${e}`);
+      }
+    }
     
-    // 创建该 round 的传输器
-    const transport = new winston.transports.File({
-      filename: roundLogPath,
-      maxsize: 10 * 1024 * 1024, // 10MB 最大文件大小
-      maxFiles: 3,               // 当超过大小时，保留最多3个归档文件
-      tailable: true,            // 确保总是追加到日志文件末尾
-      format: winston.format.combine(
-        winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss.SSS' }),
-        winston.format.printf(({ timestamp, level, message, operation, ...rest }) => {
-          // 简化的日志格式，专注于操作和消息
-          const opStr = operation ? `[${operation}]` : '';
-          const levelStr = String(level || 'INFO').toUpperCase();
-          const messageStr = message || '';
-          return `[${timestamp}] [${levelStr}] ${opStr} ${messageStr}`;
-        })
-      )
-    });
+    // 创建新的logger
+    const newLogger = createRoundLogger(roundId);
+    roundLoggers.set(roundId, newLogger);
     
-    // 添加最后使用时间
-    (transport as any).lastUsed = Date.now();
+    // 重置写入计数
+    writeCounters.set(roundId, 0);
+    transportListenerCounts.set(roundId, 0);
     
-    roundTransports.set(roundId, transport);
-  } else {
-    // 更新最后使用时间
-    const transport = roundTransports.get(roundId)!;
-    (transport as any).lastUsed = Date.now();
+    return newLogger;
   }
   
-  return roundTransports.get(roundId)!;
+  return roundLoggers.get(roundId)!;
 }
 
 // 添加关闭所有传输器的方法（在程序退出时调用）
 export const closeAllTransports = () => {
-  for (const [roundId, transport] of roundTransports.entries()) {
-    if (typeof (transport as any).close === 'function') {
-      (transport as any).close();
+  console.log(`[LOGGER] Closing all loggers (${roundLoggers.size} round loggers)`);
+  
+  // 关闭所有轮次的日志记录器
+  for (const [roundId, logger] of roundLoggers.entries()) {
+    try {
+      logger.close();
+      console.log(`[LOGGER] Closed logger for round ${roundId}`);
+    } catch (e) {
+      console.error(`[LOGGER] Error closing logger for round ${roundId}: ${e}`);
     }
   }
-  roundTransports.clear();
+  roundLoggers.clear();
+  writeCounters.clear();
+  transportListenerCounts.clear();
   
-  // 也关闭主日志传输器
-  winstonLogger.close();
-  console.log('[LOGGER] Closed all transports');
+  // 关闭主日志传输器
+  try {
+    winstonLogger.close();
+    console.log('[LOGGER] Closed main logger');
+  } catch (e) {
+    console.error(`[LOGGER] Error closing main logger: ${e}`);
+  }
 };
 
-// 处理程序退出
-process.on('exit', () => {
-  closeAllTransports();
+// 确保在所有可能的退出信号上释放资源
+['exit', 'SIGINT', 'SIGUSR1', 'SIGUSR2', 'uncaughtException', 'SIGTERM'].forEach((eventType) => {
+  process.on(eventType as any, () => {
+    console.log(`[LOGGER] Received ${eventType} signal, closing loggers...`);
+    closeAllTransports();
+    
+    // 对于非正常退出信号，确保进程终止
+    if (eventType !== 'exit' && eventType !== 'uncaughtException') {
+      // 给日志系统一点时间来完成关闭操作
+      setTimeout(() => {
+        process.exit(0);
+      }, 500);
+    }
+  });
 });
 
-// 修改 logWithContext 函数，支持按 round 记录日志
+// 修改 logWithContext 函数，使用Winston标准API而不是直接操作传输器
 const logWithContext = (
   level: string,
   message: string | any,
@@ -243,7 +350,7 @@ const logWithContext = (
     }
   }
 
-  // Record the log
+  // Record the log to main logger
   winstonLogger.log({
     level,
     message: finalMessage,
@@ -254,22 +361,40 @@ const logWithContext = (
   // 如果上下文中包含 round ID，则同时记录到特定 round 的日志文件
   const roundId = contextObj.round || contextObj.roundId;
   if (roundId) {
-    // 获取或创建该 round 的传输器
-    const roundTransport = getRoundTransport(roundId);
+    // 更新写入计数器并检查是否需要重建日志记录器
+    let writeCount = writeCounters.get(roundId) || 0;
+    writeCount++;
     
-    // 使用Winston的格式化器创建日志条目
-    const logEntry = {
-      level,
-      message: finalMessage,
-      operation: contextObj.operation,
-      timestamp: new Date().toISOString()
-    };
+    // 如果写入次数超过阈值，强制重建日志记录器
+    const forceRebuild = writeCount >= MAX_WRITES_BEFORE_REBUILD;
+    if (forceRebuild) {
+      console.log(`[LOGGER] Rebuilding logger for round ${roundId} after ${writeCount} writes`);
+      writeCount = 0;
+    }
     
-    // 使用Winston的格式化器处理日志
-    const formattedLog = (roundTransport as any).format.transform(logEntry);
+    // 更新计数器
+    writeCounters.set(roundId, writeCount);
     
-    // 写入格式化后的日志
-    (roundTransport as any).write(formattedLog);
+    try {
+      // 获取或创建该round的日志记录器
+      const roundLogger = getRoundLogger(roundId, forceRebuild);
+      
+      // 使用标准Winston API记录日志
+      roundLogger.log({
+        level,
+        message: finalMessage,
+        operation: contextObj.operation,
+        timestamp: new Date().toISOString()
+      });
+    } catch (e) {
+      console.error(`[LOGGER] Error writing to round logger: ${e}`);
+      
+      // 如果写入失败，下次使用时强制重建日志记录器
+      if (roundLoggers.has(roundId)) {
+        roundLoggers.delete(roundId);
+        writeCounters.delete(roundId);
+      }
+    }
   }
 };
 
@@ -291,6 +416,23 @@ export const debug = (message: any, moduleOrContext?: string | Record<string, an
 export const log = (...msgs: any[]) => {
   return info(msgs.join(' '));
 };
+
+// 添加周期性强制重建所有活跃日志记录器的功能
+// 每小时执行一次彻底的重建，无论写入计数如何
+const FORCE_REBUILD_INTERVAL = 60 * 60 * 1000; // 1小时
+setInterval(() => {
+  const activeRoundIds = Array.from(roundLoggers.keys());
+  if (activeRoundIds.length > 0) {
+    console.log(`[LOGGER] Periodic force rebuild of ${activeRoundIds.length} active loggers`);
+    for (const roundId of activeRoundIds) {
+      try {
+        getRoundLogger(roundId, true); // 强制重建
+      } catch (e) {
+        console.error(`[LOGGER] Error during periodic rebuild of ${roundId}: ${e}`);
+      }
+    }
+  }
+}, FORCE_REBUILD_INTERVAL);
 
 // trace the operation of specific constract operation tasks
 export const startOperation = (operation: string, module?: string, context?: Record<string, any>) => {
