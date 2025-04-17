@@ -68,22 +68,22 @@ const checkOperatorBalance = async (
 // 修改进程退出处理程序，确保先关闭日志系统再退出
 process.on('SIGINT', async () => {
   info('Received SIGINT, shutting down...', 'MAIN')
-  updateOperatorStatus(false)
+  updateOperatorStatus(false) // 这会记录最终运行时间
   // 确保日志被完全写入后再退出
   await new Promise<void>(resolve => {
     closeAllTransports();
-    setTimeout(resolve, 500); // 给日志系统500ms完成关闭
+    setTimeout(resolve, 1000); // 给日志和指标系统1秒完成关闭
   });
   process.exit(0)
 })
 
 process.on('SIGTERM', async () => {
   info('Received SIGTERM, shutting down...', 'MAIN')
-  updateOperatorStatus(false)
+  updateOperatorStatus(false) // 这会记录最终运行时间
   // 确保日志被完全写入后再退出
   await new Promise<void>(resolve => {
     closeAllTransports();
-    setTimeout(resolve, 500); // 给日志系统500ms完成关闭
+    setTimeout(resolve, 1000); // 给日志和指标系统1秒完成关闭
   });
   process.exit(0)
 })
@@ -96,10 +96,10 @@ type NodeProcessSignal = 'SIGUSR1' | 'SIGUSR2';
 (['SIGUSR1', 'SIGUSR2'] as NodeProcessSignal[]).forEach((signal) => {
   process.on(signal, async () => {
     info(`Received ${signal}, shutting down...`, 'MAIN')
-    updateOperatorStatus(false)
+    updateOperatorStatus(false) // 这会记录最终运行时间
     await new Promise<void>(resolve => {
       closeAllTransports();
-      setTimeout(resolve, 500);
+      setTimeout(resolve, 1000); // 给日志和指标系统1秒完成关闭
     });
     process.exit(0);
   });
@@ -108,10 +108,10 @@ type NodeProcessSignal = 'SIGUSR1' | 'SIGUSR2';
 // 单独处理未捕获异常
 process.on('uncaughtException', async (err) => {
   logError(`Uncaught exception: ${err.message}\n${err.stack}`, 'MAIN');
-  updateOperatorStatus(false)
+  updateOperatorStatus(false) // 这会记录最终运行时间
   await new Promise<void>(resolve => {
     closeAllTransports();
-    setTimeout(resolve, 500);
+    setTimeout(resolve, 1000); // 给日志和指标系统1秒完成关闭
   });
   process.exit(1);
 });
@@ -170,7 +170,14 @@ const main = async () => {
       logError(
         'Operator has no enoughbalance, exited...Please recharge your balance and restart the operator service',
       )
-      updateOperatorStatus(false) // Update status to down
+      updateOperatorStatus(false) // 记录最终运行时间
+      
+      // 确保日志和指标系统有时间同步
+      await new Promise<void>(resolve => {
+        closeAllTransports();
+        setTimeout(resolve, 1000);
+      });
+      
       process.exit(1)
     }
 

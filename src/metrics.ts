@@ -8,10 +8,13 @@ const register = new client.Registry()
 // Add default metrics
 client.collectDefaultMetrics({ register })
 
-// Replace uptime with operator status metric
-const operatorStatus = new client.Gauge({
-  name: 'amaci_operator_status',
-  help: 'Status of the operator service (1 = up, 0 = down)',
+// 服务启动时间
+const startTime = Date.now()
+
+// Add operator uptime metric in seconds
+const operatorUptime = new client.Gauge({
+  name: 'amaci_operator_uptime_seconds',
+  help: 'How long the operator service has been running, in seconds',
   registers: [register],
 })
 
@@ -109,11 +112,12 @@ const taskDurationGauge = new client.Gauge({
 // Task start times map
 const taskStartTimes = new Map<string, Map<string, number>>()
 
-// Update service status periodically instead of uptime
-const startTime = Date.now()
+// 定期更新服务运行时间而不是二元状态
 setInterval(() => {
-  // If this code executes, operator is up
-  operatorStatus.set(1)
+  // 计算服务运行时间（秒）
+  const uptimeSeconds = (Date.now() - startTime) / 1000
+  // 更新运行时间指标
+  operatorUptime.set(uptimeSeconds)
 }, 10000)
 
 /**
@@ -328,10 +332,19 @@ export const updateOperatorBalance = (balance: number) => {
 /**
  * Update operator status
  * @param isUp Whether the operator is up (true) or down (false)
+ * @deprecated Use the uptime metric instead of binary up/down status
  */
 export const updateOperatorStatus = (isUp: boolean) => {
-  operatorStatus.set(isUp ? 1 : 0)
-  info(`Updated operator status to ${isUp ? 'UP' : 'DOWN'}`, 'METRICS')
+  // 该函数现在只记录日志，不再设置二元状态
+  // 服务运行时间指标会自动更新，不需要手动设置
+  info(`Operator status tracking: ${isUp ? 'Running' : 'Shutting down'}`, 'METRICS')
+  
+  // 如果服务即将关闭，记录最终运行时间
+  if (!isUp) {
+    const finalUptimeSeconds = (Date.now() - startTime) / 1000
+    operatorUptime.set(finalUptimeSeconds)
+    info(`Final operator uptime: ${finalUptimeSeconds.toFixed(2)} seconds`, 'METRICS')
+  }
 }
 
 /**
