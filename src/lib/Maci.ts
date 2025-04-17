@@ -65,6 +65,7 @@ export class MACI {
   public readonly voteOptionTreeDepth: number
   public readonly batchSize: number
 
+  public readonly deactivateTreeDepth: number 
   public states: MACI_STATES
 
   protected maxVoteOptions: number
@@ -134,10 +135,12 @@ export class MACI {
     numSignUps: number,
     isQuadraticCost: boolean,
   ) {
+    const deactivateTreeDepth = stateTreeDepth + 2
     this.stateTreeDepth = stateTreeDepth
     this.intStateTreeDepth = intStateTreeDepth
     this.voteOptionTreeDepth = voteOptionTreeDepth
     this.batchSize = batchSize
+    this.deactivateTreeDepth = deactivateTreeDepth
     this.maxVoteOptions = maxVoteOptions
     this.voSize = 5 ** voteOptionTreeDepth
     this.numSignUps = numSignUps
@@ -166,7 +169,7 @@ export class MACI {
 
     this.activeStateTree = new Tree(5, stateTreeDepth, 0n)
     this.tallyResults = new Tree(5, voteOptionTreeDepth, 0n)
-    this.deactivateTree = new Tree(5, stateTreeDepth, 0n)
+    this.deactivateTree = new Tree(5, deactivateTreeDepth, 0n)
     this.deactivateSize = 0
     this.dCommands = []
     this.dMessages = []

@@ -236,8 +236,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
 
         const { proof } = await groth16.fullProve(
           input,
-          zkeyPath + maciRound.circuitPower + '_v2/msg.wasm',
-          zkeyPath + maciRound.circuitPower + '_v2/msg.zkey',
+          zkeyPath + maciRound.circuitPower + '_v3/msg.wasm',
+          zkeyPath + maciRound.circuitPower + '_v3/msg.zkey',
         )
 
         const proofHex = await adaptToUncompressed(proof)
@@ -259,8 +259,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
 
         const { proof } = await groth16.fullProve(
           input,
-          zkeyPath + maciRound.circuitPower + '_v2/tally.wasm',
-          zkeyPath + maciRound.circuitPower + '_v2/tally.zkey',
+          zkeyPath + maciRound.circuitPower + '_v3/tally.wasm',
+          zkeyPath + maciRound.circuitPower + '_v3/tally.zkey',
         )
 
         const proofHex = await adaptToUncompressed(proof)

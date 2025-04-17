@@ -51,13 +51,13 @@ export async function init() {
 
   info('Check your required zkey files🧐🧐🧐🧐', 'INIT')
 
-  if (!fs.existsSync('./zkey/2-1-1-5_v2')) {
-    info('Start to download zkey: 2-1-1-5_v2', 'INIT')
-    await downloadAndExtractZKeys('2-1-1-5_v2')
+  if (!fs.existsSync('./zkey/2-1-1-5_v3')) {
+    info('Start to download zkey: 2-1-1-5_v3', 'INIT')
+    await downloadAndExtractZKeys('2-1-1-5_v3')
   }
 
-  if (!fs.existsSync('./zkey/4-2-2-25_v2')) {
-    info('download zkey: 4-2-2-25_v2', 'INIT')
-    await downloadAndExtractZKeys('4-2-2-25_v2')
+  if (!fs.existsSync('./zkey/4-2-2-25_v3')) {
+    info('download zkey: 4-2-2-25_v3', 'INIT')
+    await downloadAndExtractZKeys('4-2-2-25_v3')
   }
 }
