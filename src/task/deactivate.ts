@@ -107,28 +107,6 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
       log('start to gen proof | deactivate')
       for (let i = 0; i < res.dMsgInputs.length; i++) {
         const { input, size } = res.dMsgInputs[i]
-        // 验证输入对象中的每个字段
-        const validateInput = (input: any) => {
-          for (const [key, value] of Object.entries(input)) {
-            // log('key', key, 'value', value)
-            if (value === undefined) {
-              throw new Error(`Input field ${key} is undefined`)
-            }
-            if (typeof value === 'object' && value !== null) {
-              validateInput(value)
-            }
-          }
-        }
-
-        // 在调用fullProve前
-        validateInput(input)
-
-
-        const wasmPath = zkeyPath + maciRound.circuitPower + '_v3/deactivate.wasm';
-        const zkeyFilePath = zkeyPath + maciRound.circuitPower + '_v3/deactivate.zkey';
-        console.log(`Checking if WASM exists: ${fs.existsSync(wasmPath)}`);
-        console.log(`Checking if ZKEY exists: ${fs.existsSync(zkeyFilePath)}`);
-        
         const { proof } = await groth16.fullProve(
           input,
           zkeyPath + maciRound.circuitPower + '_v3/deactivate.wasm',

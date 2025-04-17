@@ -64,7 +64,7 @@ export class MACI {
   public readonly voteOptionTreeDepth: number
   public readonly batchSize: number
 
-  public readonly deactivateTreeDepth: number 
+  public readonly deactivateTreeDepth: number
 
   public states: MACI_STATES
 
@@ -136,7 +136,6 @@ export class MACI {
     isQuadraticCost: boolean,
   ) {
     const deactivateTreeDepth = stateTreeDepth + 2
-    
     this.stateTreeDepth = stateTreeDepth
     this.intStateTreeDepth = intStateTreeDepth
     this.voteOptionTreeDepth = voteOptionTreeDepth
@@ -449,16 +448,7 @@ export class MACI {
         0,
       ]
 
-
-      if (stateIdx > 625) {
-        log('stateIdx is ', stateIdx)
-        log('subStateTree is ', subStateTree)
-        log('i is ', i)
-        log('cmd is ', cmd)
-        log('error is ', error)
-        currentStateLeavesPathElements[i] = subStateTree.pathElementOf(stateIdx)  
-      }
-      
+      currentStateLeavesPathElements[i] = subStateTree.pathElementOf(stateIdx)
       activeStateLeavesPathElements[i] =
         this.activeStateTree.pathElementOf(stateIdx)
       deactivateLeavesPathElements[i] = this.deactivateTree.pathElementOf(
