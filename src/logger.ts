@@ -562,9 +562,10 @@ export const endOperation = (operationName: string, success: boolean, operationC
   if (finalContext.operations && finalContext.operations[operationName]?.startTime) {
     const startTime = finalContext.operations[operationName].startTime;
     duration = endTime.getTime() - startTime.getTime();
-    console.log('duration is !!!!!!!', duration);
+    console.log('Here is executed??????')
   }
   
+  console.log('duration is !!!!!!!', duration);
   const durationStr = formatDuration(duration);
   const status = success ? colors.green('✓ Success') : colors.red('✗ Failed');
   
