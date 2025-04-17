@@ -2,7 +2,7 @@ import _ from 'lodash'
 import { Task, TaskResult } from './types'
 import * as T from './task'
 import { TestStorage } from './storage/TestStorage'
-import { info, error as logError, warn as logWarn } from './logger'
+import { info, error as logError, warn as logWarn, closeAllTransports } from './logger'
 
 import { init } from './init'
 import {
@@ -65,18 +65,56 @@ const checkOperatorBalance = async (
   }
 }
 
-// Add process exit handler process exit handler
-process.on('SIGINT', () => {
+// 修改进程退出处理程序，确保先关闭日志系统再退出
+process.on('SIGINT', async () => {
   info('Received SIGINT, shutting down...', 'MAIN')
-  updateOperatorStatus(false)
+  updateOperatorStatus(false) // 这会记录最终运行时间
+  // 确保日志被完全写入后再退出
+  await new Promise<void>(resolve => {
+    closeAllTransports();
+    setTimeout(resolve, 1000); // 给日志和指标系统1秒完成关闭
+  });
   process.exit(0)
 })
 
-process.on('SIGTERM', () => {
+process.on('SIGTERM', async () => {
   info('Received SIGTERM, shutting down...', 'MAIN')
-  updateOperatorStatus(false)
+  updateOperatorStatus(false) // 这会记录最终运行时间
+  // 确保日志被完全写入后再退出
+  await new Promise<void>(resolve => {
+    closeAllTransports();
+    setTimeout(resolve, 1000); // 给日志和指标系统1秒完成关闭
+  });
   process.exit(0)
 })
+
+// 添加更多信号处理
+// 定义支持的进程信号类型
+type NodeProcessSignal = 'SIGUSR1' | 'SIGUSR2';
+
+// 使用类型安全的方式添加信号处理
+(['SIGUSR1', 'SIGUSR2'] as NodeProcessSignal[]).forEach((signal) => {
+  process.on(signal, async () => {
+    info(`Received ${signal}, shutting down...`, 'MAIN')
+    updateOperatorStatus(false) // 这会记录最终运行时间
+    await new Promise<void>(resolve => {
+      closeAllTransports();
+      setTimeout(resolve, 1000); // 给日志和指标系统1秒完成关闭
+    });
+    process.exit(0);
+  });
+});
+
+// 单独处理未捕获异常
+process.on('uncaughtException', async (err) => {
+  logError(`Uncaught exception: ${err.message}\n${err.stack}`, 'MAIN');
+  updateOperatorStatus(false) // 这会记录最终运行时间
+  await new Promise<void>(resolve => {
+    closeAllTransports();
+    setTimeout(resolve, 1000); // 给日志和指标系统1秒完成关闭
+  });
+  process.exit(1);
+});
 
 const main = async () => {
   await init()
@@ -132,7 +170,14 @@ const main = async () => {
       logError(
         'Operator has no enoughbalance, exited...Please recharge your balance and restart the operator service',
       )
-      updateOperatorStatus(false) // Update status to down
+      updateOperatorStatus(false) // 记录最终运行时间
+      
+      // 确保日志和指标系统有时间同步
+      await new Promise<void>(resolve => {
+        closeAllTransports();
+        setTimeout(resolve, 1000);
+      });
+      
       process.exit(1)
     }
 

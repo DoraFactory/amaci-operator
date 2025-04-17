@@ -32,23 +32,7 @@
           "color": {
             "mode": "thresholds"
           },
-          "mappings": [
-            {
-              "options": {
-                "0": {
-                  "color": "semi-dark-red",
-                  "index": 1,
-                  "text": "Down"
-                },
-                "1": {
-                  "color": "green",
-                  "index": 0,
-                  "text": "Up"
-                }
-              },
-              "type": "value"
-            }
-          ],
+          "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -58,7 +42,7 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "s"
         },
         "overrides": []
       },
@@ -95,14 +79,14 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "amaci_operator_status{job=\"$job\"}",
+          "expr": "amaci_operator_uptime_seconds{job=\"$job\"}",
           "interval": "",
           "legendFormat": "",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Runtime",
+      "title": "Uptime",
       "type": "stat"
     },
     {
@@ -875,9 +859,9 @@
       {
         "allValue": "",
         "current": {
-          "selected": true,
-          "text": "",
-          "value": ""
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
         },
         "datasource": {
           "type": "prometheus",
@@ -911,6 +895,6 @@
   "timezone": "",
   "title": "AMACI Operator Monitor",
   "uid": "amaci-operator",
-  "version": 1,
+  "version": 24,
   "weekStart": ""
 }
