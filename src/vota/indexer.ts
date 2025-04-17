@@ -307,41 +307,84 @@ async function fetchOne<T>(query: string): Promise<T> {
     },
     body: JSON.stringify({ query }),
   })
-    .then((res) => res.json())
-    .then((res) => {
-      const key = Object.keys(res.data)[0]
-      return res.data[key] as T
+    .then(async (res) => {
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const text = await res.text();
+        const preview = text.substring(0, 100);
+        throw new Error(`Received non-JSON response (${contentType}): ${preview}...`);
+      }
+      return res.json();
     })
+    .then((res) => {
+      if (res.errors) {
+        const errorMsg = res.errors.map((e: any) => e.message).join(', ');
+        throw new Error(`GraphQL API error: ${errorMsg}`);
+      }
+      
+      if (!res.data) {
+        throw new Error('Empty response data from GraphQL API');
+      }
+      
+      const key = Object.keys(res.data)[0];
+      return res.data[key] as T;
+    });
 }
 
 async function fetchAllPages<T>(query: string, variables: any): Promise<T[]> {
-  let hasNextPage = true
-  let offset = 0
-  const limit = 100 // Adjust the limit as needed
-  const allData: T[] = []
+  let hasNextPage = true;
+  let offset = 0;
+  const limit = 100; // Adjust the limit as needed
+  const allData: T[] = [];
 
   while (hasNextPage) {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify({
-        query,
-        variables: { ...variables, limit, offset },
-      }),
-    }).then((res) => res.json())
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          query,
+          variables: { ...variables, limit, offset },
+        }),
+      });
+      
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const text = await response.text();
+        const preview = text.substring(0, 100);
+        throw new Error(`Received non-JSON response (${contentType}): ${preview}...`);
+      }
+      
+      const jsonResponse = await response.json();
+      
+      if (jsonResponse.errors) {
+        const errorMsg = jsonResponse.errors.map((e: any) => e.message).join(', ');
+        throw new Error(`GraphQL API error: ${errorMsg}`);
+      }
+      
+      if (!jsonResponse.data) {
+        throw new Error('Empty response data from GraphQL API');
+      }
+      
+      const key = Object.keys(jsonResponse.data)[0];
+      
+      if (!jsonResponse.data[key] || !jsonResponse.data[key].nodes || !jsonResponse.data[key].pageInfo) {
+        throw new Error(`Invalid response format from GraphQL API: missing nodes or pageInfo in ${key}`);
+      }
 
-    const key = Object.keys(response.data)[0]
-
-    const { nodes, pageInfo } = response.data[key]
-    allData.push(...nodes)
-    hasNextPage = pageInfo.hasNextPage
-    offset += limit
+      const { nodes, pageInfo } = jsonResponse.data[key];
+      allData.push(...nodes);
+      hasNextPage = pageInfo.hasNextPage;
+      offset += limit;
+    } catch (error) {
+      throw new Error(`Failed to fetch page at offset ${offset}: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
-  return allData
+  return allData;
 }
 
 export const fetchRounds = async (coordinatorPubkey: string[]) => {

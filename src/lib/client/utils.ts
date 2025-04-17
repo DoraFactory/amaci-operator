@@ -31,7 +31,7 @@ export async function withRetry<T>(
     retryableErrors = [
       "502", "503", "504", "timeout", "ECONNREFUSED", "ETIMEDOUT", 
       "ECONNRESET", "connection reset", "connection refused", "network error",
-      "socket hang up", "cors error", "rate limit"
+      "socket hang up", "cors error", "rate limit", "html", "<html"
     ],
     context = 'RPC'
   } = options;
@@ -46,6 +46,26 @@ export async function withRetry<T>(
       lastError = error;
       
       const errorMsg = error.toString().toLowerCase();
+      
+      // 检测HTML响应 - 这通常表示服务器问题，应该被视为可重试错误
+      const isHtmlResponse = 
+        errorMsg.includes("<html") || 
+        errorMsg.includes("<!doctype") || 
+        (error.message && (
+          error.message.includes("Unexpected token '<'") ||
+          error.message.includes("not valid JSON")
+        ));
+      
+      // 如果是HTML响应，将其添加到错误消息中以便更好地调试
+      if (isHtmlResponse) {
+        warn(`服务器返回了HTML而不是JSON (attempt ${attempt}/${maxRetries + 1}): ${error.message}`, context);
+        // 这是可以重试的错误
+        await new Promise(resolve => setTimeout(resolve, delay));
+        delay = Math.min(delay * backoffFactor, maxDelay);
+        continue;
+      }
+      
+      // 常规错误处理
       const isRetryable = retryableErrors.some(e => errorMsg.includes(e.toLowerCase()));
       
       if (attempt <= maxRetries && isRetryable) {
