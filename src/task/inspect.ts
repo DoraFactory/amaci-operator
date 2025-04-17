@@ -27,8 +27,8 @@ export const inspect: TaskAct = async () => {
   // Metrics: record the task start with a global id which is used for all tasks
   recordTaskStart('inspect', 'global')
 
-  // logger: start the inspection
-  startOperation('inspect', 'INSPECT')
+  // logger: start the inspection - 保存操作上下文
+  const operationContext = startOperation('inspect', 'INSPECT')
   info('Starting rounds inspection', 'INSPECT')
 
   try {
@@ -136,12 +136,18 @@ export const inspect: TaskAct = async () => {
     updateRoundStatus(stats.status)
     // Metrics: update the active rounds
     updateActiveRounds(activeRounds)
+
+    // 记录执行时间
+    const duration = Date.now() - startTime
+    info(`Inspection completed in ${duration}ms`, 'INSPECT')
+
     // Metrics: record the inspection success
     recordTaskSuccess('inspect')
     // Metrics: record the inspection end
     recordTaskEnd('inspect', 'global')
 
-    endOperation('inspect', true, 'INSPECT')
+    // 使用保存的操作上下文
+    endOperation('inspect', true, operationContext)
     return { newTasks }
   } catch (err: any) {
     const duration = Date.now() - startTime
@@ -149,7 +155,8 @@ export const inspect: TaskAct = async () => {
       `Inspection failed after ${duration}ms: ${err.message || String(err)}`,
       'INSPECT',
     )
-    endOperation('inspect', false, 'INSPECT')
+    // 使用保存的操作上下文
+    endOperation('inspect', false, operationContext)
     recordTaskEnd('inspect', 'global')
     throw err
   }

@@ -46,8 +46,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
   // logger: set the current round ID
   setCurrentRound(id)
 
-  // logger: start the operation
-  startOperation('tally', 'TALLY-TASK')
+  // logger: start the operation - 保存操作上下文
+  const operationContext = startOperation('tally', 'TALLY-TASK')
 
   // Metrics: Record the task start
   recordTaskStart('tally', id)
@@ -477,8 +477,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
 
     info(`Completed round Tally for ${id}`, 'TALLY-TASK')
 
-    // logger: end the operation
-    endOperation('tally', true, 'TALLY-TASK')
+    // logger: end the operation - 使用保存的上下文
+    endOperation('tally', true, operationContext)
     // Metrics: record the task success
     recordTaskSuccess('tally')
     // Metrics: record the round completion
@@ -489,8 +489,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
   } catch (err) {
     // logger: log the error
     logError(err, 'TALLY-TASK', { operation: 'tally' })
-    // logger: end the operation
-    endOperation('tally', false, 'TALLY-TASK')
+    // logger: end the operation - 使用保存的上下文
+    endOperation('tally', false, operationContext)
     // Metrics: record the task end
     recordTaskEnd('tally', id)
     throw err

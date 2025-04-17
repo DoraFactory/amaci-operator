@@ -33,7 +33,8 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
   // log the round id
   setCurrentRound(id)
 
-  startOperation('deactivate', 'DEACTIVATE-TASK')
+  // 保存startOperation返回的上下文对象
+  const operationContext = startOperation('deactivate', 'DEACTIVATE-TASK')
 
   // Metrics: record the task starttrics: record the task start
   recordTaskStart('deactivate', id)
@@ -190,16 +191,16 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
 
     Timer.set(id, now)
 
-    // logger: end the task
-    endOperation('deactivate', true, 'DEACTIVATE-TASK')
+    // logger: end the task - 使用相同的上下文对象
+    endOperation('deactivate', true, operationContext)
     // Metrics: record the task success
     recordTaskSuccess('deactivate')
     // Metrics: end the task
     recordTaskEnd('deactivate', id)
     return {}
   } catch (err) {
-    // logger: end the task
-    endOperation('deactivate', false, 'DEACTIVATE-TASK')
+    // logger: end the task - 使用相同的上下文对象
+    endOperation('deactivate', false, operationContext)
     // Metrics: record the task end
     recordTaskEnd('deactivate', id)
     throw err

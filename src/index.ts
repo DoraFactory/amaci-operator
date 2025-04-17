@@ -2,7 +2,7 @@ import _ from 'lodash'
 import { Task, TaskResult } from './types'
 import * as T from './task'
 import { TestStorage } from './storage/TestStorage'
-import { info, error as logError, warn as logWarn, closeAllTransports } from './logger'
+import { info, error as logError, warn as logWarn, closeAllTransports, emergencyCloseLoggers } from './logger'
 
 import { init } from './init'
 import {
@@ -65,55 +65,92 @@ const checkOperatorBalance = async (
   }
 }
 
-// 修改进程退出处理程序，确保先关闭日志系统再退出
-process.on('SIGINT', async () => {
-  info('Received SIGINT, shutting down...', 'MAIN')
-  updateOperatorStatus(false) // 这会记录最终运行时间
-  // 确保日志被完全写入后再退出
-  await new Promise<void>(resolve => {
-    closeAllTransports();
-    setTimeout(resolve, 1000); // 给日志和指标系统1秒完成关闭
-  });
-  process.exit(0)
-})
+// 添加一个标志跟踪进程是否正在退出
+let isShuttingDown = false;
+let shutdownTimer: NodeJS.Timeout | null = null;
 
-process.on('SIGTERM', async () => {
-  info('Received SIGTERM, shutting down...', 'MAIN')
-  updateOperatorStatus(false) // 这会记录最终运行时间
-  // 确保日志被完全写入后再退出
-  await new Promise<void>(resolve => {
-    closeAllTransports();
-    setTimeout(resolve, 1000); // 给日志和指标系统1秒完成关闭
-  });
-  process.exit(0)
-})
-
-// 添加更多信号处理
-// 定义支持的进程信号类型
-type NodeProcessSignal = 'SIGUSR1' | 'SIGUSR2';
-
-// 使用类型安全的方式添加信号处理
-(['SIGUSR1', 'SIGUSR2'] as NodeProcessSignal[]).forEach((signal) => {
-  process.on(signal, async () => {
-    info(`Received ${signal}, shutting down...`, 'MAIN')
-    updateOperatorStatus(false) // 这会记录最终运行时间
-    await new Promise<void>(resolve => {
+// 统一处理退出过程
+const gracefulShutdown = async (signal: string, exitCode: number = 0) => {
+  // 如果已经在关闭中，不要重复处理
+  if (isShuttingDown) {
+    console.log(`Already shutting down, ignoring duplicate ${signal} signal`);
+    return;
+  }
+  
+  // 设置退出标志
+  isShuttingDown = true;
+  
+  // 强制退出定时器 - 确保即使卡住也能退出
+  if (shutdownTimer) {
+    clearTimeout(shutdownTimer);
+  }
+  
+  // 设置3秒后的强制退出
+  shutdownTimer = setTimeout(() => {
+    console.log(`[SHUTDOWN] Forcing exit after timeout - some data may be lost`);
+    // 使用紧急关闭函数确保至少尝试清理一下
+    try {
+      emergencyCloseLoggers();
+    } catch (e) {
+      // 忽略任何错误
+    }
+    // 强制退出
+    process.exit(exitCode);
+  }, 3000);
+  
+  // 记录退出信息
+  info(`Received ${signal}, shutting down...`, 'MAIN');
+  
+  // 更新运行状态
+  updateOperatorStatus(false);
+  
+  // 确保日志被完全写入
+  try {
+    console.log('[SHUTDOWN] Closing all resources and flushing logs...');
+    
+    // 同步更新状态
+    try {
+      await new Promise<void>(resolve => {
+        // 给pushMetrics调用一些时间, 如果使用了这个函数的话
+        setTimeout(resolve, 200);
+      });
+    } catch (e) {
+      // 忽略任何错误
+    }
+    
+    // 关闭日志系统 - 更快的版本
+    try {
       closeAllTransports();
-      setTimeout(resolve, 1000); // 给日志和指标系统1秒完成关闭
-    });
-    process.exit(0);
-  });
-});
+    } catch (e) {
+      console.error('[SHUTDOWN] Error closing loggers:', e);
+    }
+    
+    // 短暂延迟确保资源释放
+    await new Promise<void>(resolve => setTimeout(resolve, 500));
+    
+    // 清除退出定时器
+    if (shutdownTimer) {
+      clearTimeout(shutdownTimer);
+    }
+    
+    // 正常退出
+    console.log(`[SHUTDOWN] Exiting with code ${exitCode}`);
+    process.exit(exitCode);
+  } catch (err) {
+    console.error('[SHUTDOWN] Error during shutdown:', err);
+    // 出现错误时也要退出
+    process.exit(exitCode);
+  }
+};
 
-// 单独处理未捕获异常
-process.on('uncaughtException', async (err) => {
+// 统一注册所有信号处理
+process.on('SIGINT', () => gracefulShutdown('SIGINT', 0));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM', 0));
+process.on('SIGUSR1', () => gracefulShutdown('SIGUSR1', 0));
+process.on('SIGUSR2', () => gracefulShutdown('SIGUSR2', 0));
+process.on('uncaughtException', (err) => {
   logError(`Uncaught exception: ${err.message}\n${err.stack}`, 'MAIN');
-  updateOperatorStatus(false) // 这会记录最终运行时间
-  await new Promise<void>(resolve => {
-    closeAllTransports();
-    setTimeout(resolve, 1000); // 给日志和指标系统1秒完成关闭
-  });
-  process.exit(1);
+  gracefulShutdown('uncaughtException', 1);
 });
 
 const main = async () => {
@@ -169,16 +206,10 @@ const main = async () => {
     if (!hasBalance) {
       logError(
         'Operator has no enoughbalance, exited...Please recharge your balance and restart the operator service',
-      )
-      updateOperatorStatus(false) // 记录最终运行时间
-      
-      // 确保日志和指标系统有时间同步
-      await new Promise<void>(resolve => {
-        closeAllTransports();
-        setTimeout(resolve, 1000);
-      });
-      
-      process.exit(1)
+      );
+      // 使用统一的退出函数
+      gracefulShutdown('INSUFFICIENT_BALANCE', 1);
+      return; // 防止继续执行
     }
 
     const task = tasks.shift() || DefaultTask

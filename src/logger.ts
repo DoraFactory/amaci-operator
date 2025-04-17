@@ -324,46 +324,87 @@ function getRoundLogger(roundId: string, forceRebuild = false): winston.Logger {
   return roundLoggers.get(roundId)!;
 }
 
+// 添加一个锁，防止多次调用closeAllTransports
+let isClosingLoggers = false;
+let forceExitTimeout: NodeJS.Timeout | null = null;
+
 // 添加关闭所有传输器的方法（在程序退出时调用）
 export const closeAllTransports = () => {
+  // 如果已经在关闭中，直接返回，避免重复关闭
+  if (isClosingLoggers) {
+    console.log('[LOGGER] Already closing loggers, skipping duplicate call');
+    return;
+  }
+  
+  // 设置一个强制退出定时器，确保即使日志系统卡住也能退出
+  if (forceExitTimeout) {
+    clearTimeout(forceExitTimeout);
+  }
+  forceExitTimeout = setTimeout(() => {
+    console.log('[LOGGER] Forced shutdown due to timeout - some logs may be lost');
+    isClosingLoggers = false; // 重置标志以便下次可以再次尝试关闭
+  }, 2000); // 2秒后强制结束
+  
+  // 设置标志，表示正在关闭
+  isClosingLoggers = true;
+  
   console.log(`[LOGGER] Closing all loggers (${roundLoggers.size} round loggers)`);
   
-  // 关闭所有轮次的日志记录器
-  for (const [roundId, logger] of roundLoggers.entries()) {
-    try {
-      logger.close();
-      console.log(`[LOGGER] Closed logger for round ${roundId}`);
-    } catch (e) {
-      console.error(`[LOGGER] Error closing logger for round ${roundId}: ${e}`);
-    }
-  }
-  roundLoggers.clear();
-  writeCounters.clear();
-  transportListenerCounts.clear();
-  
-  // 关闭主日志传输器
   try {
-    winstonLogger.close();
-    console.log('[LOGGER] Closed main logger');
-  } catch (e) {
-    console.error(`[LOGGER] Error closing main logger: ${e}`);
+    // 首先关闭主日志记录器
+    try {
+      winstonLogger.end(); // 使用end()而不是close()，它会刷新并关闭
+      console.log('[LOGGER] Main logger ended');
+    } catch (e) {
+      console.error(`[LOGGER] Error ending main logger: ${e}`);
+    }
+    
+    // 关闭所有轮次的日志记录器 - 限制每个操作的时间
+    for (const [roundId, logger] of roundLoggers.entries()) {
+      try {
+        logger.end(); // 使用end()而不是close()
+        console.log(`[LOGGER] Ended logger for round ${roundId}`);
+      } catch (e) {
+        console.error(`[LOGGER] Error ending logger for round ${roundId}: ${e}`);
+      }
+    }
+  } finally {
+    // 无论成功与否，都清理资源
+    roundLoggers.clear();
+    writeCounters.clear();
+    transportListenerCounts.clear();
+    
+    // 清理完成，清除定时器
+    if (forceExitTimeout) {
+      clearTimeout(forceExitTimeout);
+      forceExitTimeout = null;
+    }
+    
+    // 完成关闭
+    isClosingLoggers = false;
+    console.log('[LOGGER] All loggers closed');
   }
 };
 
-// 确保在所有可能的退出信号上释放资源
-['exit', 'SIGINT', 'SIGUSR1', 'SIGUSR2', 'uncaughtException', 'SIGTERM'].forEach((eventType) => {
-  process.on(eventType as any, () => {
-    console.log(`[LOGGER] Received ${eventType} signal, closing loggers...`);
-    closeAllTransports();
-    
-    // 对于非正常退出信号，确保进程终止
-    if (eventType !== 'exit' && eventType !== 'uncaughtException') {
-      // 给日志系统一点时间来完成关闭操作
-      setTimeout(() => {
-        process.exit(0);
-      }, 500);
+// 为了安全起见，添加一个简化版的同步关闭函数，用于process.exit之前的紧急情况
+export const emergencyCloseLoggers = () => {
+  console.log('[LOGGER] Emergency logger shutdown');
+  try {
+    winstonLogger.clear(); // 清除所有传输器
+    for (const logger of roundLoggers.values()) {
+      try { logger.clear(); } catch (e) {}
     }
-  });
+  } catch (e) {
+    // 忽略错误，确保不阻止进程退出
+  }
+};
+
+// 注册退出处理程序 - 只在logger.ts中注册用于清理logger资源的处理程序
+// index.ts中的处理程序负责应用级别的退出
+process.on('exit', () => {
+  console.log('[LOGGER] Process exit - final cleanup');
+  // 在exit事件中只能执行同步操作，所以使用emergencyCloseLoggers
+  emergencyCloseLoggers();
 });
 
 // 修改 logWithContext 函数，优化写入方式
@@ -561,11 +602,34 @@ export const endOperation = (operationName: string, success: boolean, operationC
   // 计算操作持续时间
   if (finalContext.operations && finalContext.operations[operationName]?.startTime) {
     const startTime = finalContext.operations[operationName].startTime;
-    duration = endTime.getTime() - startTime.getTime();
-    console.log('Here is executed??????')
+    
+    // 如果startTime是Date对象，使用getTime()
+    if (startTime instanceof Date) {
+      duration = endTime.getTime() - startTime.getTime();
+    } 
+    // 如果startTime是数字（毫秒时间戳），直接计算差值
+    else if (typeof startTime === 'number') {
+      duration = endTime.getTime() - startTime;
+    } 
+    // 其他情况，尝试强制转换
+    else {
+      try {
+        const timestamp = Number(startTime);
+        if (!isNaN(timestamp)) {
+          duration = endTime.getTime() - timestamp;
+        }
+      } catch (e) {
+        console.error(`Failed to calculate duration for operation ${operationName}: Invalid startTime format`);
+      }
+    }
   }
   
-  console.log('duration is !!!!!!!', duration);
+  // 确保duration至少为1ms，避免显示0ms
+  if (duration < 1) {
+    duration = 1;
+    console.warn(`Operation ${operationName} had zero duration, setting to 1ms minimum`);
+  }
+  
   const durationStr = formatDuration(duration);
   const status = success ? colors.green('✓ Success') : colors.red('✗ Failed');
   
