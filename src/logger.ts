@@ -518,13 +518,20 @@ function formatDuration(ms: number): string {
 }
 
 // startOperation, endOperation和separator函数
-export const startOperation = (operationName: string, context: Record<string, any> = {}) => {
+export const startOperation = (operationName: string, context: Record<string, any> | string = {}) => {
   const timestamp = new Date();
   const timestampStr = timestamp.toISOString();
   const formattedTimestamp = colors.cyan(timestampStr);
   
-  // 创建上下文副本，避免修改原始对象
-  const operationContext: Record<string, any> = { ...context, operation: operationName, startTime: timestamp };
+  // 处理字符串类型的context（向后兼容）
+  let operationContext: Record<string, any> = {};
+  if (typeof context === 'string') {
+    // 如果context是字符串，将其作为operationTag
+    operationContext = { operationTag: context, operation: operationName, startTime: timestamp };
+  } else {
+    // 创建上下文副本，避免修改原始对象
+    operationContext = { ...context, operation: operationName, startTime: timestamp };
+  }
   
   // 设置操作开始时间以便后续计算持续时间
   if (!operationContext.operations) {
@@ -538,13 +545,22 @@ export const startOperation = (operationName: string, context: Record<string, an
   return operationContext;
 };
 
-export const endOperation = (operationName: string, success: boolean, operationContext: Record<string, any> = {}) => {
+export const endOperation = (operationName: string, success: boolean, operationContext: Record<string, any> | string = {}) => {
   const endTime = new Date();
   let duration = 0;
   
+  // 处理字符串类型的context（向后兼容）
+  let finalContext: Record<string, any> = {};
+  if (typeof operationContext === 'string') {
+    // 如果context是字符串，将其作为operationTag
+    finalContext = { operationTag: operationContext };
+  } else {
+    finalContext = operationContext;
+  }
+  
   // 计算操作持续时间
-  if (operationContext.operations && operationContext.operations[operationName]?.startTime) {
-    const startTime = operationContext.operations[operationName].startTime;
+  if (finalContext.operations && finalContext.operations[operationName]?.startTime) {
+    const startTime = finalContext.operations[operationName].startTime;
     duration = endTime.getTime() - startTime.getTime();
   }
   
@@ -555,10 +571,10 @@ export const endOperation = (operationName: string, success: boolean, operationC
   logWithContext(
     success ? 'info' : 'error',
     `${success ? colors.bold('✓') : colors.bold('✗')} ${colors.bold(operationName)} ${status} (${durationStr})`,
-    operationContext
+    finalContext
   );
   
-  return operationContext;
+  return finalContext;
 };
 
 export const separator = (title?: string) => {
