@@ -1,6 +1,6 @@
 import * as client from 'prom-client'
 import express from 'express'
-import { info, error } from './logger'
+import { info, error, debug } from './logger'
 
 // Create Registry
 const register = new client.Registry()
@@ -337,13 +337,13 @@ export const updateOperatorBalance = (balance: number) => {
 export const updateOperatorStatus = (isUp: boolean) => {
   // 该函数现在只记录日志，不再设置二元状态
   // 服务运行时间指标会自动更新，不需要手动设置
-  info(`Operator status tracking: ${isUp ? 'Running' : 'Shutting down'}`, 'METRICS')
+  debug(`Operator status tracking: ${isUp ? 'Running' : 'Shutting down'}`, 'METRICS')
   
   // 如果服务即将关闭，记录最终运行时间
   if (!isUp) {
     const finalUptimeSeconds = (Date.now() - startTime) / 1000
     operatorUptime.set(finalUptimeSeconds)
-    info(`Final operator uptime: ${finalUptimeSeconds.toFixed(2)} seconds`, 'METRICS')
+    debug(`Final operator uptime: ${finalUptimeSeconds.toFixed(2)} seconds`, 'METRICS')
   }
 }
 

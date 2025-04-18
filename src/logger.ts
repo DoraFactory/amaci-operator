@@ -585,7 +585,7 @@ export const startOperation = (operationName: string, context: Record<string, an
   operationContext.operations[operationName] = { startTime: timestamp };
   
   // 记录日志
-  logWithContext('info', `${colors.bold('▶')} Starting ${colors.bold(operationName)}`, operationContext);
+  logWithContext('info', `▶ Starting ${operationName}`, operationContext);
   
   return operationContext;
 };
