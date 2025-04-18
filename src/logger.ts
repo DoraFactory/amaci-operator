@@ -332,75 +332,46 @@ function getRoundLogger(roundId: string, forceRebuild = false): winston.Logger {
 let isClosingLoggers = false;
 let forceExitTimeout: NodeJS.Timeout | null = null;
 
-// 添加关闭所有传输器的方法（在程序退出时调用）
-export const closeAllTransports = () => {
-  // 如果已经在关闭中，直接返回，避免重复关闭
-  if (isClosingLoggers) {
-    console.log(`[${new Date().toISOString()}][LOGGER] Already closing loggers, skipping duplicate call`);
-    return;
-  }
-  
-  // 设置一个强制退出定时器，确保即使日志系统卡住也能退出
-  if (forceExitTimeout) {
-    clearTimeout(forceExitTimeout);
-  }
-  forceExitTimeout = setTimeout(() => {
-    console.log(`[${new Date().toISOString()}][LOGGER] Forced shutdown due to timeout - some logs may be lost`);
-    isClosingLoggers = false; // 重置标志以便下次可以再次尝试关闭
-  }, 2000); // 2秒后强制结束
-  
-  // 设置标志，表示正在关闭
-  isClosingLoggers = true;
-  
-  console.log(`[${new Date().toISOString()}][LOGGER] Closing all loggers (${roundLoggers.size} round loggers)`);
-  
-  try {
-    // 首先关闭主日志记录器
-    try {
-      winstonLogger.end(); // 使用end()而不是close()，它会刷新并关闭
-      console.log(`[${new Date().toISOString()}][LOGGER] Main logger ended`);
-    } catch (e) {
-      console.error(`[${new Date().toISOString()}][LOGGER] Error ending main logger: ${e}`);
+// 修改关闭所有传输器的方法
+export const closeAllTransports = async () => {
+    // 如果已经在关闭中，直接返回
+    if (isClosingLoggers) {
+        console.log(`[${new Date().toISOString()}][LOGGER] Already closing loggers, skipping duplicate call`);
+        return false;
     }
-    
-    // 关闭所有轮次的日志记录器 - 限制每个操作的时间
-    for (const [roundId, logger] of roundLoggers.entries()) {
-      try {
-        logger.end(); // 使用end()而不是close()
-        console.log(`[${new Date().toISOString()}][LOGGER] Ended logger for round ${roundId}`);
-      } catch (e) {
-        console.error(`[${new Date().toISOString()}][LOGGER] Error ending logger for round ${roundId}: ${e}`);
-      }
-    }
-  } finally {
-    // 无论成功与否，都清理资源
-    roundLoggers.clear();
-    writeCounters.clear();
-    transportListenerCounts.clear();
-    
-    // 清理完成，清除定时器
-    if (forceExitTimeout) {
-      clearTimeout(forceExitTimeout);
-      forceExitTimeout = null;
-    }
-    
-    // 完成关闭
-    isClosingLoggers = false;
-    console.log(`[${new Date().toISOString()}][LOGGER] All loggers closed`);
-  }
+
+    // 使用优雅关闭机制
+    return gracefulShutdown(5000);
 };
 
-// 为了安全起见，添加一个简化版的同步关闭函数，用于process.exit之前的紧急情况
+// 修改紧急关闭函数
 export const emergencyCloseLoggers = () => {
-  console.log(`[${new Date().toISOString()}][LOGGER] Emergency logger shutdown`);
-  try {
-    winstonLogger.clear(); // 清除所有传输器
-    for (const logger of roundLoggers.values()) {
-      try { logger.clear(); } catch (e) {}
+    console.log(`[${new Date().toISOString()}][LOGGER] Emergency logger shutdown`);
+    try {
+        // 清除所有传输器
+        winstonLogger.clear();
+        winstonLogger.close();
+        
+        // 清除所有round logger
+        for (const logger of roundLoggers.values()) {
+            try { 
+                logger.clear();
+                logger.close();
+            } catch (e) {
+                // 忽略个别logger的错误
+            }
+        }
+        
+        // 清理资源
+        roundLoggers.clear();
+        writeCounters.clear();
+        transportListenerCounts.clear();
+        
+        console.log(`[${new Date().toISOString()}][LOGGER] Emergency shutdown completed`);
+    } catch (e) {
+        // 忽略错误，确保不阻止进程退出
+        console.error(`[${new Date().toISOString()}][LOGGER] Error during emergency shutdown:`, e);
     }
-  } catch (e) {
-    // 忽略错误，确保不阻止进程退出
-  }
 };
 
 // 注册退出处理程序 - 只在logger.ts中注册用于清理logger资源的处理程序
@@ -683,3 +654,74 @@ export default {
   getContext,
   logger
 };
+
+export const gracefulShutdown = async (timeout = 5000): Promise<boolean> => {
+    console.log(`[${new Date().toISOString()}][LOGGER] Starting graceful shutdown with ${timeout}ms timeout`);
+    
+    return new Promise((resolve) => {
+        // 设置超时
+        const timeoutHandle = setTimeout(() => {
+            console.warn(`[${new Date().toISOString()}][LOGGER] Shutdown timeout after ${timeout}ms - forcing exit`);
+            emergencyCloseLoggers();
+            resolve(false);
+        }, timeout);
+
+        // 创建所有logger的关闭promise
+        const closePromises: Promise<void>[] = [];
+
+        // 主logger的关闭promise
+        closePromises.push(
+            new Promise<void>((resolveLogger) => {
+                winstonLogger.on('finish', () => resolveLogger());
+                winstonLogger.end();
+            })
+        );
+
+        // 所有round logger的关闭promise
+        for (const [roundId, logger] of roundLoggers.entries()) {
+            closePromises.push(
+                new Promise<void>((resolveLogger) => {
+                    logger.on('finish', () => resolveLogger());
+                    logger.end();
+                }).catch(err => {
+                    console.error(`[${new Date().toISOString()}][LOGGER] Error closing logger for round ${roundId}:`, err);
+                })
+            );
+        }
+
+        // 等待所有logger关闭
+        Promise.all(closePromises)
+            .then(() => {
+                clearTimeout(timeoutHandle);
+                console.log(`[${new Date().toISOString()}][LOGGER] All loggers closed successfully`);
+                resolve(true);
+            })
+            .catch(err => {
+                clearTimeout(timeoutHandle);
+                console.error(`[${new Date().toISOString()}][LOGGER] Error during graceful shutdown:`, err);
+                emergencyCloseLoggers();
+                resolve(false);
+            });
+    });
+};
+
+// 修改进程退出处理
+process.on('exit', () => {
+    console.log(`[${new Date().toISOString()}][LOGGER] Process exit - emergency cleanup`);
+    emergencyCloseLoggers();
+});
+
+// 添加其他信号处理
+['SIGINT', 'SIGTERM', 'SIGQUIT'].forEach(signal => {
+    process.on(signal, async () => {
+        console.log(`[${new Date().toISOString()}][LOGGER] Received ${signal} signal`);
+        
+        try {
+            const success = await gracefulShutdown(5000);
+            process.exit(success ? 0 : 1);
+        } catch (err) {
+            console.error(`[${new Date().toISOString()}][LOGGER] Error during shutdown:`, err);
+            process.exit(1);
+        }
+    });
+});
