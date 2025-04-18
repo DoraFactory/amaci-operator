@@ -24,7 +24,12 @@ import {
   setCurrentRound,
 } from '../logger'
 import { recordTaskSuccess, recordTaskStart, recordTaskEnd } from '../metrics'
-
+import {
+  NetworkError,
+  ContractError,
+  DeactivateError,
+  categorizeError,
+} from '../error'
 const zkeyPath = './zkey/'
 
 const deactivateInterval = Number(process.env.DEACTIVATE_INTERVAL || 60000)
@@ -55,6 +60,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
     if (now < Number(maciRound.votingEnd) / 1e6) {
       if (!['Pending', 'Voting'].includes(maciRound.period)) {
         logError('Round not in proper state for deactivate', 'DEACTIVATE-TASK')
+        endOperation('deactivate', false, operationContext)
         return { error: { msg: 'error status' } }
       }
 
@@ -62,6 +68,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
 
       if (latestdeactivateAt + deactivateInterval > now) {
         logError('Too early to deactivate again', 'DEACTIVATE-TASK')
+        endOperation('deactivate', false, operationContext)
         return { error: { msg: 'too earlier' } }
       }
     }
@@ -185,24 +192,74 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
       info('Uploaded deactivate history successfully✅', 'DEACTIVATE-TASK', {
         uploadResult: uploadRes.transactionHash,
       })
+
+      // Only record success when we actually processed messages
+      endOperation('deactivate', true, operationContext)
+      recordTaskSuccess('deactivate')
     } else {
-      info('No new deactivate messages to process 👀', 'DEACTIVATE-TASK')
+      info('No new deactivate messages to process  👀 👀 👀, waiting for more', 'DEACTIVATE-TASK')
+      // When no messages to process, we still end the operation but don't mark as success
+      endOperation('deactivate', true, operationContext)
     }
 
     Timer.set(id, now)
 
-    // logger: end the task - 使用相同的上下文对象
-    endOperation('deactivate', true, operationContext)
-    // Metrics: record the task success
-    recordTaskSuccess('deactivate')
-    // Metrics: end the task
-    recordTaskEnd('deactivate', id)
     return {}
   } catch (err) {
-    // logger: end the task - 使用相同的上下文对象
+    const errorContext = {
+      roundId: id,
+      operation: 'deactivate',
+      timestamp: Date.now(),
+    }
+
+    const categorizedError = categorizeError(err)
+
+    // Record network error
+    if (categorizedError instanceof NetworkError) {
+      logError(
+        new DeactivateError(
+          'Network error during deactivate operation',
+          'NETWORK_ERROR',
+          errorContext,
+        ),
+        'DEACTIVATE-TASK',
+      )
+      endOperation('deactivate', false, operationContext)
+      return {
+        error: { msg: 'network_error', details: categorizedError.message },
+      }
+    }
+
+    // Record contract error
+    if (categorizedError instanceof ContractError) {
+      logError(
+        new DeactivateError(
+          'Contract error during deactivate operation',
+          'CONTRACT_ERROR',
+          errorContext,
+        ),
+        'DEACTIVATE-TASK',
+      )
+      endOperation('deactivate', false, operationContext)
+      return {
+        error: { msg: 'contract_error', details: categorizedError.message },
+      }
+    }
+
+    // Record unknown error
+    logError(
+      new DeactivateError(
+        'Unexpected error during deactivate operation',
+        'UNKNOWN_ERROR',
+        { ...errorContext, originalError: categorizedError },
+      ),
+      'DEACTIVATE-TASK',
+    )
+
     endOperation('deactivate', false, operationContext)
-    // Metrics: record the task end
+    throw categorizedError
+  } finally {
+    // Always record task end in finally block
     recordTaskEnd('deactivate', id)
-    throw err
   }
 }

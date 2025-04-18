@@ -18,6 +18,12 @@ import {
 } from '../logger'
 import { recordTaskSuccess, recordRoundCompletion } from '../metrics'
 import { recordTaskStart, recordTaskEnd } from '../metrics'
+import {
+  NetworkError,
+  ContractError,
+  DeactivateError,
+  categorizeError,
+} from '../error'
 
 import { genMaciInputs } from '../operator/genInputs'
 
@@ -487,12 +493,60 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     recordTaskEnd('tally', id)
     return {}
   } catch (err) {
-    // logger: log the error
-    logError(err, 'TALLY-TASK', { operation: 'tally' })
-    // logger: end the operation - 使用保存的上下文
+    const errorContext = {
+      roundId: id,
+      operation: 'tally',
+      timestamp: Date.now()
+    }
+
+    const categorizedError = categorizeError(err)
+
+    // Record network error
+    if (categorizedError instanceof NetworkError) {
+      logError(
+        new DeactivateError(
+          'Network error during tally operation',
+          'NETWORK_ERROR',
+          errorContext
+        ),
+        'TALLY-TASK'
+      )
+      endOperation('tally', false, operationContext)
+      return {
+        error: { msg: 'network_error', details: categorizedError.message }
+      }
+    }
+
+    // Record contract error
+    if (categorizedError instanceof ContractError) {
+      logError(
+        new DeactivateError(
+          'Contract error during tally operation',
+          'CONTRACT_ERROR',
+          errorContext
+        ),
+        'TALLY-TASK'
+      )
+      endOperation('tally', false, operationContext)
+      return {
+        error: { msg: 'contract_error', details: categorizedError.message }
+      }
+    }
+
+    // Record unknown error
+    logError(
+      new DeactivateError(
+        'Unexpected error during tally operation',
+        'UNKNOWN_ERROR',
+        { ...errorContext, originalError: categorizedError }
+      ),
+      'TALLY-TASK'
+    )
+
     endOperation('tally', false, operationContext)
-    // Metrics: record the task end
+    throw categorizedError
+  } finally {
+    // Always record task end in finally block
     recordTaskEnd('tally', id)
-    throw err
   }
 }

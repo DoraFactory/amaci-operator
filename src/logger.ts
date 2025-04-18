@@ -122,7 +122,10 @@ const winstonLogger = winston.createLogger({
   levels,
   transports: [
     fileTransport,
-    consoleTransport
+    new winston.transports.Console({
+      format: formats.console,
+      level: 'info'
+    })
   ],
   // record the unhandled exceptions and rejected promises
   exceptionHandlers: [fileTransport, consoleTransport],
@@ -267,7 +270,7 @@ function createRoundLogger(roundId: string): winston.Logger {
   
   // 创建一个单独的Winston logger实例
   const roundLogger = winston.createLogger({
-    level: 'info',
+    level: 'debug',
     format: winston.format.combine(
       winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss.SSS' }),
       winston.format.printf(({ timestamp, level, message, operation }) => {
@@ -280,6 +283,7 @@ function createRoundLogger(roundId: string): winston.Logger {
     transports: [
       new winston.transports.File({
         filename: roundLogPath,
+        level: 'debug',
         maxsize: 10 * 1024 * 1024, // 10MB
         maxFiles: 3
       })
@@ -631,12 +635,12 @@ export const endOperation = (operationName: string, success: boolean, operationC
   }
   
   const durationStr = formatDuration(duration);
-  const status = success ? colors.green('✓ Success') : colors.red('✗ Failed');
+  const status = success ? ('✅ Success') : ('❌ Failed');
   
   // 记录日志
   logWithContext(
     success ? 'info' : 'error',
-    `${success ? colors.bold('✓') : colors.bold('✗')} ${colors.bold(operationName)} ${status} (${durationStr})`,
+    `${operationName} ${status} (${durationStr})`,
     finalContext
   );
   
