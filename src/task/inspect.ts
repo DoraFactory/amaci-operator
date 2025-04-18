@@ -50,12 +50,6 @@ export const inspect: TaskAct = async () => {
       },
     }
 
-    // log the rounds data (detail, for debug)
-    debug('Current coordinator and inspect code ids', 'INSPECT', {
-      coordinatorPubKey: coordinator.pubKey.map(String).join(','),
-      codeIds: process.env.CODE_IDS,
-    })
-
     const newTasks: Task[] = []
 
     let tasks = 0
