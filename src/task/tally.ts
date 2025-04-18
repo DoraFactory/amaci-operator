@@ -21,7 +21,7 @@ import { recordTaskStart, recordTaskEnd } from '../metrics'
 import {
   NetworkError,
   ContractError,
-  DeactivateError,
+  TallyError,
   categorizeError,
 } from '../error'
 
@@ -52,7 +52,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
   // logger: set the current round ID
   setCurrentRound(id)
 
-  // logger: start the operation - 保存操作上下文
+  // logger: start the operation
   const operationContext = startOperation('tally', 'TALLY-TASK')
 
   // Metrics: Record the task start
@@ -77,8 +77,9 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       ) &&
       now < Number(maciRound.votingEnd) / 1e6
     ) {
-      logError('error status: not end', 'TALLY-TASK')
-      return { error: { msg: 'error status: not end' } }
+      logError('Round not in proper state for tally', 'TALLY-TASK')
+      endOperation('tally', false, operationContext)
+      return { error: { msg: 'error_status: not end', details: 'Round not in proper state' } }
     }
 
     // Get the maci contract signer client
@@ -86,15 +87,15 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
 
     // If the round is pending or voting, start the process period
     if (['Pending', 'Voting'].includes(maciRound.period)) {
-      const preiod = await withRetry(
+      const period = await withRetry(
         () => maciClient.getPeriod(),
         { 
           context: 'RPC-GET-PERIOD',
-          maxRetries: 3
+          maxRetries: 5  // 增加重试次数
         }
       );
       
-      if (['pending', 'voting'].includes(preiod.status)) {
+      if (['pending', 'voting'].includes(period.status)) {
         const spGasPrice = GasPrice.fromString('100000000000peaka')
         const spGfee = calculateFee(20000000, spGasPrice)
         
@@ -102,7 +103,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
           () => maciClient.startProcessPeriod(spGfee),
           { 
             context: 'RPC-START-PROCESS-PERIOD',
-            maxRetries: 3
+            maxRetries: 5
           }
         );
 
@@ -285,7 +286,11 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         tally,
       }
 
-      fs.writeFileSync(saveFile, JSON.stringify(allData))
+      try {
+        fs.writeFileSync(saveFile, JSON.stringify(allData))
+      } catch (saveError) {
+        debug(`Failed to save data: ${saveError}`, 'TALLY-TASK')
+      }
     }
 
     let mi = Math.ceil(Number(mc) / params.batchSize)
@@ -409,7 +414,26 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
             'TALLY-TASK',
           )
         } catch (fallbackError) {
-          console.error('Error during fallback operations:', fallbackError)
+          logError(
+            new TallyError(
+              'Error during fallback operations',
+              'FALLBACK_ERROR',
+              { 
+                roundId: id,
+                operation: 'tally',
+                timestamp: Date.now(),
+                originalError: fallbackError 
+              }
+            ),
+            'TALLY-TASK',
+          )
+          endOperation('tally', false, operationContext)
+          return { 
+            error: { 
+              msg: 'fallback_error', 
+              details: String(fallbackError) 
+            } 
+          }
         }
       }
     } else {
@@ -473,9 +497,25 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
             )
           } catch (fallbackError) {
             logError(
-              `Error during fallback operations: ${fallbackError}`,
+              new TallyError(
+                'Error during fallback operations',
+                'FALLBACK_ERROR',
+                { 
+                  roundId: id,
+                  operation: 'tally',
+                  timestamp: Date.now(),
+                  originalError: fallbackError 
+                }
+              ),
               'TALLY-TASK',
             )
+            endOperation('tally', false, operationContext)
+            return { 
+              error: { 
+                msg: 'fallback_error', 
+                details: String(fallbackError) 
+              } 
+            }
           }
         }
       }
@@ -504,7 +544,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     // Record network error
     if (categorizedError instanceof NetworkError) {
       logError(
-        new DeactivateError(
+        new TallyError(
           'Network error during tally operation',
           'NETWORK_ERROR',
           errorContext
@@ -520,7 +560,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     // Record contract error
     if (categorizedError instanceof ContractError) {
       logError(
-        new DeactivateError(
+        new TallyError(
           'Contract error during tally operation',
           'CONTRACT_ERROR',
           errorContext
@@ -535,7 +575,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
 
     // Record unknown error
     logError(
-      new DeactivateError(
+      new TallyError(
         'Unexpected error during tally operation',
         'UNKNOWN_ERROR',
         { ...errorContext, originalError: categorizedError }

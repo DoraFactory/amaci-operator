@@ -24,6 +24,17 @@ export class DeactivateError extends Error {
   }
 }
 
+export class TallyError extends Error {
+  constructor(
+    message: string,
+    public readonly code: string,
+    public readonly context: Record<string, any> = {},
+  ) {
+    super(message)
+    this.name = 'TallyError'
+  }
+}
+
 // Helper function to categorize errors
 export function categorizeError(err: unknown): Error {
   const errorMessage = err instanceof Error ? err.message : String(err)
