@@ -130,11 +130,6 @@ export const inspect: TaskAct = async () => {
     updateRoundStatus(stats.status)
     // Metrics: update the active rounds
     updateActiveRounds(activeRounds)
-
-    // 记录执行时间
-    const duration = Date.now() - startTime
-    info(`Inspection completed in ${duration}ms`, 'INSPECT')
-
     // Metrics: record the inspection success
     recordTaskSuccess('inspect')
     // Metrics: record the inspection end

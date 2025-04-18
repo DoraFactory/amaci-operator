@@ -167,7 +167,7 @@ const cleanupTransports = (forceCleanAll = false) => {
   
   // 只有当有东西需要清理时才输出日志
   if (transportCount > 0 || loggersCount > 0) {
-    console.log(`[LOGGER] Running cleanup, force=${forceCleanAll}, transports=${transportCount}, loggers=${loggersCount}`);
+    console.log(`[${new Date().toISOString()}][LOGGER] Running cleanup, force=${forceCleanAll}, transports=${transportCount}, loggers=${loggersCount}`);
   } else if (!forceCleanAll) {
     // 如果没有需要清理的内容且不是强制清理，则直接返回
     return;
@@ -177,7 +177,7 @@ const cleanupTransports = (forceCleanAll = false) => {
   
   // 如果强制清理，则清理所有传输器和日志记录器
   if (forceCleanAll) {
-    console.log(`[LOGGER] Force cleaning all resources (${transportCount} transports, ${loggersCount} loggers)`);
+    console.log(`[${new Date().toISOString()}][LOGGER] Force cleaning all resources (${transportCount} transports, ${loggersCount} loggers)`);
     
     // 清理日志记录器
     for (const [roundId, logger] of roundLoggers.entries()) {
@@ -189,7 +189,7 @@ const cleanupTransports = (forceCleanAll = false) => {
         rebuildCounters.delete(roundId);
         transportListenerCounts.delete(roundId);
       } catch (e) {
-        console.error(`[LOGGER] Error during force cleanup of logger ${roundId}: ${e}`);
+        console.error(`[${new Date().toISOString()}][LOGGER] Error during force cleanup of logger ${roundId}: ${e}`);
       }
     }
     
@@ -201,7 +201,7 @@ const cleanupTransports = (forceCleanAll = false) => {
         }
         roundTransports.delete(roundId);
       } catch (e) {
-        console.error(`[LOGGER] Error during force cleanup of transport ${roundId}: ${e}`);
+        console.error(`[${new Date().toISOString()}][LOGGER] Error during force cleanup of transport ${roundId}: ${e}`);
       }
     }
     
@@ -214,7 +214,7 @@ const cleanupTransports = (forceCleanAll = false) => {
       }
     }
     
-    console.log(`[LOGGER] Force cleanup completed`);
+    console.log(`[${new Date().toISOString()}][LOGGER] Force cleanup completed`);
     return;
   }
   
@@ -257,7 +257,7 @@ const cleanupTransports = (forceCleanAll = false) => {
   
   // 只有当清理了资源时才输出日志
   if (cleanedCount > 0) {
-    console.log(`[LOGGER] Cleaned up ${cleanedCount} inactive resources`);
+    console.log(`[${new Date().toISOString()}][LOGGER] Cleaned up ${cleanedCount} inactive resources`);
   }
 };
 
@@ -309,7 +309,7 @@ function getRoundLogger(roundId: string, forceRebuild = false): winston.Logger {
       } catch (e) {
         // 减少错误日志输出，只在真正影响功能时输出
         if (e instanceof Error && !e.message.includes('not found')) {
-          console.error(`[LOGGER] Error closing logger for ${roundId}: ${e}`);
+          console.error(`[${new Date().toISOString()}][LOGGER] Error closing logger for ${roundId}: ${e}`);
         }
       }
     }
@@ -336,7 +336,7 @@ let forceExitTimeout: NodeJS.Timeout | null = null;
 export const closeAllTransports = () => {
   // 如果已经在关闭中，直接返回，避免重复关闭
   if (isClosingLoggers) {
-    console.log('[LOGGER] Already closing loggers, skipping duplicate call');
+    console.log(`[${new Date().toISOString()}][LOGGER] Already closing loggers, skipping duplicate call`);
     return;
   }
   
@@ -345,31 +345,31 @@ export const closeAllTransports = () => {
     clearTimeout(forceExitTimeout);
   }
   forceExitTimeout = setTimeout(() => {
-    console.log('[LOGGER] Forced shutdown due to timeout - some logs may be lost');
+    console.log(`[${new Date().toISOString()}][LOGGER] Forced shutdown due to timeout - some logs may be lost`);
     isClosingLoggers = false; // 重置标志以便下次可以再次尝试关闭
   }, 2000); // 2秒后强制结束
   
   // 设置标志，表示正在关闭
   isClosingLoggers = true;
   
-  console.log(`[LOGGER] Closing all loggers (${roundLoggers.size} round loggers)`);
+  console.log(`[${new Date().toISOString()}][LOGGER] Closing all loggers (${roundLoggers.size} round loggers)`);
   
   try {
     // 首先关闭主日志记录器
     try {
       winstonLogger.end(); // 使用end()而不是close()，它会刷新并关闭
-      console.log('[LOGGER] Main logger ended');
+      console.log(`[${new Date().toISOString()}][LOGGER] Main logger ended`);
     } catch (e) {
-      console.error(`[LOGGER] Error ending main logger: ${e}`);
+      console.error(`[${new Date().toISOString()}][LOGGER] Error ending main logger: ${e}`);
     }
     
     // 关闭所有轮次的日志记录器 - 限制每个操作的时间
     for (const [roundId, logger] of roundLoggers.entries()) {
       try {
         logger.end(); // 使用end()而不是close()
-        console.log(`[LOGGER] Ended logger for round ${roundId}`);
+        console.log(`[${new Date().toISOString()}][LOGGER] Ended logger for round ${roundId}`);
       } catch (e) {
-        console.error(`[LOGGER] Error ending logger for round ${roundId}: ${e}`);
+        console.error(`[${new Date().toISOString()}][LOGGER] Error ending logger for round ${roundId}: ${e}`);
       }
     }
   } finally {
@@ -386,13 +386,13 @@ export const closeAllTransports = () => {
     
     // 完成关闭
     isClosingLoggers = false;
-    console.log('[LOGGER] All loggers closed');
+    console.log(`[${new Date().toISOString()}][LOGGER] All loggers closed`);
   }
 };
 
 // 为了安全起见，添加一个简化版的同步关闭函数，用于process.exit之前的紧急情况
 export const emergencyCloseLoggers = () => {
-  console.log('[LOGGER] Emergency logger shutdown');
+  console.log(`[${new Date().toISOString()}][LOGGER] Emergency logger shutdown`);
   try {
     winstonLogger.clear(); // 清除所有传输器
     for (const logger of roundLoggers.values()) {
@@ -406,7 +406,7 @@ export const emergencyCloseLoggers = () => {
 // 注册退出处理程序 - 只在logger.ts中注册用于清理logger资源的处理程序
 // index.ts中的处理程序负责应用级别的退出
 process.on('exit', () => {
-  console.log('[LOGGER] Process exit - final cleanup');
+  console.log(`[${new Date().toISOString()}][LOGGER] Process exit - final cleanup`);
   // 在exit事件中只能执行同步操作，所以使用emergencyCloseLoggers
   emergencyCloseLoggers();
 });
@@ -485,7 +485,7 @@ const logWithContext = (
         rebuildCounters.set(roundId, rebuildCount);
         
         if (rebuildCount % 10 === 1) {
-          console.log(`[LOGGER] Rebuilding logger for round ${roundId} (rebuild #${rebuildCount}, after ${writeCount} writes)`);
+          console.log(`[${new Date().toISOString()}][LOGGER] Rebuilding logger for round ${roundId} (rebuild #${rebuildCount}, after ${writeCount} writes)`);
         }
       }
       
@@ -497,7 +497,7 @@ const logWithContext = (
         timestamp: new Date().toISOString()
       });
     } catch (e) {
-      console.error(`[LOGGER] Error writing to round logger: ${e}`);
+      console.error(`[${new Date().toISOString()}][LOGGER] Error writing to round logger: ${e}`);
       
       // 如果写入失败，下次使用时强制重建日志记录器
       if (roundLoggers.has(roundId)) {
@@ -533,12 +533,12 @@ const FORCE_REBUILD_INTERVAL = 3 * 60 * 60 * 1000; // 改为3小时
 setInterval(() => {
   const activeRoundIds = Array.from(roundLoggers.keys());
   if (activeRoundIds.length > 0) {
-    console.log(`[LOGGER] Periodic force rebuild of ${activeRoundIds.length} active loggers`);
+    console.log(`[${new Date().toISOString()}][LOGGER] Periodic force rebuild of ${activeRoundIds.length} active loggers`);
     for (const roundId of activeRoundIds) {
       try {
         getRoundLogger(roundId, true); // 强制重建
       } catch (e) {
-        console.error(`[LOGGER] Error during periodic rebuild of ${roundId}: ${e}`);
+        console.error(`[${new Date().toISOString()}][LOGGER] Error during periodic rebuild of ${roundId}: ${e}`);
       }
     }
   }
