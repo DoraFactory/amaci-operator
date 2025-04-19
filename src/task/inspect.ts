@@ -9,6 +9,8 @@ import {
   error,
   startOperation,
   endOperation,
+  setCurrentRound,
+  clearContext,
 } from '../logger'
 import {
   recordTaskSuccess,
@@ -24,6 +26,10 @@ const deactivateInterval = Number(process.env.DEACTIVATE_INTERVAL || 60000)
 export const inspect: TaskAct = async () => {
   const startTime = Date.now()
 
+  // clear the current round id, so the inspect log will not be included in the round id named log
+  setCurrentRound('')
+  clearContext(['round'])
+  
   // Metrics: record the task start with a global id which is used for all tasks
   recordTaskStart('inspect', 'global')
 

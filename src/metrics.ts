@@ -1,9 +1,9 @@
 import * as client from 'prom-client'
 import express from 'express'
-import { info, error, debug } from './logger'
+import { info, debug } from './logger'
 
 // Create Registry
-const register = new client.Registry()
+const register = client.register
 
 // Add default metrics
 client.collectDefaultMetrics({ register })

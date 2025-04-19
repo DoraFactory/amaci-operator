@@ -2,7 +2,14 @@ import _ from 'lodash'
 import { Task, TaskResult } from './types'
 import * as T from './task'
 import { TestStorage } from './storage/TestStorage'
-import { info, error as logError, warn as logWarn, closeAllTransports, emergencyCloseLoggers } from './logger'
+import {
+  info,
+  error as logError,
+  warn as logWarn,
+  closeAllTransports,
+  emergencyCloseLoggers,
+  clearContext
+} from './logger'
 
 import { init } from './init'
 import {
@@ -29,6 +36,9 @@ const checkOperatorBalance = async (
   operatorAddress: string,
 ): Promise<boolean> => {
   try {
+    // 确保没有 round 上下文
+    clearContext(['round']);
+    
     const balance = await getAccountBalance(operatorAddress)
     const amount = BigInt(balance.amount)
     const amountInDora = Number(amount / BigInt(10 ** 18))
@@ -205,11 +215,12 @@ const main = async () => {
     const hasBalance = await checkOperatorBalance(address)
     if (!hasBalance) {
       logError(
-        'Operator has no enoughbalance, exited...Please recharge your balance and restart the operator service',
+        'Operator has no enough balance, exited...Please recharge your balance and restart the operator service',
       );
-      // 使用统一的退出函数
-      gracefulShutdown('INSUFFICIENT_BALANCE', 1);
-      return; // 防止继续执行
+      // Now, we don't want to exit the process, we want to keep the process running
+      // So operator will need to monitor the balance and recharge it manually
+      // gracefulShutdown('INSUFFICIENT_BALANCE', 1);
+      // return; 
     }
 
     const task = tasks.shift() || DefaultTask
