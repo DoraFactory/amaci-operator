@@ -49,6 +49,8 @@ export async function init() {
   info(`Coordinator Vota address: ${address}`, 'INIT')
   info('************************************************', 'INIT')
 
+  info(`code id list: ${process.env.CODE_IDS}`, 'INIT')
+
   info('Check your required zkey files🧐🧐🧐🧐', 'INIT')
 
   if (!fs.existsSync('./zkey/2-1-1-5_v3')) {
