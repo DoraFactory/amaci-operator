@@ -5,30 +5,30 @@ import path from 'path';
 import colors from 'colors/safe';
 import { EventEmitter } from 'events';
 
-// 大幅增加监听器限制，避免警告
+// add max listeners
 EventEmitter.defaultMaxListeners = 200;
 
-// 添加写入计数器 - 用于追踪写入次数并触发传输器重建
+// add write counters - for tracking write counts and triggering transport rebuild
 const writeCounters = new Map<string, number>();
-// 增加最大写入次数阈值，减少重建频率
+// add max writes before rebuild, reduce rebuild frequency
 const MAX_WRITES_BEFORE_REBUILD = 10000;  // 增加到10000次写入后才考虑重建
 
-// 添加最小重建间隔时间(毫秒)，防止过于频繁的重建
+// add min rebuild interval, prevent too frequent rebuild
 const MIN_REBUILD_INTERVAL = 5 * 60 * 1000;  // 最小重建间隔5分钟
 const lastRebuildTimes = new Map<string, number>();
 
-// 跟踪日志重建次数，用于减少日志输出
+// track log rebuild counts, for reducing log output
 const rebuildCounters = new Map<string, number>();
 
-// 添加监听器追踪Map
+// add transport listener counts, for tracking transport listener counts
 const transportListenerCounts = new Map<string, number>();
 
-// 添加警告监听
+// add warning listener
 process.on('warning', (warning) => {
   if (warning.name === 'MaxListenersExceededWarning') {
     console.error(`[CRITICAL] Memory leak warning: ${warning.message}`);
     console.error(`Round transports cache size: ${roundTransports.size}`);
-    // 触发全量清理
+    // trigger full cleanup
     cleanupTransports(true);
   }
 });
@@ -107,7 +107,7 @@ const fileTransport = new winston.transports.DailyRotateFile({
   filename: 'log-%DATE%.log',
   datePattern: 'YYYY-MM-DD',
   maxSize: '20m',
-  maxFiles: '14d',
+  maxFiles: '100000d',
   format: formats.file
 });
 
@@ -155,31 +155,31 @@ export const clearContext = (keys?: string[]) => {
 // Get the current context
 export const getContext = () => ({ ...currentContext });
 
-// 为每个 round 创建专用的文件传输器
+// create a dedicated file transport for each round
 const roundTransports = new Map<string, winston.transport>();
 
-// 修改清理时间间隔为5分钟
-const TRANSPORT_IDLE_TIMEOUT = 5 * 60 * 1000; // 5分钟
-// 定期清理不再使用的传输器
+// modify the cleanup interval to 5 minutes
+const TRANSPORT_IDLE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+// periodically clean up unused transports
 const cleanupTransports = (forceCleanAll = false) => {
   const transportCount = roundTransports.size;
   const loggersCount = roundLoggers.size;
   
-  // 只有当有东西需要清理时才输出日志
+  // only output log when there is something to clean
   if (transportCount > 0 || loggersCount > 0) {
     console.log(`[${new Date().toISOString()}][LOGGER] Running cleanup, force=${forceCleanAll}, transports=${transportCount}, loggers=${loggersCount}`);
   } else if (!forceCleanAll) {
-    // 如果没有需要清理的内容且不是强制清理，则直接返回
+    // if there is nothing to clean and not forced, return directly
     return;
   }
   
   const now = Date.now();
   
-  // 如果强制清理，则清理所有传输器和日志记录器
+  // if forced, clean all transports and loggers
   if (forceCleanAll) {
     console.log(`[${new Date().toISOString()}][LOGGER] Force cleaning all resources (${transportCount} transports, ${loggersCount} loggers)`);
     
-    // 清理日志记录器
+    // clean loggers
     for (const [roundId, logger] of roundLoggers.entries()) {
       try {
         logger.close();
@@ -193,7 +193,7 @@ const cleanupTransports = (forceCleanAll = false) => {
       }
     }
     
-    // 清理传输器
+    // clean transports
     for (const [roundId, transport] of roundTransports.entries()) {
       try {
         if (typeof (transport as any).close === 'function') {
@@ -205,12 +205,12 @@ const cleanupTransports = (forceCleanAll = false) => {
       }
     }
     
-    // 额外的GC建议
+    // additional GC suggestions
     if (global.gc) {
       try {
         global.gc();
       } catch (e) {
-        // 不输出GC错误
+        // do not output GC errors
       }
     }
     
@@ -218,10 +218,10 @@ const cleanupTransports = (forceCleanAll = false) => {
     return;
   }
   
-  // 常规清理 - 检查每个日志记录器的最后使用时间
+  // regular cleanup - check the last used time of each logger
   let cleanedCount = 0;
   
-  // 清理日志记录器
+  // clean loggers
   for (const [roundId, logger] of roundLoggers.entries()) {
     const lastUsed = lastRebuildTimes.get(roundId) || 0;
     if (now - lastUsed > TRANSPORT_IDLE_TIMEOUT) {
@@ -234,12 +234,12 @@ const cleanupTransports = (forceCleanAll = false) => {
         transportListenerCounts.delete(roundId);
         cleanedCount++;
       } catch (e) {
-        // 减少错误日志
+        // reduce error logs
       }
     }
   }
   
-  // 清理传输器
+  // clean transports
   for (const [roundId, transport] of roundTransports.entries()) {
     const lastUsed = (transport as any).lastUsed || 0;
     if (now - lastUsed > TRANSPORT_IDLE_TIMEOUT) {
@@ -250,25 +250,25 @@ const cleanupTransports = (forceCleanAll = false) => {
         roundTransports.delete(roundId);
         cleanedCount++;
       } catch (e) {
-        // 减少错误日志
+        // reduce error logs
       }
     }
   }
   
-  // 只有当清理了资源时才输出日志
+  // only output log when there is something to clean
   if (cleanedCount > 0) {
     console.log(`[${new Date().toISOString()}][LOGGER] Cleaned up ${cleanedCount} inactive resources`);
   }
 };
 
-// 更频繁地执行清理 - 每5分钟
+// clean up the transports periodically
 setInterval(() => cleanupTransports(), TRANSPORT_IDLE_TIMEOUT);
 
-// 创建专用的round日志记录器
+// create a dedicated round logger
 function createRoundLogger(roundId: string): winston.Logger {
   const roundLogPath = path.join(process.env.WORK_PATH || "./work", `round_${roundId}.log`);
   
-  // 创建一个单独的Winston logger实例
+  // create a dedicated Winston logger instance
   const roundLogger = winston.createLogger({
     level: 'debug',
     format: winston.format.combine(
@@ -285,7 +285,7 @@ function createRoundLogger(roundId: string): winston.Logger {
         filename: roundLogPath,
         level: 'debug',
         maxsize: 10 * 1024 * 1024, // 10MB
-        maxFiles: 3
+        maxFiles: 5
       })
     ]
   });
@@ -293,32 +293,32 @@ function createRoundLogger(roundId: string): winston.Logger {
   return roundLogger;
 }
 
-// 创建一个Map来存储round的logger实例
+// create a map to store round logger instances
 const roundLoggers = new Map<string, winston.Logger>();
 
-// 获取或创建特定 round 的日志传输器 (使用winston logger API而不是直接访问传输器)
+// get or create a specific round logger (use winston logger API instead of directly accessing transports)
 function getRoundLogger(roundId: string, forceRebuild = false): winston.Logger {
-  // 如果要求强制重建或者不存在此日志记录器
+  // if forced rebuild or not exists, create a new logger
   if (forceRebuild || !roundLoggers.has(roundId)) {
-    // 如果已存在则先关闭
+    // if exists, close it first
     if (roundLoggers.has(roundId)) {
       try {
         const oldLogger = roundLoggers.get(roundId)!;
         oldLogger.close();
         roundLoggers.delete(roundId);
       } catch (e) {
-        // 减少错误日志输出，只在真正影响功能时输出
+        // reduce error logs, only output when it really affects functionality
         if (e instanceof Error && !e.message.includes('not found')) {
           console.error(`[${new Date().toISOString()}][LOGGER] Error closing logger for ${roundId}: ${e}`);
         }
       }
     }
     
-    // 创建新的logger
+    // create a new logger
     const newLogger = createRoundLogger(roundId);
     roundLoggers.set(roundId, newLogger);
     
-    // 重置写入计数
+    // reset write counters
     writeCounters.set(roundId, 0);
     transportListenerCounts.set(roundId, 0);
     
@@ -328,61 +328,61 @@ function getRoundLogger(roundId: string, forceRebuild = false): winston.Logger {
   return roundLoggers.get(roundId)!;
 }
 
-// 添加一个锁，防止多次调用closeAllTransports
+// add a lock, prevent multiple calls to closeAllTransports
 let isClosingLoggers = false;
 let forceExitTimeout: NodeJS.Timeout | null = null;
 
-// 修改关闭所有传输器的方法
+// modify the method to close all transports
 export const closeAllTransports = async () => {
-    // 如果已经在关闭中，直接返回
+    // if already closing, return directly
     if (isClosingLoggers) {
         console.log(`[${new Date().toISOString()}][LOGGER] Already closing loggers, skipping duplicate call`);
         return false;
     }
 
-    // 使用优雅关闭机制
+    // use graceful shutdown mechanism
     return gracefulShutdown(5000);
 };
 
-// 修改紧急关闭函数
+// modify the emergency close function
 export const emergencyCloseLoggers = () => {
     console.log(`[${new Date().toISOString()}][LOGGER] Emergency logger shutdown`);
     try {
-        // 清除所有传输器
+        // clear all transports
         winstonLogger.clear();
         winstonLogger.close();
         
-        // 清除所有round logger
+        // clear all round loggers
         for (const logger of roundLoggers.values()) {
             try { 
                 logger.clear();
                 logger.close();
             } catch (e) {
-                // 忽略个别logger的错误
+                // ignore individual logger errors
             }
         }
         
-        // 清理资源
+        // clean resources
         roundLoggers.clear();
         writeCounters.clear();
         transportListenerCounts.clear();
         
         console.log(`[${new Date().toISOString()}][LOGGER] Emergency shutdown completed`);
     } catch (e) {
-        // 忽略错误，确保不阻止进程退出
+        // ignore errors, ensure not blocking process exit
         console.error(`[${new Date().toISOString()}][LOGGER] Error during emergency shutdown:`, e);
     }
 };
 
-// 注册退出处理程序 - 只在logger.ts中注册用于清理logger资源的处理程序
-// index.ts中的处理程序负责应用级别的退出
+// register exit handler - only register for logger.ts to clean up logger resources
+// the handler in index.ts is for application level exit
 process.on('exit', () => {
   console.log(`[${new Date().toISOString()}][LOGGER] Process exit - final cleanup`);
-  // 在exit事件中只能执行同步操作，所以使用emergencyCloseLoggers
+  // only synchronous operations can be performed in the exit event, so use emergencyCloseLoggers
   emergencyCloseLoggers();
 });
 
-// 修改 logWithContext 函数，优化写入方式
+// modify the logWithContext function, optimize the writing method
 const logWithContext = (
   level: string,
   message: string | any,
@@ -392,7 +392,7 @@ const logWithContext = (
   let moduleStr = '';
   let contextObj = { ...currentContext };
 
-  // Process optional parameters
+  // process optional parameters
   if (typeof moduleOrContext === 'string') {
     moduleStr = moduleOrContext;
     if (context) {
@@ -402,7 +402,7 @@ const logWithContext = (
     contextObj = { ...contextObj, ...moduleOrContext };
   }
 
-  // Process different types of messages
+  // process different types of messages
   let finalMessage = message;
   if (message instanceof Error) {
     finalMessage = `${message.message}\n${message.stack || ''}`;
@@ -415,7 +415,7 @@ const logWithContext = (
     }
   }
 
-  // Record the log to main logger
+  // record the log to main logger
   winstonLogger.log({
     level,
     message: finalMessage,
@@ -423,34 +423,34 @@ const logWithContext = (
     ...contextObj
   });
   
-  // 如果上下文中包含 round ID，则同时记录到特定 round 的日志文件
+  // if the context contains round ID, record it to the specific round logger
   const roundId = contextObj.round || contextObj.roundId;
   if (roundId) {
-    // 更新写入计数器并检查是否需要重建日志记录器
+    // update the write counter and check if a logger needs to be rebuilt
     let writeCount = writeCounters.get(roundId) || 0;
     writeCount++;
     
-    // 更新计数器
+    // update the counter
     writeCounters.set(roundId, writeCount);
     
-    // 检查是否需要重建 - 同时满足计数和时间间隔条件
+    // check if a logger needs to be rebuilt - both count and time interval conditions
     const lastRebuildTime = lastRebuildTimes.get(roundId) || 0;
     const timeSinceLastRebuild = Date.now() - lastRebuildTime;
     const forceRebuild = writeCount >= MAX_WRITES_BEFORE_REBUILD && timeSinceLastRebuild > MIN_REBUILD_INTERVAL;
     
     try {
-      // 获取或创建该round的日志记录器
+      // get or create the round logger
       const roundLogger = getRoundLogger(roundId, forceRebuild);
       
-      // 如果需要重建，记录重建信息（但减少输出频率）
+      // if a logger needs to be rebuilt, record the rebuild information (but reduce the output frequency)
       if (forceRebuild) {
-        // 重置写入计数
+        // reset the write counter
         writeCounters.set(roundId, 0);
         
-        // 更新最后重建时间
+        // update the last rebuild time
         lastRebuildTimes.set(roundId, Date.now());
         
-        // 更新并检查重建计数器，每10次只输出一次日志
+        // update and check the rebuild counter, output log only once every 10 times
         let rebuildCount = rebuildCounters.get(roundId) || 0;
         rebuildCount++;
         rebuildCounters.set(roundId, rebuildCount);
@@ -460,7 +460,7 @@ const logWithContext = (
         }
       }
       
-      // 使用标准Winston API记录日志
+      // use standard Winston API to record the log
       roundLogger.log({
         level,
         message: finalMessage,
@@ -470,7 +470,7 @@ const logWithContext = (
     } catch (e) {
       console.error(`[${new Date().toISOString()}][LOGGER] Error writing to round logger: ${e}`);
       
-      // 如果写入失败，下次使用时强制重建日志记录器
+      // if writing fails, force rebuild the logger next time
       if (roundLoggers.has(roundId)) {
         roundLoggers.delete(roundId);
         writeCounters.delete(roundId);
@@ -498,8 +498,8 @@ export const log = (...msgs: any[]) => {
   return info(msgs.join(' '));
 };
 
-// 添加周期性强制重建所有活跃日志记录器的功能
-// 每小时执行一次彻底的重建，无论写入计数如何
+// add a periodic force rebuild of all active loggers
+// rebuild every 3 hours, regardless of write count
 const FORCE_REBUILD_INTERVAL = 3 * 60 * 60 * 1000; // 改为3小时
 setInterval(() => {
   const activeRoundIds = Array.from(roundLoggers.keys());
@@ -507,7 +507,7 @@ setInterval(() => {
     console.log(`[${new Date().toISOString()}][LOGGER] Periodic force rebuild of ${activeRoundIds.length} active loggers`);
     for (const roundId of activeRoundIds) {
       try {
-        getRoundLogger(roundId, true); // 强制重建
+        getRoundLogger(roundId, true); // force rebuild
       } catch (e) {
         console.error(`[${new Date().toISOString()}][LOGGER] Error during periodic rebuild of ${roundId}: ${e}`);
       }
@@ -515,12 +515,12 @@ setInterval(() => {
   }
 }, FORCE_REBUILD_INTERVAL);
 
-// 定期强制重建机制只需保留一个，删除重复的方法
-// 降低清理间隔到30分钟，减少资源消耗
-const CLEANUP_INTERVAL_MS = 30 * 60 * 1000; // 30分钟
+// the periodic force rebuild mechanism only needs to keep one, delete the duplicate methods
+// reduce the cleanup interval to 30 minutes, reduce resource consumption
+const CLEANUP_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 setInterval(() => cleanupTransports(), CLEANUP_INTERVAL_MS);
 
-// 添加格式化时间函数
+// add a function to format time
 function formatDuration(ms: number): string {
   if (ms < 1000) {
     return `${ms}ms`;
@@ -533,29 +533,29 @@ function formatDuration(ms: number): string {
   }
 }
 
-// startOperation, endOperation和separator函数
+// startOperation, endOperation and separator functions
 export const startOperation = (operationName: string, context: Record<string, any> | string = {}) => {
   const timestamp = new Date();
   const timestampStr = timestamp.toISOString();
   const formattedTimestamp = colors.cyan(timestampStr);
   
-  // 处理字符串类型的context（向后兼容）
+  // process the context of string type (backward compatibility)
   let operationContext: Record<string, any> = {};
   if (typeof context === 'string') {
-    // 如果context是字符串，将其作为operationTag
+    // if context is a string, use it as operationTag
     operationContext = { operationTag: context, operation: operationName, startTime: timestamp };
   } else {
-    // 创建上下文副本，避免修改原始对象
+    // create a copy of the context, avoid modifying the original object
     operationContext = { ...context, operation: operationName, startTime: timestamp };
   }
   
-  // 设置操作开始时间以便后续计算持续时间
+  // set the operation start time for subsequent duration calculation
   if (!operationContext.operations) {
     operationContext.operations = {};
   }
   operationContext.operations[operationName] = { startTime: timestamp };
   
-  // 记录日志
+  // record the log
   logWithContext('info', `▶ Starting ${operationName}`, operationContext);
   
   return operationContext;
@@ -565,28 +565,28 @@ export const endOperation = (operationName: string, success: boolean, operationC
   const endTime = new Date();
   let duration = 0;
   
-  // 处理字符串类型的context（向后兼容）
+  // process the context of string type (backward compatibility)
   let finalContext: Record<string, any> = {};
   if (typeof operationContext === 'string') {
-    // 如果context是字符串，将其作为operationTag
+    // if context is a string, use it as operationTag
     finalContext = { operationTag: operationContext };
   } else {
     finalContext = operationContext;
   }
   
-  // 计算操作持续时间
+  // calculate the operation duration
   if (finalContext.operations && finalContext.operations[operationName]?.startTime) {
     const startTime = finalContext.operations[operationName].startTime;
     
-    // 如果startTime是Date对象，使用getTime()
+    // if startTime is a Date object, use getTime()
     if (startTime instanceof Date) {
       duration = endTime.getTime() - startTime.getTime();
     } 
-    // 如果startTime是数字（毫秒时间戳），直接计算差值
+    // if startTime is a number (millisecond timestamp), calculate the difference directly
     else if (typeof startTime === 'number') {
       duration = endTime.getTime() - startTime;
     } 
-    // 其他情况，尝试强制转换
+    // other cases, try to force conversion
     else {
       try {
         const timestamp = Number(startTime);
@@ -599,7 +599,7 @@ export const endOperation = (operationName: string, success: boolean, operationC
     }
   }
   
-  // 确保duration至少为1ms，避免显示0ms
+  // ensure duration is at least 1ms, avoid displaying 0ms
   if (duration < 1) {
     duration = 1;
     console.warn(`Operation ${operationName} had zero duration, setting to 1ms minimum`);
@@ -608,7 +608,7 @@ export const endOperation = (operationName: string, success: boolean, operationC
   const durationStr = formatDuration(duration);
   const status = success ? ('✅ Success') : ('❌ Failed');
   
-  // 记录日志
+  // record the log
   logWithContext(
     success ? 'info' : 'error',
     `${operationName} ${status} (${durationStr})`,
@@ -632,7 +632,7 @@ export const separator = (title?: string) => {
   logWithContext('info', colors.yellow(line));
 };
 
-// 添加用于设置当前 round 的辅助函数
+// add a helper function to set the current round
 export const setCurrentRound = (roundId: string) => {
   setContext({ round: roundId });
   return roundId;
@@ -659,17 +659,17 @@ export const gracefulShutdown = async (timeout = 5000): Promise<boolean> => {
     console.log(`[${new Date().toISOString()}][LOGGER] Starting graceful shutdown with ${timeout}ms timeout`);
     
     return new Promise((resolve) => {
-        // 设置超时
+        // set timeout
         const timeoutHandle = setTimeout(() => {
             console.warn(`[${new Date().toISOString()}][LOGGER] Shutdown timeout after ${timeout}ms - forcing exit`);
             emergencyCloseLoggers();
             resolve(false);
         }, timeout);
 
-        // 创建所有logger的关闭promise
+        // create the close promise for all loggers
         const closePromises: Promise<void>[] = [];
 
-        // 主logger的关闭promise
+        // the close promise for the main logger
         closePromises.push(
             new Promise<void>((resolveLogger) => {
                 winstonLogger.on('finish', () => resolveLogger());
@@ -677,7 +677,7 @@ export const gracefulShutdown = async (timeout = 5000): Promise<boolean> => {
             })
         );
 
-        // 所有round logger的关闭promise
+        // the close promise for all round loggers
         for (const [roundId, logger] of roundLoggers.entries()) {
             closePromises.push(
                 new Promise<void>((resolveLogger) => {
@@ -689,7 +689,7 @@ export const gracefulShutdown = async (timeout = 5000): Promise<boolean> => {
             );
         }
 
-        // 等待所有logger关闭
+        // wait for all loggers to close
         Promise.all(closePromises)
             .then(() => {
                 clearTimeout(timeoutHandle);
@@ -705,13 +705,13 @@ export const gracefulShutdown = async (timeout = 5000): Promise<boolean> => {
     });
 };
 
-// 修改进程退出处理
+// modify the process exit handling
 process.on('exit', () => {
     console.log(`[${new Date().toISOString()}][LOGGER] Process exit - emergency cleanup`);
     emergencyCloseLoggers();
 });
 
-// 添加其他信号处理
+// add other signal handling
 ['SIGINT', 'SIGTERM', 'SIGQUIT'].forEach(signal => {
     process.on(signal, async () => {
         console.log(`[${new Date().toISOString()}][LOGGER] Received ${signal} signal`);

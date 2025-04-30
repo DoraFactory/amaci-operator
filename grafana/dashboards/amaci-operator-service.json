@@ -792,9 +792,7 @@
               "id": "byNames",
               "options": {
                 "mode": "exclude",
-                "names": [
-                  "tally - dora149kgq6htntpv4mcpky7lskkle9h5sgz2cax3074aaxsu87cnje8q6vedgq"
-                ],
+                "names": [],
                 "prefix": "All except:",
                 "readOnly": true
               }
@@ -895,6 +893,6 @@
   "timezone": "",
   "title": "AMACI Operator Monitor",
   "uid": "amaci-operator",
-  "version": 24,
+  "version": 1,
   "weekStart": ""
 }
