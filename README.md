@@ -6,3 +6,10 @@ From the protocol's [frontend](https://vota.dorafactory.org/), users will be abl
 
 ## How to run aMACI operator service
 For the most up to date documentation, please visit [how to run aMACI operator service](https://docs.dorafactory.org/docs/vota-devops/amaci)
+
+
+## Explanation
+- aMACI operator(support `2-1-1-5` and `4-2-2-25` circuit power): `main` branch
+- MACI operator(support `9-4-3-625` circuit power): `maci-operator` branch (attention: `1p1v` and `qv` circuit type are seperated)
+- MACI operator(support `6-3-3-125` circuit power): `maci-operator-6-3-3-125`
+- MACI operator(support `2-1-1-5` and `4-2-2-25` circuit power): `maci-operator-minipower`
