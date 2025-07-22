@@ -388,8 +388,9 @@ export class MACI {
       const cmd = commands[i]
       const error = this.checkCommandNow(cmd)
 
-      // let stateIdx = 5 ** this.stateTreeDepth - 1
-      let stateIdx = 0
+      //NOTE: For MACI (Important change)
+      let stateIdx = 5 ** this.stateTreeDepth - 1
+      // let stateIdx = 0
       let voIdx = 0
       if (!error && cmd) {
         stateIdx = Number(cmd.stateIdx)

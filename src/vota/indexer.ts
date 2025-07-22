@@ -362,7 +362,7 @@ export const fetchAllVotesLogs = async (contract: string) => {
     {},
   )
   // const ds = await fetchAllPages<DeactivateMessage>(
-  //   DEACTIVATE_MESSAGE_QUERY(contract),
+  //   DEACTIVATE_MESSAGE_QUERY(ontract),
   //   {},
   // )
   // const dmsg = await fetchAllPages<PublishDeactivateMessageEvent>(
@@ -402,5 +402,5 @@ export const fetchAllVotesLogs = async (contract: string) => {
 //     //   [] as string[][],
 //     // ),
 //     dmsg,
-//   }
+//  s
 // }

@@ -31,5 +31,6 @@ coverage
 
 contracts
 zkey
+zkey-backup
 work
 .env

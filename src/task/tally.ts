@@ -11,7 +11,7 @@ import { log } from '../log'
 
 import { genMaciInputs } from '../operator/genInputs'
 
-const zkeyPath = './zkey/zkeys/'
+const zkeyPath = './zkey/'
 
 const inputsPath = path.join(process.env.WORK_PATH, 'inputs')
 if (!fs.existsSync(inputsPath)) {
@@ -163,19 +163,19 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
 
     console.log('start generate msg proof')
 
-    let msgWasmFile: string
-    let msgZkeyFile: string
-    let tallyWasmFile: string = zkeyPath + 'r1cs/tally_js/tally.wasm'
-    let tallyZkeyFile: string = zkeyPath + 'zkey/tally_1.zkey'
+    // let msgWasmFile: string
+    // let msgZkeyFile: string
+    // let tallyWasmFile: string = zkeyPath + 'r1cs/tally_js/tally.wasm'
+    // let tallyZkeyFile: string = zkeyPath + 'zkey/tally_1.zkey'
 
-    if (Number(maciRound.circuitType) === 0) {
-      console.log('** 1p1v **')
-      msgWasmFile = zkeyPath + '/r1cs/linear/msg_js/msg.wasm'
-      msgZkeyFile = zkeyPath + 'zkey/msg_linear_1.zkey'
-    } else {
-      msgWasmFile = zkeyPath + 'r1cs/msg_js/msg.wasm'
-      msgZkeyFile = zkeyPath + 'zkey/msg_1.zkey'
-    }
+    // if (Number(maciRound.circuitType) === 0) {
+    //   console.log('** 1p1v **')
+    //   msgWasmFile = zkeyPath + '/r1cs/linear/msg_js/msg.wasm'
+    //   msgZkeyFile = zkeyPath + 'zkey/msg_linear_1.zkey'
+    // } else {
+    //   msgWasmFile = zkeyPath + 'r1cs/msg_js/msg.wasm'
+    //   msgZkeyFile = zkeyPath + 'zkey/msg_1.zkey'
+    // }
 
     const msg: ProofData[] = []
     log('start to gen proof | msg')
@@ -184,8 +184,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
 
       const { proof } = await groth16.fullProve(
         input,
-        msgWasmFile, //zkeyPath + 'r1cs' + '/msg_js/msg.wasm',
-        msgZkeyFile, //zkeyPath + 'zkey' + '/msg_1.zkey',
+        zkeyPath + maciRound.circuitPower + '_v3/msg.wasm',
+        zkeyPath + maciRound.circuitPower + '_v3/msg.zkey',
       )
 
       console.log('msg proof is:', proof)
@@ -206,8 +206,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
 
       const { proof } = await groth16.fullProve(
         input,
-        tallyWasmFile, //zkeyPath + 'r1cs' + '/tally_js/tally.wasm',
-        tallyZkeyFile, //zkeyPath + 'zkey' + '/tally_1.zkey',
+        zkeyPath + maciRound.circuitPower + '_v3/tally.wasm',
+        zkeyPath + maciRound.circuitPower + '_v3/tally.zkey',
       )
 
       const proofHex = await adaptToUncompressed(proof)
