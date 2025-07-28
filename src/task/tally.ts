@@ -235,18 +235,21 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
   if (mi < allData.msg.length) {
     for (; mi < allData.msg.length; mi++) {
       const { proofHex, commitment } = allData.msg[mi]
-      const res = await maciClient.processMessage({
-        groth16Proof: proofHex,
-        newStateCommitment: commitment,
-      })
+      const res = await maciClient.processMessage(
+        {
+          groth16Proof: proofHex,
+          newStateCommitment: commitment,
+        },
+        1.6,
+      )
       log('processMessage', mi, res)
     }
 
-    await maciClient.stopProcessingPeriod()
+    await maciClient.stopProcessingPeriod(1.6)
   } else {
     const period = await maciClient.getPeriod()
     if (period.status === 'processing') {
-      await maciClient.stopProcessingPeriod()
+      await maciClient.stopProcessingPeriod(1.6)
 
       await sleep(6000)
     }
@@ -259,24 +262,33 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
   if (ui < allData.tally.length) {
     for (; ui < allData.tally.length; ui++) {
       const { proofHex, commitment } = allData.tally[ui]
-      const res = await maciClient.processTally({
-        groth16Proof: proofHex,
-        newTallyCommitment: commitment,
-      })
+      const res = await maciClient.processTally(
+        {
+          groth16Proof: proofHex,
+          newTallyCommitment: commitment,
+        },
+        1.6,
+      )
       log('processTally', ui, res)
     }
 
-    await maciClient.stopTallyingPeriod({
-      results: allData.result,
-      salt: allData.salt,
-    })
+    await maciClient.stopTallyingPeriod(
+      {
+        results: allData.result,
+        salt: allData.salt,
+      },
+      1.6,
+    )
   } else {
     const period = await maciClient.getPeriod()
     if (period.status === 'tallying') {
-      await maciClient.stopTallyingPeriod({
-        results: allData.result,
-        salt: allData.salt,
-      })
+      await maciClient.stopTallyingPeriod(
+        {
+          results: allData.result,
+          salt: allData.salt,
+        },
+        1.6,
+      )
     }
   }
 
