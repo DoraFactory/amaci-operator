@@ -8,6 +8,7 @@ declare global {
       CODE_IDS: string[]
 
       WORK_PATH: string
+      SAAS_ADDRESS: string
 
       MNEMONIC: string
       PRIVATE: string

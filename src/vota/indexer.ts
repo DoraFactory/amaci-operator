@@ -118,6 +118,10 @@ const ROUNDS_QUERY = (
       maciType: {
         equalTo: "MACI"
       },
+      caller: {
+        equalTo: "${process.env.SAAS_ADDRESS}"
+      },
+
       coordinatorPubkeyX: {
         equalTo: "${coordinatorPubkeyX}" 
       },
