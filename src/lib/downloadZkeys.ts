@@ -7,7 +7,7 @@ import ProgressBar from 'progress'
 import { MaciType } from '../types'
 
 export async function downloadAndExtractZKeys(circuitPower: MaciType) {
-  const fileName = `amaci_${circuitPower}_zkeys.tar.gz`
+  const fileName = `maci_${circuitPower}_zkeys.tar.gz`
 
   if (fs.existsSync('zkeys')) {
     const choice = readlineSync.question(
