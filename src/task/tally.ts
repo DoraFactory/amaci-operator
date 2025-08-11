@@ -61,10 +61,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
   if (['Pending', 'Voting'].includes(maciRound.period)) {
     const preiod = await maciClient.getPeriod()
     if (['pending', 'voting'].includes(preiod.status)) {
-      const spGasPrice = GasPrice.fromString('100000000000peaka')
-      //TODO: 这里的gas的估算需要auto
-      const spGfee = calculateFee(100000000, spGasPrice)
-      const startProcessRes = await maciClient.startProcessPeriod(spGfee)
+      const startProcessRes = await maciClient.startProcessPeriod(1.6)
 
       await sleep(6000)
 
