@@ -269,16 +269,18 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       log('processTally', ui, res)
     }
 
-    await maciClient.stopTallyingPeriod(
-      {
-        results: allData.result,
-        salt: allData.salt,
-      },
-      1.6,
-    )
-  } else {
-    const period = await maciClient.getPeriod()
-    if (period.status === 'tallying') {
+    try {
+      const batchResult = await maciClient.stopTallyingAndClaim(
+        {
+          results: allData.result,
+          salt: allData.salt,
+        },
+        1.6,
+      )
+      log('Batch stopTallyingAndClaim completed successfully, tx hash:', batchResult.transactionHash)
+    } catch (error) {
+      log('Batch operation failed, falling back to separate operations:', error)
+      
       await maciClient.stopTallyingPeriod(
         {
           results: allData.result,
@@ -286,6 +288,44 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         },
         1.6,
       )
+
+      try {
+        const claimResult = await maciClient.claim(1.6)
+        log('Fallback claim operation completed successfully, tx hash:', claimResult.transactionHash)
+      } catch (claimError) {
+        log('Fallback claim operation failed:', claimError)
+      }
+    }
+  } else {
+    const period = await maciClient.getPeriod()
+    if (period.status === 'tallying') {
+      try {
+        const batchResult = await maciClient.stopTallyingAndClaim(
+          {
+            results: allData.result,
+            salt: allData.salt,
+          },
+          1.6,
+        )
+        log('Batch stopTallyingAndClaim completed successfully, tx hash:', batchResult.transactionHash)
+      } catch (error) {
+        log('Batch operation failed, falling back to separate operations:', error)
+        
+        await maciClient.stopTallyingPeriod(
+          {
+            results: allData.result,
+            salt: allData.salt,
+          },
+          1.6,
+        )
+
+        try {
+          const claimResult = await maciClient.claim(1.6)
+          log('Fallback claim operation completed successfully, tx hash:', claimResult.transactionHash)
+        } catch (claimError) {
+          log('Fallback claim operation failed:', claimError)
+        }
+      }
     }
   }
 

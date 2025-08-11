@@ -10,6 +10,7 @@ import {
   ExecuteResult,
 } from '@cosmjs/cosmwasm-stargate'
 import { Coin, StdFee } from '@cosmjs/amino'
+import { EncodeObject } from '@cosmjs/proto-signing'
 import {
   Uint256,
   Timestamp,
@@ -400,6 +401,22 @@ export interface MaciInterface extends MaciReadOnlyInterface {
     memo?: string,
     _funds?: Coin[],
   ) => Promise<ExecuteResult>
+  claim: (
+    fee?: number | StdFee | 'auto',
+    memo?: string,
+    _funds?: Coin[],
+  ) => Promise<ExecuteResult>
+  stopTallyingAndClaim: (
+    {
+      results,
+      salt,
+    }: {
+      results: Uint256[]
+      salt: Uint256
+    },
+    fee?: number | StdFee | 'auto',
+    memo?: string,
+  ) => Promise<ExecuteResult>
 }
 export class MaciClient extends MaciQueryClient implements MaciInterface {
   client: SigningCosmWasmClient
@@ -435,6 +452,8 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     this.revoke = this.revoke.bind(this)
     this.bond = this.bond.bind(this)
     this.withdraw = this.withdraw.bind(this)
+    this.claim = this.claim.bind(this)
+    this.stopTallyingAndClaim = this.stopTallyingAndClaim.bind(this)
   }
 
   setParams = async (
@@ -896,5 +915,66 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
       memo,
       _funds,
     )
+  }
+  claim = async (
+    fee: number | StdFee | 'auto' = 'auto',
+    memo?: string,
+    _funds?: Coin[],
+  ): Promise<ExecuteResult> => {
+    return await this.client.execute(
+      this.sender,
+      this.contractAddress,
+      {
+        claim: {},
+      },
+      fee,
+      memo,
+      _funds,
+    )
+  }
+  stopTallyingAndClaim = async (
+    {
+      results,
+      salt,
+    }: {
+      results: Uint256[]
+      salt: Uint256
+    },
+    fee: number | StdFee | 'auto' = 'auto',
+    memo?: string,
+  ): Promise<ExecuteResult> => {
+    const msgs: EncodeObject[] = [
+      {
+        typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
+        value: {
+          sender: this.sender,
+          contract: this.contractAddress,
+          msg: new TextEncoder().encode(JSON.stringify({
+            stop_tallying_period: { results, salt }
+          })),
+          funds: []
+        }
+      },
+      {
+        typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract", 
+        value: {
+          sender: this.sender,
+          contract: this.contractAddress,
+          msg: new TextEncoder().encode(JSON.stringify({
+            claim: {}
+          })),
+          funds: []
+        }
+      }
+    ];
+
+    const response = await this.client.signAndBroadcast(
+      this.sender,
+      msgs,
+      fee,
+      memo || ''
+    );
+
+    return response as unknown as ExecuteResult;
   }
 }
