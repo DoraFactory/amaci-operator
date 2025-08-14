@@ -406,7 +406,7 @@ export interface MaciInterface extends MaciReadOnlyInterface {
     memo?: string,
     _funds?: Coin[],
   ) => Promise<ExecuteResult>
-  stopTallyingAndClaim: (
+  stopTallyingAndWithdraw: (
     {
       results,
       salt,
@@ -453,7 +453,7 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     this.bond = this.bond.bind(this)
     this.withdraw = this.withdraw.bind(this)
     this.claim = this.claim.bind(this)
-    this.stopTallyingAndClaim = this.stopTallyingAndClaim.bind(this)
+    this.stopTallyingAndWithdraw = this.stopTallyingAndWithdraw.bind(this)
   }
 
   setParams = async (
@@ -932,7 +932,7 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
       _funds,
     )
   }
-  stopTallyingAndClaim = async (
+  stopTallyingAndWithdraw = async (
     {
       results,
       salt,
@@ -961,7 +961,7 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
           sender: this.sender,
           contract: this.contractAddress,
           msg: new TextEncoder().encode(JSON.stringify({
-            claim: {}
+            withdraw: {}
           })),
           funds: []
         }

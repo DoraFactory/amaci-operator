@@ -270,14 +270,14 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     }
 
     try {
-      const batchResult = await maciClient.stopTallyingAndClaim(
+      const batchResult = await maciClient.stopTallyingAndWithdraw(
         {
           results: allData.result,
           salt: allData.salt,
         },
         1.6,
       )
-      log('Batch stopTallyingAndClaim completed successfully, tx hash:', batchResult.transactionHash)
+      log('Batch stopTallyingAndWithdraw completed successfully, tx hash:', batchResult.transactionHash)
     } catch (error) {
       log('Batch operation failed, falling back to separate operations:', error)
       
@@ -290,7 +290,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       )
 
       try {
-        const claimResult = await maciClient.claim(1.6)
+        const claimResult = await maciClient.withdraw({}, 1.6)
         log('Fallback claim operation completed successfully, tx hash:', claimResult.transactionHash)
       } catch (claimError) {
         log('Fallback claim operation failed:', claimError)
@@ -300,14 +300,14 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     const period = await maciClient.getPeriod()
     if (period.status === 'tallying') {
       try {
-        const batchResult = await maciClient.stopTallyingAndClaim(
+        const batchResult = await maciClient.stopTallyingAndWithdraw(
           {
             results: allData.result,
             salt: allData.salt,
           },
           1.6,
         )
-        log('Batch stopTallyingAndClaim completed successfully, tx hash:', batchResult.transactionHash)
+        log('Batch stopTallyingAndWithdraw completed successfully, tx hash:', batchResult.transactionHash)
       } catch (error) {
         log('Batch operation failed, falling back to separate operations:', error)
         
@@ -320,7 +320,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         )
 
         try {
-          const claimResult = await maciClient.claim(1.6)
+          const claimResult = await maciClient.withdraw({}, 1.6)
           log('Fallback claim operation completed successfully, tx hash:', claimResult.transactionHash)
         } catch (claimError) {
           log('Fallback claim operation failed:', claimError)
