@@ -37,6 +37,7 @@ import {
   Boolean,
   ArrayOfString,
 } from './Maci.types'
+import { round } from 'lodash';
 export interface MaciReadOnlyInterface {
   contractAddress: string
   getRoundInfo: () => Promise<RoundInfo>
@@ -869,9 +870,9 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
   ): Promise<ExecuteResult> => {
     return await this.client.execute(
       this.sender,
-      this.contractAddress,
+      process.env.DEACTIVATE_RECORDER,
       {
-        claim: {},
+        claim: { round_addr: this.contractAddress },
       },
       fee,
       memo,
@@ -992,11 +993,11 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
         typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
         value: MsgExecuteContract.fromPartial({
           sender: this.sender,
-          contract: this.contractAddress,
+          contract: process.env.DEACTIVATE_RECORDER,
           msg: new TextEncoder().encode(
             JSON.stringify(
               {
-                claim: {}
+                claim: { round_addr: this.contractAddress }
               }
             )
           ),
