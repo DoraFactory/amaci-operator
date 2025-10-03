@@ -5,6 +5,7 @@ import {
   incProverActiveChildren,
   decProverActiveChildren,
   incProverJobs,
+  setProverPoolSize,
 } from '../metrics'
 
 export type ProofHex = { a: string; b: string; c: string }
@@ -14,24 +15,177 @@ const DEFAULT_CONCURRENCY = Math.max(
   Number(process.env.PROVER_CONCURRENCY || 2),
 )
 
-function createChild(): ChildProcess {
-  // Resolve compiled child path at runtime (dist/prover/child.js)
-  const childPath = path.join(__dirname, 'child.js')
-  // inherit env, enable IPC channel
-  return fork(childPath, [], {
-    stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
-  })
-}
-
-type Job = {
+type InternalJob = {
   id: number
   input: any
+  wasmPath: string
+  zkeyPath: string
+  resolve: (p: ProofHex) => void
+  reject: (e: any) => void
 }
 
-/**
- * Run groth16 proofs in a small worker pool. Returns proofHex array aligned with inputs order.
- * This only optimizes the CPU-bound proof generation step and does not change business logic.
- */
+class ProverPool {
+  private children: ChildProcess[] = []
+  private idle: ChildProcess[] = []
+  private active = new Map<number, InternalJob>() // pid -> job
+  private queue: InternalJob[] = []
+  private closing = false
+
+  constructor(private maxChildren: number) {
+    this.maxChildren = Math.max(1, maxChildren)
+    info(`Initialize prover pool with size=${this.maxChildren}`, 'PROVER')
+    for (let i = 0; i < this.maxChildren; i++) this.spawnChild()
+    setProverPoolSize(this.children.length)
+
+    const cleanup = () => this.shutdown()
+    process.once('exit', cleanup)
+    process.once('SIGINT', cleanup)
+    process.once('SIGTERM', cleanup)
+  }
+
+  submit(job: InternalJob) {
+    this.queue.push(job)
+    this.schedule()
+  }
+
+  // Hint children to keep only specified wasm/zkey in caches
+  prepareForPhase(wasmPath: string, zkeyPath: string) {
+    const keep = [wasmPath, zkeyPath]
+    for (const child of this.children) {
+      try {
+        child.send({ type: 'drop_except', keep })
+      } catch {}
+    }
+  }
+
+  private sanitize(v: any): any {
+    if (typeof v === 'bigint') return v.toString()
+    if (Array.isArray(v)) return v.map((x) => this.sanitize(x))
+    if (v && typeof v === 'object') {
+      const out: any = {}
+      for (const k of Object.keys(v)) out[k] = this.sanitize(v[k])
+      return out
+    }
+    return v
+  }
+
+  private spawnChild() {
+    const childPath = path.join(__dirname, 'child.js')
+    const child = fork(childPath, [], {
+      stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
+    })
+    debug(`Spawned prover child pid=${child.pid}`, 'PROVER')
+
+    child.on('exit', (code: number | null, signal: string | null) => {
+      debug(
+        `Child exit pid=${child.pid} code=${code} signal=${signal || ''}`,
+        'PROVER',
+      )
+      const job = this.active.get(child.pid!)
+      if (job) {
+        this.active.delete(child.pid!)
+        this.queue.unshift(job)
+        decProverActiveChildren()
+      }
+      this.children = this.children.filter((c) => c !== child)
+      this.idle = this.idle.filter((c) => c !== child)
+      if (!this.closing) {
+        this.spawnChild()
+        setProverPoolSize(this.children.length)
+        this.schedule()
+      }
+    })
+    child.on('error', (err) => {
+      debug(`Child error pid=${child.pid} ${String(err)}`, 'PROVER')
+    })
+    child.on('message', (m: any) => this.onMessage(child, m))
+
+    this.children.push(child)
+    this.idle.push(child)
+  }
+
+  private onMessage(child: ChildProcess, m: any) {
+    const job = this.active.get(child.pid!)
+    if (!job) return
+    if (m?.type === 'result') {
+      try {
+        job.resolve(m.proofHex as ProofHex)
+      } finally {
+        this.finishJob(child)
+      }
+    } else if (m?.type === 'error') {
+      try {
+        job.reject(new Error(String(m.error)))
+      } finally {
+        this.finishJob(child)
+      }
+    }
+  }
+
+  private finishJob(child: ChildProcess) {
+    this.active.delete(child.pid!)
+    decProverActiveChildren()
+    if (!this.closing) {
+      this.idle.push(child)
+      this.schedule()
+    } else {
+      try {
+        child.removeAllListeners('message')
+        child.disconnect()
+        child.kill()
+      } catch {}
+    }
+  }
+
+  private schedule() {
+    while (this.idle.length > 0 && this.queue.length > 0) {
+      const child = this.idle.shift()!
+      const job = this.queue.shift()!
+      this.active.set(child.pid!, job)
+      incProverActiveChildren()
+      child.send({
+        type: 'prove',
+        jobId: job.id,
+        wasmPath: job.wasmPath,
+        zkeyPath: job.zkeyPath,
+        input: this.sanitize(job.input),
+      })
+      debug(`Assign job=${job.id} to pid=${child.pid}`, 'PROVER')
+    }
+  }
+
+  shutdown() {
+    if (this.closing) return
+    this.closing = true
+    debug('Shutting down prover pool', 'PROVER')
+    while (this.queue.length) {
+      const j = this.queue.shift()!
+      j.reject(new Error('Prover pool shutting down'))
+    }
+    for (const child of this.children) {
+      try {
+        child.removeAllListeners('message')
+        child.disconnect()
+        child.kill()
+      } catch {}
+    }
+    this.children = []
+    this.idle = []
+    this.active.clear()
+    setProverPoolSize(0)
+  }
+}
+
+let singletonPool: ProverPool | null = null
+
+function getPool(desired?: number) {
+  const size = Math.max(1, desired || DEFAULT_CONCURRENCY)
+  if (!singletonPool) {
+    singletonPool = new ProverPool(size)
+  }
+  return singletonPool
+}
+
 export async function proveMany(
   inputs: any[],
   wasmPath: string,
@@ -39,115 +193,35 @@ export async function proveMany(
   opts?: { concurrency?: number; phase?: string },
 ): Promise<ProofHex[]> {
   if (inputs.length === 0) return []
-
-  const concurrency = Math.max(1, opts?.concurrency ?? DEFAULT_CONCURRENCY)
-  const results: ProofHex[] = new Array(inputs.length)
-
-  // Queue of jobs (each job is a proof generation task)
-  const jobs: Job[] = inputs.map((input, i) => ({ id: i, input }))
-
-  // Convert BigInt fields to strings for IPC safety
-  const sanitize = (v: any): any => {
-    if (typeof v === 'bigint') return v.toString()
-    if (Array.isArray(v)) return v.map(sanitize)
-    if (v && typeof v === 'object') {
-      const out: any = {}
-      for (const k of Object.keys(v)) out[k] = sanitize(v[k])
-      return out
-    }
-    return v
-  }
-
-  // top-level log to show pool configuration
+  const pool = getPool(opts?.concurrency)
+  // Phase-level cache hint to reduce memory
+  pool.prepareForPhase(wasmPath, zkeyPath)
   info(
-    `Prover pool start: inputs=${inputs.length}, concurrency=${concurrency}`,
+    `Prover pool start: inputs=${inputs.length}, concurrency=${Math.max(
+      1,
+      opts?.concurrency || DEFAULT_CONCURRENCY,
+    )}`,
     'PROVER',
   )
   if (opts?.phase) incProverJobs(inputs.length, opts.phase)
-
-  let rejectOnce: (e: any) => void
-  const done = new Promise<void>((resolve, reject) => {
-    let active = 0
-    let finished = 0
-    rejectOnce = reject
-
-    const spawnNext = () => {
-      if (jobs.length === 0) {
-        if (active === 0) resolve()
-        return
-      }
-      // Spawn at most `concurrency` children
-      while (active < concurrency && jobs.length > 0) {
-        const child = createChild()
-        const job = jobs.shift()!
-        active++
-        incProverActiveChildren()
-        debug(
-          `Spawn prover child pid=${child.pid} for job=${job.id} (active=${active}/${concurrency})`,
-          'PROVER',
-        )
-
-        const onMessage = (m: any) => {
-          if (m?.type === 'result' && m.jobId === job.id) {
-            results[job.id] = m.proofHex
-            debug(`Child finished job=${job.id} pid=${child.pid}`, 'PROVER')
-            cleanup()
-          } else if (m?.type === 'error' && m.jobId === job.id) {
-            cleanup(new Error(m.error))
-          }
-        }
-
-        const onError = (err: any) => cleanup(err)
-        const onExit = (code: number | null, signal: string | null) => {
-          if (code !== 0 && code !== null) {
-            cleanup(
-              new Error(
-                `prover child exited with code ${code}${signal ? `, signal ${signal}` : ''}`,
-              ),
-            )
-          }
-        }
-
-        const cleanup = (err?: any) => {
-          child.off('message', onMessage)
-          child.off('error', onError)
-          child.off('exit', onExit)
-          try {
-            child.disconnect()
-          } catch {}
-          try {
-            child.kill()
-          } catch {}
-          active--
-          decProverActiveChildren()
-          if (err) {
-            reject(err)
-            return
-          }
-          finished++
-          if (finished === inputs.length) {
-            resolve()
-          } else {
-            spawnNext()
-          }
-        }
-
-        child.on('message', onMessage)
-        child.on('error', onError)
-        child.on('exit', onExit)
-        child.send({
-          type: 'prove',
-          jobId: job.id,
-          wasmPath,
-          zkeyPath,
-          input: sanitize(job.input),
-        })
-      }
-    }
-
-    spawnNext()
-  })
-
-  await done
+  const results: ProofHex[] = new Array(inputs.length)
+  await Promise.all(
+    inputs.map(
+      (input, i) =>
+        new Promise<void>((resolve, reject) => {
+          pool.submit({
+            id: i,
+            input,
+            wasmPath,
+            zkeyPath,
+            resolve: (p) => {
+              results[i] = p
+              resolve()
+            },
+            reject,
+          })
+        }),
+    ),
+  )
   return results
 }

@@ -238,6 +238,17 @@ export const recordProverPhaseDuration = (
   }
 }
 
+// Total children in the pool (long-lived)
+const proverPoolSize = new client.Gauge({
+  name: 'amaci_prover_pool_children',
+  help: 'Number of child processes in the prover pool',
+  registers: [register],
+})
+
+export const setProverPoolSize = (size: number) => {
+  proverPoolSize.set(size)
+}
+
 /**
  * Record task start
  * @param taskType Task type
