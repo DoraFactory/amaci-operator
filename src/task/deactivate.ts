@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import { groth16 } from 'snarkjs'
+// proof generation is offloaded to worker pool
 
 import { getContractSignerClient, withRetry } from '../lib/client/utils'
 import { uploadDeactivateHistory } from '../lib/client/Deactivate.client'
@@ -12,7 +12,9 @@ import {
   maciParamsFromCircuitPower,
 } from '../types'
 import { fetchAllDeactivateLogs, fetchRound } from '../vota/indexer'
-import { adaptToUncompressed } from '../vota/adapt'
+// adaptToUncompressed is handled inside worker
+import { proveMany } from '../prover/pool'
+import { recordProverPhaseDuration } from '../metrics'
 import { Timer } from '../storage/timer'
 import {
   info,
@@ -138,19 +140,21 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
         period: maciRound.period,
         circuitPower: maciRound.circuitPower,
       })
+      const dMsgInputsOnly = res.dMsgInputs.map((d) => d.input)
+      const phaseStart = Date.now()
+      const dMsgProofs = await proveMany(
+        dMsgInputsOnly,
+        zkeyPath + maciRound.circuitPower + '_v3/deactivate.wasm',
+        zkeyPath + maciRound.circuitPower + '_v3/deactivate.zkey',
+        { phase: 'deactivate' }
+      )
+      recordProverPhaseDuration(id, 'deactivate', (Date.now() - phaseStart) / 1000)
       for (let i = 0; i < res.dMsgInputs.length; i++) {
         const { input, size } = res.dMsgInputs[i]
-
-        const { proof } = await groth16.fullProve(
-          input,
-          zkeyPath + maciRound.circuitPower + '_v3/deactivate.wasm',
-          zkeyPath + maciRound.circuitPower + '_v3/deactivate.zkey',
-        )
-        const proofHex = await adaptToUncompressed(proof)
+        const proofHex = dMsgProofs[i]
         const commitment = input.newDeactivateCommitment.toString()
         const root = input.newDeactivateRoot.toString()
         debug(`Generated deactivate proof #${i}`, 'DEACTIVATE-TASK')
-
         dmsg.push({ proofHex, commitment, root, size })
       }
 

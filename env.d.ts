@@ -8,6 +8,7 @@ declare global {
       DEACTIVATE_RECORDER: string
       DEACTIVATE_INTERVAL: string
       CODE_IDS: string[]
+      PROVER_CONCURRENCY: string
 
       WORK_PATH: string
       LOG_LEVEL: string

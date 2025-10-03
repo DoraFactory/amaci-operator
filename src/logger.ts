@@ -101,6 +101,8 @@ const formats = {
   )
 };
 
+const LOG_LEVEL = (process.env.LOG_LEVEL || 'info').toLowerCase();
+
 // create the file transport, rotate the log file daily
 const fileTransport = new winston.transports.DailyRotateFile({
   dirname: logDir,
@@ -108,24 +110,23 @@ const fileTransport = new winston.transports.DailyRotateFile({
   datePattern: 'YYYY-MM-DD',
   maxSize: '20m',
   maxFiles: '100000d',
+  level: LOG_LEVEL,
   format: formats.file
 });
 
 // the console transport
 const consoleTransport = new winston.transports.Console({
+  level: LOG_LEVEL,
   format: formats.console
 });
 
 // create the winston logger instance
 const winstonLogger = winston.createLogger({
-  level: process.env.LOG_LEVEL || 'info',
+  level: LOG_LEVEL,
   levels,
   transports: [
     fileTransport,
-    new winston.transports.Console({
-      format: formats.console,
-      level: 'info'
-    })
+    consoleTransport
   ],
   // record the unhandled exceptions and rejected promises
   exceptionHandlers: [fileTransport, consoleTransport],

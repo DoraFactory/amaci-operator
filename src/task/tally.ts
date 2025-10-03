@@ -1,9 +1,8 @@
 import fs from 'fs'
 import path from 'path'
-import { groth16 } from 'snarkjs'
+// proof generation is offloaded to worker pool
 import { GasPrice, calculateFee } from '@cosmjs/stargate'
 
-import { adaptToUncompressed } from '../vota/adapt'
 import { fetchAllVotesLogs, fetchRound } from '../vota/indexer'
 import { getContractSignerClient, withRetry } from '../lib/client/utils'
 import { maciParamsFromCircuitPower, ProofData, TaskAct } from '../types'
@@ -17,6 +16,7 @@ import {
   setCurrentRound,
 } from '../logger'
 import { recordTaskSuccess, recordRoundCompletion } from '../metrics'
+import { recordProverPhaseDuration } from '../metrics'
 import { recordTaskStart, recordTaskEnd } from '../metrics'
 import {
   NetworkError,
@@ -26,6 +26,7 @@ import {
 } from '../error'
 
 import { genMaciInputs } from '../operator/genInputs'
+import { proveMany } from '../prover/pool'
 
 const zkeyPath = './zkey/'
 
@@ -234,20 +235,24 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         : '0'
 
       const msg: ProofData[] = []
+      const tally: ProofData[] = []
+
+      // Sequential phases; each internally parallel via worker pool
       info('Start to generate proof for msgs', 'TALLY-TASK', {
         period: maciRound.period,
         circuitPower: maciRound.circuitPower,
       })
+      const msgStart = Date.now()
+      const msgProofs = await proveMany(
+        res.msgInputs,
+        zkeyPath + maciRound.circuitPower + '_v3/msg.wasm',
+        zkeyPath + maciRound.circuitPower + '_v3/msg.zkey',
+        { phase: 'msg' }
+      )
+      recordProverPhaseDuration(id, 'msg', (Date.now() - msgStart) / 1000)
       for (let i = 0; i < res.msgInputs.length; i++) {
         const input = res.msgInputs[i]
-
-        const { proof } = await groth16.fullProve(
-          input,
-          zkeyPath + maciRound.circuitPower + '_v3/msg.wasm',
-          zkeyPath + maciRound.circuitPower + '_v3/msg.zkey',
-        )
-
-        const proofHex = await adaptToUncompressed(proof)
+        const proofHex = msgProofs[i]
         const commitment = input.newStateCommitment.toString()
         msg.push({ proofHex, commitment })
         debug(`Generated proof with msg #${i}`, 'TALLY-TASK', {
@@ -256,21 +261,21 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         })
       }
 
-      const tally: ProofData[] = []
       info('Start to generate proof for tally', 'TALLY-TASK', {
         period: maciRound.period,
         circuitPower: maciRound.circuitPower,
       })
+      const tallyStart = Date.now()
+      const tallyProofs = await proveMany(
+        res.tallyInputs,
+        zkeyPath + maciRound.circuitPower + '_v3/tally.wasm',
+        zkeyPath + maciRound.circuitPower + '_v3/tally.zkey',
+        { phase: 'tally' }
+      )
+      recordProverPhaseDuration(id, 'tally', (Date.now() - tallyStart) / 1000)
       for (let i = 0; i < res.tallyInputs.length; i++) {
         const input = res.tallyInputs[i]
-
-        const { proof } = await groth16.fullProve(
-          input,
-          zkeyPath + maciRound.circuitPower + '_v3/tally.wasm',
-          zkeyPath + maciRound.circuitPower + '_v3/tally.zkey',
-        )
-
-        const proofHex = await adaptToUncompressed(proof)
+        const proofHex = tallyProofs[i]
         const commitment = input.newTallyCommitment.toString()
         tally.push({ proofHex, commitment })
         debug(`Generated proof with tally #${i}`, 'TALLY-TASK', {

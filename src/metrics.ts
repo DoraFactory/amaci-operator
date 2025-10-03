@@ -77,6 +77,30 @@ const completedRoundsCounter = new client.Counter({
   registers: [register],
 })
 
+// Prover metrics: active children and jobs
+const proverActiveChildren = new client.Gauge({
+  name: 'amaci_prover_active_children',
+  help: 'Number of active prover child processes',
+  registers: [register],
+})
+
+const proverJobsTotal = new client.Counter({
+  name: 'amaci_prover_jobs_total',
+  help: 'Total number of prover jobs processed',
+  labelNames: ['phase'],
+  registers: [register],
+})
+
+// Prover phase duration (proof generation time per phase)
+const proverPhaseDuration = new client.Histogram({
+  name: 'amaci_prover_phase_duration_seconds',
+  help: 'Time spent generating proofs per phase (deactivate/msg/tally)',
+  labelNames: ['phase', 'round_id'],
+  // Buckets in seconds
+  buckets: [1, 2, 5, 10, 20, 30, 60, 120, 300, 600],
+  registers: [register],
+})
+
 // Active tasks gauge
 const activeTasksGauge = new client.Gauge({
   name: 'amaci_operator_active_tasks',
@@ -181,6 +205,28 @@ export const recordRoundCompletion = (roundId: string) => {
 
   // 可以在这里添加日志记录
   info(`Round ${roundId} successfully completed`, 'METRICS')
+}
+
+/** Prover metrics helpers */
+export const incProverActiveChildren = () => {
+  proverActiveChildren.inc()
+}
+
+export const decProverActiveChildren = () => {
+  // Guard against going below zero
+  try { proverActiveChildren.dec() } catch {}
+}
+
+export const incProverJobs = (count: number, phase: string = 'unknown') => {
+  if (count > 0) proverJobsTotal.inc({ phase }, count)
+}
+
+/** Record prover phase duration (in seconds) */
+export const recordProverPhaseDuration = (roundId: string, phase: string, seconds: number) => {
+  if (seconds >= 0) {
+    proverPhaseDuration.labels(phase, roundId).observe(seconds)
+    info(`Prover phase ${phase} took ${seconds.toFixed(2)}s for round ${roundId}`, 'METRICS')
+  }
 }
 
 /**
