@@ -15,7 +15,7 @@ export const uploadDeactivateHistory = async (
     const defaultSigningClientOptions: SigningCosmWasmClientOptions = {
       broadcastPollIntervalMs: 8_000,
       broadcastTimeoutMs: 16_000,
-      gasPrice: GasPrice.fromString('100000000000peaka'),
+      gasPrice: GasPrice.fromString('10000000000peaka'),
     }
     const contractAddress = contract
     const wallet = await GenerateWallet(0)

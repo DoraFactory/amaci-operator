@@ -78,7 +78,7 @@ export async function withRetry<T>(
 const defaultSigningClientOptions: SigningCosmWasmClientOptions = {
   broadcastPollIntervalMs: 8_000,
   broadcastTimeoutMs: 16_000,
-  gasPrice: GasPrice.fromString('100000000000peaka'),
+  gasPrice: GasPrice.fromString('10000000000peaka'),
 }
 
 export async function getContractSignerClient(contract: string) {

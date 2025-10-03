@@ -173,7 +173,9 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
               newDeactivateCommitment: commitment,
               newDeactivateRoot: root,
               size,
-            }),
+            },
+            1.5
+            ),
           {
             context: 'RPC-PROCESS-DEACTIVATE',
             maxRetries: 3,

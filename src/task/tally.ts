@@ -97,11 +97,9 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       );
       
       if (['pending', 'voting'].includes(period.status)) {
-        const spGasPrice = GasPrice.fromString('100000000000peaka')
-        const spGfee = calculateFee(20000000, spGasPrice)
         
         const startProcessRes = await withRetry(
-          () => maciClient.startProcessPeriod(spGfee),
+          () => maciClient.startProcessPeriod(1.5),
           { 
             context: 'RPC-START-PROCESS-PERIOD',
             maxRetries: 5
@@ -307,7 +305,9 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
           () => maciClient.processMessage({
             groth16Proof: proofHex,
             newStateCommitment: commitment,
-          }),
+            },
+            1.5
+          ),
           {
             context: 'RPC-PROCESS-MESSAGE',
             maxRetries: 3
@@ -320,7 +320,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       }
 
       await withRetry(
-        () => maciClient.stopProcessingPeriod(),
+        () => maciClient.stopProcessingPeriod(1.5),
         {
           context: 'RPC-STOP-PROCESSING-PERIOD',
           maxRetries: 3
@@ -336,7 +336,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       );
       if (period.status === 'processing') {
         await withRetry(
-          () => maciClient.stopProcessingPeriod(),
+          () => maciClient.stopProcessingPeriod(1.5),
           {
             context: 'RPC-STOP-PROCESSING-PERIOD',
             maxRetries: 3
@@ -356,7 +356,9 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
           () => maciClient.processTally({
             groth16Proof: proofHex,
             newTallyCommitment: commitment,
-          }),
+            },
+            1.5
+          ),
           {
             context: 'RPC-PROCESS-TALLY',
             maxRetries: 3
@@ -379,7 +381,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
               results: allData.result,
               salt: allData.salt,
             },
-            'auto',
+            1.5,
           ),
           {
             context: 'RPC-STOP-TALLYING-AND-CLAIM',
@@ -397,9 +399,11 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         try {
           await withRetry(
             () => maciClient.stopTallyingPeriod({
-              results: allData.result,
-              salt: allData.salt,
-            }),
+                results: allData.result,
+                salt: allData.salt,
+              },
+              1.5
+            ),
             {
               context: 'RPC-STOP-TALLYING-PERIOD',
               maxRetries: 3
@@ -408,7 +412,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
 
           info('Executing claim operation.....', 'TALLY-TASK')
           const claimResult = await withRetry(
-            () => maciClient.claim('auto'),
+            () => maciClient.claim(1.5),
             {
               context: 'RPC-CLAIM',
               maxRetries: 3
@@ -461,7 +465,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
                 results: allData.result,
                 salt: allData.salt,
               },
-              'auto',
+              1.5,
             ),
             {
               context: 'RPC-STOP-TALLYING-AND-CLAIM-FINAL',
@@ -479,9 +483,11 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
           try {
             await withRetry(
               () => maciClient.stopTallyingPeriod({
-                results: allData.result,
-                salt: allData.salt,
-              }),
+                  results: allData.result,
+                  salt: allData.salt,
+                },
+                1.5
+              ),
               {
                 context: 'RPC-STOP-TALLYING-PERIOD-FINAL',
                 maxRetries: 3
@@ -490,7 +496,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
 
             info('Executing claim operation.....', 'TALLY-TASK')
             const claimResult = await withRetry(
-              () => maciClient.claim('auto'),
+              () => maciClient.claim(1.5),
               {
                 context: 'RPC-CLAIM',
                 maxRetries: 3
