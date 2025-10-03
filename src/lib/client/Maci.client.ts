@@ -8,11 +8,11 @@ import {
   CosmWasmClient,
   SigningCosmWasmClient,
   ExecuteResult,
-  MsgExecuteContractEncodeObject
+  MsgExecuteContractEncodeObject,
 } from '@cosmjs/cosmwasm-stargate'
 import { Coin, StdFee } from '@cosmjs/amino'
-import { MsgExecuteContract } from 'cosmjs-types/cosmwasm/wasm/v1/tx';
-type MixedData<T> = T | Array<MixedData<T>> | { [key: string]: MixedData<T> };
+import { MsgExecuteContract } from 'cosmjs-types/cosmwasm/wasm/v1/tx'
+type MixedData<T> = T | Array<MixedData<T>> | { [key: string]: MixedData<T> }
 import {
   Uint256,
   Timestamp,
@@ -37,7 +37,7 @@ import {
   Boolean,
   ArrayOfString,
 } from './Maci.types'
-import { round } from 'lodash';
+import { round } from 'lodash'
 export interface MaciReadOnlyInterface {
   contractAddress: string
   getRoundInfo: () => Promise<RoundInfo>
@@ -92,24 +92,24 @@ export class MaciQueryClient implements MaciReadOnlyInterface {
 
   stringizing = (
     o: MixedData<bigint>,
-    path: MixedData<bigint>[] = []
+    path: MixedData<bigint>[] = [],
   ): MixedData<string> => {
     if (path.includes(o)) {
-      throw new Error('loop nesting!');
+      throw new Error('loop nesting!')
     }
-    const newPath = [...path, o];
+    const newPath = [...path, o]
     if (Array.isArray(o)) {
-      return o.map((item) => this.stringizing(item, newPath));
+      return o.map((item) => this.stringizing(item, newPath))
     } else if (typeof o === 'object') {
-      const output: { [key: string]: MixedData<string> } = {};
+      const output: { [key: string]: MixedData<string> } = {}
       for (const key in o) {
-        output[key] = this.stringizing(o[key], newPath);
+        output[key] = this.stringizing(o[key], newPath)
       }
-      return output;
+      return output
     } else {
-      return o.toString();
+      return o.toString()
     }
-  };
+  }
 
   getRoundInfo = async (): Promise<RoundInfo> => {
     return this.client.queryContractSmart(this.contractAddress, {
@@ -969,49 +969,44 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     memo?: string,
     _funds?: Coin[],
   ): Promise<ExecuteResult> => {
-
     // 创建批量消息
     const msgs: MsgExecuteContractEncodeObject[] = [
       {
-        typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
+        typeUrl: '/cosmwasm.wasm.v1.MsgExecuteContract',
         value: MsgExecuteContract.fromPartial({
           sender: this.sender,
           contract: this.contractAddress,
           msg: new TextEncoder().encode(
-            JSON.stringify(
-              {
-                stop_tallying_period: {
-                  results,
-                  salt,
-                }
-              }
-            )
+            JSON.stringify({
+              stop_tallying_period: {
+                results,
+                salt,
+              },
+            }),
           ),
-        })
+        }),
       },
       {
-        typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
+        typeUrl: '/cosmwasm.wasm.v1.MsgExecuteContract',
         value: MsgExecuteContract.fromPartial({
           sender: this.sender,
           contract: process.env.DEACTIVATE_RECORDER,
           msg: new TextEncoder().encode(
-            JSON.stringify(
-              {
-                claim: { round_addr: this.contractAddress }
-              }
-            )
+            JSON.stringify({
+              claim: { round_addr: this.contractAddress },
+            }),
           ),
-        })
-      }
-    ];
+        }),
+      },
+    ]
 
     const response = await this.client.signAndBroadcast(
       this.sender,
       msgs,
       fee,
-      memo || ''
-    );
-    
-    return response as unknown as ExecuteResult;
+      memo || '',
+    )
+
+    return response as unknown as ExecuteResult
   }
 }

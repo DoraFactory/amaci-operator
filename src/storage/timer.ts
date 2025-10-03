@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 
 let timer: Record<string, number> | undefined
-const saveFile = path.join(process.env.WORK_PATH || "./work", `deactivate`)
+const saveFile = path.join(process.env.WORK_PATH || './work', `deactivate`)
 if (fs.existsSync(saveFile)) {
   const file = fs.readFileSync(saveFile).toString()
   try {

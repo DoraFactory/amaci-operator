@@ -60,13 +60,10 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
   recordTaskStart('tally', id)
 
   try {
-    const maciRound = await withRetry(
-      () => fetchRound(id),
-      { 
-        context: 'INDEXER-FETCH-ROUND',
-        maxRetries: 3
-      }
-    );
+    const maciRound = await withRetry(() => fetchRound(id), {
+      context: 'INDEXER-FETCH-ROUND',
+      maxRetries: 3,
+    })
     info(`Current round period:' ${maciRound.period}`, 'TALLY-TASK')
 
     info('Start round Tally ', 'TALLY-TASK')
@@ -80,7 +77,12 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     ) {
       logError('Round not in proper state for tally', 'TALLY-TASK')
       endOperation('tally', false, operationContext)
-      return { error: { msg: 'error_status: not end', details: 'Round not in proper state' } }
+      return {
+        error: {
+          msg: 'error_status: not end',
+          details: 'Round not in proper state',
+        },
+      }
     }
 
     // Get the maci contract signer client
@@ -88,23 +90,19 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
 
     // If the round is pending or voting, start the process period
     if (['Pending', 'Voting'].includes(maciRound.period)) {
-      const period = await withRetry(
-        () => maciClient.getPeriod(),
-        { 
-          context: 'RPC-GET-PERIOD',
-          maxRetries: 5  // 增加重试次数
-        }
-      );
-      
+      const period = await withRetry(() => maciClient.getPeriod(), {
+        context: 'RPC-GET-PERIOD',
+        maxRetries: 5, // 增加重试次数
+      })
+
       if (['pending', 'voting'].includes(period.status)) {
-        
         const startProcessRes = await withRetry(
           () => maciClient.startProcessPeriod(1.5),
-          { 
+          {
             context: 'RPC-START-PROCESS-PERIOD',
-            maxRetries: 5
-          }
-        );
+            maxRetries: 5,
+          },
+        )
 
         await sleep(6000)
 
@@ -131,29 +129,20 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       // } catch {}
     }
 
-    const dc = await withRetry(
-      () => maciClient.getProcessedDMsgCount(),
-      { 
-        context: 'RPC-GET-DMSG-COUNT',
-        maxRetries: 3
-      }
-    );
+    const dc = await withRetry(() => maciClient.getProcessedDMsgCount(), {
+      context: 'RPC-GET-DMSG-COUNT',
+      maxRetries: 3,
+    })
 
-    const mc = await withRetry(
-      () => maciClient.getProcessedMsgCount(),
-      { 
-        context: 'RPC-GET-MSG-COUNT',
-        maxRetries: 3
-      }
-    );
-    
-    const uc = await withRetry(
-      () => maciClient.getProcessedUserCount(),
-      { 
-        context: 'RPC-GET-USER-COUNT',
-        maxRetries: 3
-      }
-    );
+    const mc = await withRetry(() => maciClient.getProcessedMsgCount(), {
+      context: 'RPC-GET-MSG-COUNT',
+      maxRetries: 3,
+    })
+
+    const uc = await withRetry(() => maciClient.getProcessedUserCount(), {
+      context: 'RPC-GET-USER-COUNT',
+      maxRetries: 3,
+    })
 
     /**
      * 如果线上还没有开始处理交易，则总是重新生成证明
@@ -166,13 +155,10 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     }
 
     if (!allData) {
-      const logs = await withRetry(
-        () => fetchAllVotesLogs(id),
-        { 
-          context: 'INDEXER-FETCH-VOTES-LOGS',
-          maxRetries: 3
-        }
-      );
+      const logs = await withRetry(() => fetchAllVotesLogs(id), {
+        context: 'INDEXER-FETCH-VOTES-LOGS',
+        maxRetries: 3,
+      })
 
       info(
         `The current round has ${logs.signup.length} signups, ${logs.msg.length} messages, ${logs.dmsg.length} dmessages`,
@@ -181,12 +167,12 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
 
       const maxVoteOptions = await withRetry(
         () => maciClient.maxVoteOptions(),
-        { 
+        {
           context: 'RPC-GET-MAX-VOTE-OPTIONS',
-          maxRetries: 3
-        }
-      );
-      
+          maxRetries: 3,
+        },
+      )
+
       const res = genMaciInputs(
         {
           ...params,
@@ -245,7 +231,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         res.msgInputs,
         zkeyPath + maciRound.circuitPower + '_v3/msg.wasm',
         zkeyPath + maciRound.circuitPower + '_v3/msg.zkey',
-        { phase: 'msg' }
+        { phase: 'msg' },
       )
       recordProverPhaseDuration(id, 'msg', (Date.now() - msgStart) / 1000)
       for (let i = 0; i < res.msgInputs.length; i++) {
@@ -268,7 +254,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         res.tallyInputs,
         zkeyPath + maciRound.circuitPower + '_v3/tally.wasm',
         zkeyPath + maciRound.circuitPower + '_v3/tally.zkey',
-        { phase: 'tally' }
+        { phase: 'tally' },
       )
       recordProverPhaseDuration(id, 'tally', (Date.now() - tallyStart) / 1000)
       for (let i = 0; i < res.tallyInputs.length; i++) {
@@ -302,46 +288,39 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       for (; mi < allData.msg.length; mi++) {
         const { proofHex, commitment } = allData.msg[mi]
         const res = await withRetry(
-          () => maciClient.processMessage({
-            groth16Proof: proofHex,
-            newStateCommitment: commitment,
-            },
-            1.5
-          ),
+          () =>
+            maciClient.processMessage(
+              {
+                groth16Proof: proofHex,
+                newStateCommitment: commitment,
+              },
+              1.5,
+            ),
           {
             context: 'RPC-PROCESS-MESSAGE',
-            maxRetries: 3
-          }
-        );
+            maxRetries: 3,
+          },
+        )
         debug(
           `processedMessage #${mi} 🛠️🛠️🛠️🛠️ with tx hash successfully ✅: ${res.transactionHash}`,
           'TALLY-TASK',
         )
       }
 
-      await withRetry(
-        () => maciClient.stopProcessingPeriod(1.5),
-        {
-          context: 'RPC-STOP-PROCESSING-PERIOD',
-          maxRetries: 3
-        }
-      );
+      await withRetry(() => maciClient.stopProcessingPeriod(1.5), {
+        context: 'RPC-STOP-PROCESSING-PERIOD',
+        maxRetries: 3,
+      })
     } else {
-      const period = await withRetry(
-        () => maciClient.getPeriod(),
-        {
-          context: 'RPC-GET-PERIOD-FINAL',
-          maxRetries: 3
-        }
-      );
+      const period = await withRetry(() => maciClient.getPeriod(), {
+        context: 'RPC-GET-PERIOD-FINAL',
+        maxRetries: 3,
+      })
       if (period.status === 'processing') {
-        await withRetry(
-          () => maciClient.stopProcessingPeriod(1.5),
-          {
-            context: 'RPC-STOP-PROCESSING-PERIOD',
-            maxRetries: 3
-          }
-        );
+        await withRetry(() => maciClient.stopProcessingPeriod(1.5), {
+          context: 'RPC-STOP-PROCESSING-PERIOD',
+          maxRetries: 3,
+        })
 
         await sleep(6000)
       }
@@ -353,17 +332,19 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       for (; ui < allData.tally.length; ui++) {
         const { proofHex, commitment } = allData.tally[ui]
         const res = await withRetry(
-          () => maciClient.processTally({
-            groth16Proof: proofHex,
-            newTallyCommitment: commitment,
-            },
-            1.5
-          ),
+          () =>
+            maciClient.processTally(
+              {
+                groth16Proof: proofHex,
+                newTallyCommitment: commitment,
+              },
+              1.5,
+            ),
           {
             context: 'RPC-PROCESS-TALLY',
-            maxRetries: 3
-          }
-        );
+            maxRetries: 3,
+          },
+        )
         debug(
           `processedTally #${ui} 🛠️🛠️🛠️🛠️ with tx hash successfully ✅: ${res.transactionHash}`,
           'TALLY-TASK',
@@ -376,18 +357,19 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
           'TALLY-TASK',
         )
         const batchResult = await withRetry(
-          () => maciClient.stopTallyingAndClaim(
-            {
-              results: allData.result,
-              salt: allData.salt,
-            },
-            1.5,
-          ),
+          () =>
+            maciClient.stopTallyingAndClaim(
+              {
+                results: allData.result,
+                salt: allData.salt,
+              },
+              1.5,
+            ),
           {
             context: 'RPC-STOP-TALLYING-AND-CLAIM',
-            maxRetries: 3
-          }
-        );
+            maxRetries: 3,
+          },
+        )
         info(
           `Batch operation completed successfully✅, tx hash: ${batchResult.transactionHash}`,
           'TALLY-TASK',
@@ -398,26 +380,25 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         info('Trying operations separately...', 'TALLY-TASK')
         try {
           await withRetry(
-            () => maciClient.stopTallyingPeriod({
-                results: allData.result,
-                salt: allData.salt,
-              },
-              1.5
-            ),
+            () =>
+              maciClient.stopTallyingPeriod(
+                {
+                  results: allData.result,
+                  salt: allData.salt,
+                },
+                1.5,
+              ),
             {
               context: 'RPC-STOP-TALLYING-PERIOD',
-              maxRetries: 3
-            }
-          );
+              maxRetries: 3,
+            },
+          )
 
           info('Executing claim operation.....', 'TALLY-TASK')
-          const claimResult = await withRetry(
-            () => maciClient.claim(1.5),
-            {
-              context: 'RPC-CLAIM',
-              maxRetries: 3
-            }
-          );
+          const claimResult = await withRetry(() => maciClient.claim(1.5), {
+            context: 'RPC-CLAIM',
+            maxRetries: 3,
+          })
           info(
             `Claim operation completed successfully✅, tx hash: ${claimResult.transactionHash}`,
             'TALLY-TASK',
@@ -427,32 +408,29 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
             new TallyError(
               'Error during fallback operations',
               'FALLBACK_ERROR',
-              { 
+              {
                 roundId: id,
                 operation: 'tally',
                 timestamp: Date.now(),
-                originalError: fallbackError 
-              }
+                originalError: fallbackError,
+              },
             ),
             'TALLY-TASK',
           )
           endOperation('tally', false, operationContext)
-          return { 
-            error: { 
-              msg: 'fallback_error', 
-              details: String(fallbackError) 
-            } 
+          return {
+            error: {
+              msg: 'fallback_error',
+              details: String(fallbackError),
+            },
           }
         }
       }
     } else {
-      const period = await withRetry(
-        () => maciClient.getPeriod(),
-        {
-          context: 'RPC-GET-PERIOD-FINAL',
-          maxRetries: 3
-        }
-      );
+      const period = await withRetry(() => maciClient.getPeriod(), {
+        context: 'RPC-GET-PERIOD-FINAL',
+        maxRetries: 3,
+      })
       if (period.status === 'tallying') {
         try {
           info(
@@ -460,18 +438,19 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
             'TALLY-TASK',
           )
           const batchResult = await withRetry(
-            () => maciClient.stopTallyingAndClaim(
-              {
-                results: allData.result,
-                salt: allData.salt,
-              },
-              1.5,
-            ),
+            () =>
+              maciClient.stopTallyingAndClaim(
+                {
+                  results: allData.result,
+                  salt: allData.salt,
+                },
+                1.5,
+              ),
             {
               context: 'RPC-STOP-TALLYING-AND-CLAIM-FINAL',
-              maxRetries: 3
-            }
-          );
+              maxRetries: 3,
+            },
+          )
           info(
             `Batch operation completed successfully✅, tx hash: ${batchResult.transactionHash}`,
             'TALLY-TASK',
@@ -482,26 +461,25 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
           info('Trying operations separately...', 'TALLY-TASK')
           try {
             await withRetry(
-              () => maciClient.stopTallyingPeriod({
-                  results: allData.result,
-                  salt: allData.salt,
-                },
-                1.5
-              ),
+              () =>
+                maciClient.stopTallyingPeriod(
+                  {
+                    results: allData.result,
+                    salt: allData.salt,
+                  },
+                  1.5,
+                ),
               {
                 context: 'RPC-STOP-TALLYING-PERIOD-FINAL',
-                maxRetries: 3
-              }
-            );
+                maxRetries: 3,
+              },
+            )
 
             info('Executing claim operation.....', 'TALLY-TASK')
-            const claimResult = await withRetry(
-              () => maciClient.claim(1.5),
-              {
-                context: 'RPC-CLAIM',
-                maxRetries: 3
-              }
-            );
+            const claimResult = await withRetry(() => maciClient.claim(1.5), {
+              context: 'RPC-CLAIM',
+              maxRetries: 3,
+            })
             info(
               `Claim operation completed successfully✅, tx hash: ${claimResult.transactionHash}`,
               'TALLY-TASK',
@@ -511,21 +489,21 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
               new TallyError(
                 'Error during fallback operations',
                 'FALLBACK_ERROR',
-                { 
+                {
                   roundId: id,
                   operation: 'tally',
                   timestamp: Date.now(),
-                  originalError: fallbackError 
-                }
+                  originalError: fallbackError,
+                },
               ),
               'TALLY-TASK',
             )
             endOperation('tally', false, operationContext)
-            return { 
-              error: { 
-                msg: 'fallback_error', 
-                details: String(fallbackError) 
-              } 
+            return {
+              error: {
+                msg: 'fallback_error',
+                details: String(fallbackError),
+              },
             }
           }
         }
@@ -547,7 +525,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     const errorContext = {
       roundId: id,
       operation: 'tally',
-      timestamp: Date.now()
+      timestamp: Date.now(),
     }
 
     const categorizedError = categorizeError(err)
@@ -558,13 +536,13 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         new TallyError(
           'Network error during tally operation',
           'NETWORK_ERROR',
-          errorContext
+          errorContext,
         ),
-        'TALLY-TASK'
+        'TALLY-TASK',
       )
       endOperation('tally', false, operationContext)
       return {
-        error: { msg: 'network_error', details: categorizedError.message }
+        error: { msg: 'network_error', details: categorizedError.message },
       }
     }
 
@@ -574,13 +552,13 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         new TallyError(
           'Contract error during tally operation',
           'CONTRACT_ERROR',
-          errorContext
+          errorContext,
         ),
-        'TALLY-TASK'
+        'TALLY-TASK',
       )
       endOperation('tally', false, operationContext)
       return {
-        error: { msg: 'contract_error', details: categorizedError.message }
+        error: { msg: 'contract_error', details: categorizedError.message },
       }
     }
 
@@ -589,9 +567,9 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       new TallyError(
         'Unexpected error during tally operation',
         'UNKNOWN_ERROR',
-        { ...errorContext, originalError: categorizedError }
+        { ...errorContext, originalError: categorizedError },
       ),
-      'TALLY-TASK'
+      'TALLY-TASK',
     )
 
     endOperation('tally', false, operationContext)

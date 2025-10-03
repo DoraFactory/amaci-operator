@@ -46,4 +46,3 @@ parentPort.on('message', async (msg: ProveMessage) => {
     parentPort!.postMessage(err)
   }
 })
-

@@ -8,7 +8,7 @@ import {
   warn as logWarn,
   closeAllTransports,
   emergencyCloseLoggers,
-  clearContext
+  clearContext,
 } from './logger'
 
 import { init } from './init'
@@ -17,7 +17,7 @@ import {
   updateOperatorState,
   updateActiveTasksCount,
   updateOperatorBalance,
-  updateOperatorStatus
+  updateOperatorStatus,
 } from './metrics'
 import { getAccountBalance } from './lib/client/utils'
 import { GenerateWallet } from './wallet'
@@ -37,8 +37,8 @@ const checkOperatorBalance = async (
 ): Promise<boolean> => {
   try {
     // 确保没有 round 上下文
-    clearContext(['round']);
-    
+    clearContext(['round'])
+
     const balance = await getAccountBalance(operatorAddress)
     const amount = BigInt(balance.amount)
     const amountInDora = Number(amount / BigInt(10 ** 18))
@@ -76,92 +76,92 @@ const checkOperatorBalance = async (
 }
 
 // 添加一个标志跟踪进程是否正在退出
-let isShuttingDown = false;
-let shutdownTimer: NodeJS.Timeout | null = null;
+let isShuttingDown = false
+let shutdownTimer: NodeJS.Timeout | null = null
 
 // 统一处理退出过程
 const gracefulShutdown = async (signal: string, exitCode: number = 0) => {
   // 如果已经在关闭中，不要重复处理
   if (isShuttingDown) {
-    console.log(`Already shutting down, ignoring duplicate ${signal} signal`);
-    return;
+    console.log(`Already shutting down, ignoring duplicate ${signal} signal`)
+    return
   }
-  
+
   // 设置退出标志
-  isShuttingDown = true;
-  
+  isShuttingDown = true
+
   // 强制退出定时器 - 确保即使卡住也能退出
   if (shutdownTimer) {
-    clearTimeout(shutdownTimer);
+    clearTimeout(shutdownTimer)
   }
-  
+
   // 设置3秒后的强制退出
   shutdownTimer = setTimeout(() => {
-    console.log(`[SHUTDOWN] Forcing exit after timeout - some data may be lost`);
+    console.log(`[SHUTDOWN] Forcing exit after timeout - some data may be lost`)
     // 使用紧急关闭函数确保至少尝试清理一下
     try {
-      emergencyCloseLoggers();
+      emergencyCloseLoggers()
     } catch (e) {
       // 忽略任何错误
     }
     // 强制退出
-    process.exit(exitCode);
-  }, 3000);
-  
+    process.exit(exitCode)
+  }, 3000)
+
   // 记录退出信息
-  info(`Received ${signal}, shutting down...`, 'MAIN');
-  
+  info(`Received ${signal}, shutting down...`, 'MAIN')
+
   // 更新运行状态
-  updateOperatorStatus(false);
-  
+  updateOperatorStatus(false)
+
   // 确保日志被完全写入
   try {
-    console.log('[SHUTDOWN] Closing all resources and flushing logs...');
-    
+    console.log('[SHUTDOWN] Closing all resources and flushing logs...')
+
     // 同步更新状态
     try {
-      await new Promise<void>(resolve => {
+      await new Promise<void>((resolve) => {
         // 给pushMetrics调用一些时间, 如果使用了这个函数的话
-        setTimeout(resolve, 200);
-      });
+        setTimeout(resolve, 200)
+      })
     } catch (e) {
       // 忽略任何错误
     }
-    
+
     // 关闭日志系统 - 更快的版本
     try {
-      closeAllTransports();
+      closeAllTransports()
     } catch (e) {
-      console.error('[SHUTDOWN] Error closing loggers:', e);
+      console.error('[SHUTDOWN] Error closing loggers:', e)
     }
-    
+
     // 短暂延迟确保资源释放
-    await new Promise<void>(resolve => setTimeout(resolve, 500));
-    
+    await new Promise<void>((resolve) => setTimeout(resolve, 500))
+
     // 清除退出定时器
     if (shutdownTimer) {
-      clearTimeout(shutdownTimer);
+      clearTimeout(shutdownTimer)
     }
-    
+
     // 正常退出
-    console.log(`[SHUTDOWN] Exiting with code ${exitCode}`);
-    process.exit(exitCode);
+    console.log(`[SHUTDOWN] Exiting with code ${exitCode}`)
+    process.exit(exitCode)
   } catch (err) {
-    console.error('[SHUTDOWN] Error during shutdown:', err);
+    console.error('[SHUTDOWN] Error during shutdown:', err)
     // 出现错误时也要退出
-    process.exit(exitCode);
+    process.exit(exitCode)
   }
-};
+}
 
 // 统一注册所有信号处理
-process.on('SIGINT', () => gracefulShutdown('SIGINT', 0));
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM', 0));
-process.on('SIGUSR1', () => gracefulShutdown('SIGUSR1', 0));
-process.on('SIGUSR2', () => gracefulShutdown('SIGUSR2', 0));
+process.on('SIGINT', () => gracefulShutdown('SIGINT', 0))
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM', 0))
+process.on('SIGUSR1', () => gracefulShutdown('SIGUSR1', 0))
+process.on('SIGUSR2', () => gracefulShutdown('SIGUSR2', 0))
 process.on('uncaughtException', (err) => {
-  logError(`Uncaught exception: ${err.message}\n${err.stack}`, 'MAIN');
-  gracefulShutdown('uncaughtException', 1);
-});
+  logError(`Uncaught exception: ${err.message}\n${err.stack}`, 'MAIN')
+  gracefulShutdown('uncaughtException', 1)
+})
 
 const main = async () => {
   await init()
@@ -216,11 +216,11 @@ const main = async () => {
     if (!hasBalance) {
       logError(
         'Operator has no enough balance, exited...Please recharge your balance and restart the operator service',
-      );
+      )
       // Now, we don't want to exit the process, we want to keep the process running
       // So operator will need to monitor the balance and recharge it manually
       // gracefulShutdown('INSUFFICIENT_BALANCE', 1);
-      // return; 
+      // return;
     }
 
     const task = tasks.shift() || DefaultTask

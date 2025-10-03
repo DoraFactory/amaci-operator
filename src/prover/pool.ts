@@ -1,17 +1,26 @@
 import { fork, ChildProcess } from 'node:child_process'
 import path from 'path'
 import { info, debug } from '../logger'
-import { incProverActiveChildren, decProverActiveChildren, incProverJobs } from '../metrics'
+import {
+  incProverActiveChildren,
+  decProverActiveChildren,
+  incProverJobs,
+} from '../metrics'
 
 export type ProofHex = { a: string; b: string; c: string }
 
-const DEFAULT_CONCURRENCY = Math.max(1, Number(process.env.PROVER_CONCURRENCY || 2))
+const DEFAULT_CONCURRENCY = Math.max(
+  1,
+  Number(process.env.PROVER_CONCURRENCY || 2),
+)
 
 function createChild(): ChildProcess {
   // Resolve compiled child path at runtime (dist/prover/child.js)
   const childPath = path.join(__dirname, 'child.js')
   // inherit env, enable IPC channel
-  return fork(childPath, [], { stdio: ['inherit', 'inherit', 'inherit', 'ipc'] })
+  return fork(childPath, [], {
+    stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
+  })
 }
 
 type Job = {
@@ -27,7 +36,7 @@ export async function proveMany(
   inputs: any[],
   wasmPath: string,
   zkeyPath: string,
-  opts?: { concurrency?: number, phase?: string }
+  opts?: { concurrency?: number; phase?: string },
 ): Promise<ProofHex[]> {
   if (inputs.length === 0) return []
 
@@ -50,7 +59,10 @@ export async function proveMany(
   }
 
   // top-level log to show pool configuration
-  info(`Prover pool start: inputs=${inputs.length}, concurrency=${concurrency}`, 'PROVER')
+  info(
+    `Prover pool start: inputs=${inputs.length}, concurrency=${concurrency}`,
+    'PROVER',
+  )
   if (opts?.phase) incProverJobs(inputs.length, opts.phase)
 
   let rejectOnce: (e: any) => void
@@ -70,7 +82,10 @@ export async function proveMany(
         const job = jobs.shift()!
         active++
         incProverActiveChildren()
-        debug(`Spawn prover child pid=${child.pid} for job=${job.id} (active=${active}/${concurrency})`, 'PROVER')
+        debug(
+          `Spawn prover child pid=${child.pid} for job=${job.id} (active=${active}/${concurrency})`,
+          'PROVER',
+        )
 
         const onMessage = (m: any) => {
           if (m?.type === 'result' && m.jobId === job.id) {
@@ -85,7 +100,11 @@ export async function proveMany(
         const onError = (err: any) => cleanup(err)
         const onExit = (code: number | null, signal: string | null) => {
           if (code !== 0 && code !== null) {
-            cleanup(new Error(`prover child exited with code ${code}${signal ? `, signal ${signal}` : ''}`))
+            cleanup(
+              new Error(
+                `prover child exited with code ${code}${signal ? `, signal ${signal}` : ''}`,
+              ),
+            )
           }
         }
 
@@ -93,8 +112,12 @@ export async function proveMany(
           child.off('message', onMessage)
           child.off('error', onError)
           child.off('exit', onExit)
-          try { child.disconnect() } catch {}
-          try { child.kill() } catch {}
+          try {
+            child.disconnect()
+          } catch {}
+          try {
+            child.kill()
+          } catch {}
           active--
           decProverActiveChildren()
           if (err) {

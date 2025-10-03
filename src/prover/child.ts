@@ -38,4 +38,3 @@ process.on('message', async (msg: ProveMessage) => {
     process.send && process.send(err)
   }
 })
-

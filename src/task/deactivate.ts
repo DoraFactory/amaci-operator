@@ -146,9 +146,13 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
         dMsgInputsOnly,
         zkeyPath + maciRound.circuitPower + '_v3/deactivate.wasm',
         zkeyPath + maciRound.circuitPower + '_v3/deactivate.zkey',
-        { phase: 'deactivate' }
+        { phase: 'deactivate' },
       )
-      recordProverPhaseDuration(id, 'deactivate', (Date.now() - phaseStart) / 1000)
+      recordProverPhaseDuration(
+        id,
+        'deactivate',
+        (Date.now() - phaseStart) / 1000,
+      )
       for (let i = 0; i < res.dMsgInputs.length; i++) {
         const { input, size } = res.dMsgInputs[i]
         const proofHex = dMsgProofs[i]
@@ -168,13 +172,14 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
 
         const res = await withRetry(
           () =>
-            maciClient.processDeactivateMessage({
-              groth16Proof: proofHex,
-              newDeactivateCommitment: commitment,
-              newDeactivateRoot: root,
-              size,
-            },
-            1.5
+            maciClient.processDeactivateMessage(
+              {
+                groth16Proof: proofHex,
+                newDeactivateCommitment: commitment,
+                newDeactivateRoot: root,
+                size,
+              },
+              1.5,
             ),
           {
             context: 'RPC-PROCESS-DEACTIVATE',
@@ -203,7 +208,10 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
       endOperation('deactivate', true, operationContext)
       recordTaskSuccess('deactivate')
     } else {
-      info('No new deactivate messages to process  👀 👀 👀, waiting for more', 'DEACTIVATE-TASK')
+      info(
+        'No new deactivate messages to process  👀 👀 👀, waiting for more',
+        'DEACTIVATE-TASK',
+      )
       // When no messages to process, we still end the operation but don't mark as success
       endOperation('deactivate', true, operationContext)
     }

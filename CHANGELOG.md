@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - **Auto Claim Mechanism**
+
   - Combined `stopTally` and `claim` into a single `vota` transaction to ensure atomic reward claiming after tallying.
   - Prevents reward claim failures due to time gaps between separate transactions.
 

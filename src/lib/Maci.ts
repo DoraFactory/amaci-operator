@@ -65,7 +65,7 @@ export class MACI {
   public readonly voteOptionTreeDepth: number
   public readonly batchSize: number
 
-  public readonly deactivateTreeDepth: number 
+  public readonly deactivateTreeDepth: number
   public states: MACI_STATES
 
   protected maxVoteOptions: number
@@ -650,7 +650,10 @@ export class MACI {
       Math.floor((this.msgEndIdx - 1) / batchSize) * batchSize
     const batchEndIdx = Math.min(batchStartIdx + batchSize, this.msgEndIdx)
 
-    debug(`= Process message [${batchStartIdx}, ${batchEndIdx}) `.padEnd(40, '='), 'TALLY-TASK')
+    debug(
+      `= Process message [${batchStartIdx}, ${batchEndIdx}) `.padEnd(40, '='),
+      'TALLY-TASK',
+    )
 
     const messages = this.messages.slice(batchStartIdx, batchEndIdx)
     const commands = this.commands.slice(batchStartIdx, batchEndIdx)
@@ -789,7 +792,10 @@ export class MACI {
     this._stateCommitment = newStateCommitment
     this.stateSalt = newStateSalt
 
-    debug(['', '* new state root:\n\n' + newStateRoot, ''].join('\n'), 'TALLY-TASK')
+    debug(
+      ['', '* new state root:\n\n' + newStateRoot, ''].join('\n'),
+      'TALLY-TASK',
+    )
 
     if (batchStartIdx === 0) {
       this.endProcessingPeriod()
@@ -818,7 +824,10 @@ export class MACI {
     const batchStartIdx = this.batchNum * batchSize
     const batchEndIdx = batchStartIdx + batchSize
 
-    debug(`= Process tally [${batchStartIdx}, ${batchEndIdx}) `.padEnd(40, '='), 'TALLY-TASK')
+    debug(
+      `= Process tally [${batchStartIdx}, ${batchEndIdx}) `.padEnd(40, '='),
+      'TALLY-TASK',
+    )
 
     const statePathElements = this.stateTree
       .pathElementOf(batchStartIdx)
@@ -905,7 +914,10 @@ export class MACI {
     this._tallyCommitment = newTallyCommitment
     this.tallySalt = tallySalt
 
-    debug(['', '* new tally commitment:\n\n' + newTallyCommitment, ''].join('\n'), 'TALLY-TASK')
+    debug(
+      ['', '* new tally commitment:\n\n' + newTallyCommitment, ''].join('\n'),
+      'TALLY-TASK',
+    )
 
     if (batchEndIdx >= this.numSignUps) {
       this.states = MACI_STATES.ENDED
