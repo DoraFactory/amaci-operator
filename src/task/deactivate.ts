@@ -14,6 +14,7 @@ import {
 import { fetchAllDeactivateLogs, fetchRound } from '../vota/indexer'
 // adaptToUncompressed is handled inside worker
 import { proveMany } from '../prover/pool'
+import { loadProofCache, saveProofCache } from '../storage/proofCache'
 import { recordProverPhaseDuration } from '../metrics'
 import { Timer } from '../storage/timer'
 import {
@@ -140,27 +141,37 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
         period: maciRound.period,
         circuitPower: maciRound.circuitPower,
       })
-      const dMsgInputsOnly = res.dMsgInputs.map((d) => d.input)
-      const phaseStart = Date.now()
-      const dMsgProofs = await proveMany(
-        dMsgInputsOnly,
-        zkeyPath + maciRound.circuitPower + '_v3/deactivate.wasm',
-        zkeyPath + maciRound.circuitPower + '_v3/deactivate.zkey',
-        { phase: 'deactivate' },
-      )
-      recordProverPhaseDuration(
-        id,
-        'deactivate',
-        (Date.now() - phaseStart) / 1000,
-      )
-      for (let i = 0; i < res.dMsgInputs.length; i++) {
-        const { input, size } = res.dMsgInputs[i]
-        const proofHex = dMsgProofs[i]
-        const commitment = input.newDeactivateCommitment.toString()
-        const root = input.newDeactivateRoot.toString()
-        debug(`Generated deactivate proof #${i}`, 'DEACTIVATE-TASK')
-        dmsg.push({ proofHex, commitment, root, size })
+      const cached = (loadProofCache(id)?.deactivate?.proofs || []) as (ProofData & { root: string; size: string })[]
+      let start = 0
+      for (let i = 0; i < Math.min(cached.length, res.dMsgInputs.length); i++) {
+        const expected = res.dMsgInputs[i].input.newDeactivateCommitment.toString()
+        if (cached[i]?.commitment === expected) {
+          dmsg.push(cached[i])
+          start = i + 1
+        } else {
+          break
+        }
       }
+      const phaseStart = Date.now()
+      const wasm = zkeyPath + maciRound.circuitPower + '_v3/deactivate.wasm'
+      const zkey = zkeyPath + maciRound.circuitPower + '_v3/deactivate.zkey'
+      const chunk = Math.max(1, Number(process.env.PROVER_SAVE_CHUNK || 0) || Number(process.env.PROVER_CONCURRENCY || 2))
+      while (start < res.dMsgInputs.length) {
+        const end = Math.min(start + chunk, res.dMsgInputs.length)
+        const slice = res.dMsgInputs.slice(start, end)
+        const proofs = await proveMany(slice.map((s) => s.input), wasm, zkey, { phase: 'deactivate' })
+        for (let i = 0; i < slice.length; i++) {
+          const { input, size } = slice[i]
+          const proofHex = proofs[i]
+          const commitment = input.newDeactivateCommitment.toString()
+          const root = input.newDeactivateRoot.toString()
+          debug(`Generated deactivate proof #${start + i}`, 'DEACTIVATE-TASK')
+          dmsg.push({ proofHex, commitment, root, size })
+        }
+        saveProofCache(id, { circuitPower: maciRound.circuitPower, deactivate: { proofs: dmsg } })
+        start = end
+      }
+      recordProverPhaseDuration(id, 'deactivate', (Date.now() - phaseStart) / 1000)
 
       info(
         `Prepare to send ${dmsg.length} deactivate messages`,

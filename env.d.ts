@@ -9,6 +9,7 @@ declare global {
       DEACTIVATE_INTERVAL: string
       CODE_IDS: string[]
       PROVER_CONCURRENCY: string
+      PROVER_SAVE_CHUNK: string
 
       WORK_PATH: string
       LOG_LEVEL: string

@@ -27,6 +27,7 @@ import {
 
 import { genMaciInputs } from '../operator/genInputs'
 import { proveMany } from '../prover/pool'
+import { loadProofCache, saveProofCache } from '../storage/proofCache'
 
 const zkeyPath = './zkey/'
 
@@ -118,16 +119,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
      * 如果没有，则下载合约记录并且生成
      */
     let allData: AllData | undefined
-    const saveFile = path.join(inputsPath, id + '.json')
-    if (fs.existsSync(saveFile)) {
-      /**
-       * 现在基于确定性的 proof，即使中途失败也可以重新生成所有证明，不需要读取缓存
-       */
-      // const file = fs.readFileSync(saveFile).toString()
-      // try {
-      //   allData = JSON.parse(file)
-      // } catch {}
-    }
+    const cache = loadProofCache(id)
 
     const dc = await withRetry(() => maciClient.getProcessedDMsgCount(), {
       context: 'RPC-GET-DMSG-COUNT',
@@ -147,7 +139,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     /**
      * 如果线上还没有开始处理交易，则总是重新生成证明
      */
-    if (Number(mc) === 0 && Number(uc) === 0) {
+    if (Number(mc) === 0 && Number(uc) === 0 && !cache) {
       if (allData) {
         debug('Prove again...', 'TALLY-TASK')
       }
@@ -226,47 +218,93 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         period: maciRound.period,
         circuitPower: maciRound.circuitPower,
       })
-      const msgStart = Date.now()
-      const msgProofs = await proveMany(
-        res.msgInputs,
-        zkeyPath + maciRound.circuitPower + '_v3/msg.wasm',
-        zkeyPath + maciRound.circuitPower + '_v3/msg.zkey',
-        { phase: 'msg' },
-      )
-      recordProverPhaseDuration(id, 'msg', (Date.now() - msgStart) / 1000)
-      for (let i = 0; i < res.msgInputs.length; i++) {
-        const input = res.msgInputs[i]
-        const proofHex = msgProofs[i]
-        const commitment = input.newStateCommitment.toString()
-        msg.push({ proofHex, commitment })
-        debug(`Generated proof with msg #${i}`, 'TALLY-TASK', {
-          proofHex,
-          commitment,
-        })
+      const msgWasm = zkeyPath + maciRound.circuitPower + '_v3/msg.wasm'
+      const msgZkey = zkeyPath + maciRound.circuitPower + '_v3/msg.zkey'
+      const cachedMsg = cache?.msg?.proofs || []
+      let startMsg = 0
+      for (let i = 0; i < Math.min(cachedMsg.length, res.msgInputs.length); i++) {
+        const expected = res.msgInputs[i].newStateCommitment.toString()
+        if (cachedMsg[i]?.commitment === expected) {
+          msg.push(cachedMsg[i])
+          startMsg = i + 1
+        } else {
+          break
+        }
       }
+      const msgStart = Date.now()
+      const chunk = Math.max(
+        1,
+        Number(process.env.PROVER_SAVE_CHUNK || 0) ||
+          Number(process.env.PROVER_CONCURRENCY || 2),
+      )
+      while (startMsg < res.msgInputs.length) {
+        const end = Math.min(startMsg + chunk, res.msgInputs.length)
+        const slice = res.msgInputs.slice(startMsg, end)
+        const proofs = await proveMany(slice, msgWasm, msgZkey, { phase: 'msg' })
+        for (let i = 0; i < slice.length; i++) {
+          const input = slice[i]
+          const proofHex = proofs[i]
+          const commitment = input.newStateCommitment.toString()
+          msg.push({ proofHex, commitment })
+          debug(`Generated proof with msg #${startMsg + i}`, 'TALLY-TASK', {
+            proofHex,
+            commitment,
+          })
+        }
+        saveProofCache(id, {
+          circuitPower: maciRound.circuitPower,
+          msg: { proofs: msg },
+          result,
+          salt,
+        })
+        startMsg = end
+      }
+      recordProverPhaseDuration(id, 'msg', (Date.now() - msgStart) / 1000)
 
       info('Start to generate proof for tally', 'TALLY-TASK', {
         period: maciRound.period,
         circuitPower: maciRound.circuitPower,
       })
-      const tallyStart = Date.now()
-      const tallyProofs = await proveMany(
-        res.tallyInputs,
-        zkeyPath + maciRound.circuitPower + '_v3/tally.wasm',
-        zkeyPath + maciRound.circuitPower + '_v3/tally.zkey',
-        { phase: 'tally' },
-      )
-      recordProverPhaseDuration(id, 'tally', (Date.now() - tallyStart) / 1000)
-      for (let i = 0; i < res.tallyInputs.length; i++) {
-        const input = res.tallyInputs[i]
-        const proofHex = tallyProofs[i]
-        const commitment = input.newTallyCommitment.toString()
-        tally.push({ proofHex, commitment })
-        debug(`Generated proof with tally #${i}`, 'TALLY-TASK', {
-          proofHex,
-          commitment,
-        })
+      const tallyWasm = zkeyPath + maciRound.circuitPower + '_v3/tally.wasm'
+      const tallyZkey = zkeyPath + maciRound.circuitPower + '_v3/tally.zkey'
+      const cachedTally = cache?.tally?.proofs || []
+      let startTally = 0
+      for (let i = 0; i < Math.min(cachedTally.length, res.tallyInputs.length); i++) {
+        const expected = res.tallyInputs[i].newTallyCommitment.toString()
+        if (cachedTally[i]?.commitment === expected) {
+          tally.push(cachedTally[i])
+          startTally = i + 1
+        } else {
+          break
+        }
       }
+      const tallyStart = Date.now()
+      while (startTally < res.tallyInputs.length) {
+        const end = Math.min(startTally + chunk, res.tallyInputs.length)
+        const slice = res.tallyInputs.slice(startTally, end)
+        const proofs = await proveMany(slice, tallyWasm, tallyZkey, {
+          phase: 'tally',
+        })
+        for (let i = 0; i < slice.length; i++) {
+          const input = slice[i]
+          const proofHex = proofs[i]
+          const commitment = input.newTallyCommitment.toString()
+          tally.push({ proofHex, commitment })
+          debug(`Generated proof with tally #${startTally + i}`, 'TALLY-TASK', {
+            proofHex,
+            commitment,
+          })
+        }
+        saveProofCache(id, {
+          circuitPower: maciRound.circuitPower,
+          msg: { proofs: msg },
+          tally: { proofs: tally },
+          result,
+          salt,
+        })
+        startTally = end
+      }
+      recordProverPhaseDuration(id, 'tally', (Date.now() - tallyStart) / 1000)
 
       allData = {
         result,
@@ -274,9 +312,14 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         msg,
         tally,
       }
-
       try {
-        fs.writeFileSync(saveFile, JSON.stringify(allData))
+        saveProofCache(id, {
+          circuitPower: maciRound.circuitPower,
+          result,
+          salt,
+          msg: { proofs: msg },
+          tally: { proofs: tally },
+        })
       } catch (saveError) {
         debug(`Failed to save data: ${saveError}`, 'TALLY-TASK')
       }
