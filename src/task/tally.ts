@@ -57,6 +57,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
   // logger: start the operation
   const operationContext = startOperation('tally', 'TALLY-TASK')
 
+  const usePipeline = Number(process.env.PROVER_PIPELINE || 0) > 0
+
   // Metrics: Record the task start
   recordTaskStart('tally', id)
 
@@ -214,6 +216,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       const tally: ProofData[] = []
 
       // Sequential phases; each internally parallel via worker pool
+      // usePipeline is determined at function scope
       info('Start to generate proof for msgs', 'TALLY-TASK', {
         period: maciRound.period,
         circuitPower: maciRound.circuitPower,
@@ -237,26 +240,106 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         Number(process.env.PROVER_SAVE_CHUNK || 0) ||
           Number(process.env.PROVER_CONCURRENCY || 2),
       )
+      // if pipeline enabled, submit cached prefix (>= mi) first
+      const miStart = Math.ceil(Number(mc) / params.batchSize)
+      const submitBatchMsg = Math.max(
+        1,
+        Number(process.env.SUBMIT_BATCH_MSG || 0) ||
+          Number(process.env.PROVER_SAVE_CHUNK || 0) ||
+          Number(process.env.PROVER_CONCURRENCY || 1),
+      )
+      let nextSubmitMsg = miStart
+      if (usePipeline && nextSubmitMsg < msg.length) {
+        // submit cached region [miStart, msg.length)
+        let si = nextSubmitMsg
+        while (si < msg.length) {
+          const end = Math.min(si + submitBatchMsg, msg.length)
+          const items = msg.slice(si, end).map((x) => ({
+            groth16Proof: x.proofHex as any,
+            newStateCommitment: x.commitment as any,
+          }))
+          // batch with degrade
+          let left = 0
+          let right = items.length
+          while (left < right) {
+            const size = right - left
+            const slice = items.slice(left, right)
+            try {
+              const res = await withRetry(
+                () => maciClient.processMessagesBatch(slice, 'auto'),
+                { context: 'RPC-PROCESS-MESSAGE-BATCH', maxRetries: 3 },
+              )
+              info(`Processed MSG cached batch [${si + left}..${si + right - 1}] ✅ tx=${res.transactionHash}`,'TALLY-TASK')
+              break
+            } catch (e) {
+              if (size === 1) {
+                const single = slice[0]
+                const res = await withRetry(
+                  () => maciClient.processMessage({ groth16Proof: single.groth16Proof, newStateCommitment: single.newStateCommitment }, 'auto'),
+                  { context: 'RPC-PROCESS-MESSAGE', maxRetries: 3 },
+                )
+                info(`Processed MSG cached #${si + left} ✅ tx=${res.transactionHash}`,'TALLY-TASK')
+                break
+              } else {
+                right = left + Math.floor(size / 2)
+              }
+            }
+          }
+          si = end
+        }
+        nextSubmitMsg = msg.length
+      }
+
       while (startMsg < res.msgInputs.length) {
         const end = Math.min(startMsg + chunk, res.msgInputs.length)
-        const slice = res.msgInputs.slice(startMsg, end)
-        const proofs = await proveMany(slice, msgWasm, msgZkey, { phase: 'msg' })
-        for (let i = 0; i < slice.length; i++) {
-          const input = slice[i]
+        const sliceInputs = res.msgInputs.slice(startMsg, end)
+        const proofs = await proveMany(sliceInputs, msgWasm, msgZkey, { phase: 'msg' })
+        for (let i = 0; i < sliceInputs.length; i++) {
+          const input = sliceInputs[i]
           const proofHex = proofs[i]
           const commitment = input.newStateCommitment.toString()
           msg.push({ proofHex, commitment })
-          debug(`Generated proof with msg #${startMsg + i}`, 'TALLY-TASK', {
-            proofHex,
-            commitment,
-          })
+          debug(`Generated proof with msg #${startMsg + i}`, 'TALLY-TASK', { proofHex, commitment })
         }
-        saveProofCache(id, {
-          circuitPower: maciRound.circuitPower,
-          msg: { proofs: msg },
-          result,
-          salt,
-        })
+        saveProofCache(id, { circuitPower: maciRound.circuitPower, msg: { proofs: msg }, result, salt })
+
+        if (usePipeline) {
+          // submit this chunk portion not yet submitted
+          const submitStart = Math.max(nextSubmitMsg, startMsg)
+          if (submitStart < end) {
+            const items = msg.slice(submitStart, end).map((x) => ({
+              groth16Proof: x.proofHex as any,
+              newStateCommitment: x.commitment as any,
+            }))
+            let left = 0
+            let right = items.length
+            while (left < right) {
+              const size = right - left
+              const slice = items.slice(left, right)
+              try {
+                const res = await withRetry(
+                  () => maciClient.processMessagesBatch(slice, 'auto'),
+                  { context: 'RPC-PROCESS-MESSAGE-BATCH', maxRetries: 3 },
+                )
+                info(`Processed MSG batch [${submitStart + left}..${submitStart + right - 1}] ✅ tx=${res.transactionHash}`,'TALLY-TASK')
+                break
+              } catch (e) {
+                if (size === 1) {
+                  const single = slice[0]
+                  const res = await withRetry(
+                    () => maciClient.processMessage({ groth16Proof: single.groth16Proof, newStateCommitment: single.newStateCommitment }, 'auto'),
+                    { context: 'RPC-PROCESS-MESSAGE', maxRetries: 3 },
+                  )
+                  info(`Processed MSG #${submitStart + left} ✅ tx=${res.transactionHash}`,'TALLY-TASK')
+                  break
+                } else {
+                  right = left + Math.floor(size / 2)
+                }
+              }
+            }
+            nextSubmitMsg = end
+          }
+        }
         startMsg = end
       }
       recordProverPhaseDuration(id, 'msg', (Date.now() - msgStart) / 1000)
@@ -265,6 +348,55 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         period: maciRound.period,
         circuitPower: maciRound.circuitPower,
       })
+      // Gate: ensure contract period is tallying BEFORE any tally submission (including cached region)
+      const ensureTallying = async () => {
+        try {
+          // Wait a bit for processed messages to reflect on-chain
+          for (let i = 0; i < 10; i++) {
+            const pmc = await withRetry(() => maciClient.getProcessedMsgCount(), {
+              context: 'RPC-GET-MSG-COUNT-CONFIRM',
+              maxRetries: 3,
+            })
+            if (Number(pmc) >= (allData?.msg?.length || 0)) break
+            await sleep(3000)
+          }
+          // Try stopping processing (idempotent) then wait for tallying
+          await withRetry(() => maciClient.stopProcessingPeriod('auto'), {
+            context: 'RPC-STOP-PROCESSING-PERIOD-GATE',
+            maxRetries: 3,
+          })
+          for (let i = 0; i < 20; i++) {
+            const p = await withRetry(() => maciClient.getPeriod(), {
+              context: 'RPC-GET-PERIOD-TALLYING',
+              maxRetries: 3,
+            })
+            if (p.status === 'tallying') return true
+            await sleep(3000)
+          }
+          return false
+        } catch {
+          return false
+        }
+      }
+      const pBefore = await withRetry(() => maciClient.getPeriod(), {
+        context: 'RPC-GET-PERIOD-BEFORE-TALLY',
+        maxRetries: 3,
+      })
+      if (pBefore.status !== 'tallying') {
+        const ok = await ensureTallying()
+        if (!ok) {
+          logError(
+            new TallyError('Contract not in tallying period', 'CONTRACT_ERROR', {
+              roundId: id,
+              operation: 'tally',
+              timestamp: Date.now(),
+            }),
+            'TALLY-TASK',
+          )
+          endOperation('tally', false, operationContext)
+          return { error: { msg: 'period_not_tallying' } }
+        }
+      }
       const tallyWasm = zkeyPath + maciRound.circuitPower + '_v3/tally.wasm'
       const tallyZkey = zkeyPath + maciRound.circuitPower + '_v3/tally.zkey'
       const cachedTally = cache?.tally?.proofs || []
@@ -279,6 +411,43 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         }
       }
       const tallyStart = Date.now()
+      const uiStart = Math.ceil(Number(uc) / 5 ** params.intStateTreeDepth)
+      const submitBatchTally = Math.max(
+        1,
+        Number(process.env.SUBMIT_BATCH_TALLY || 0) ||
+          Number(process.env.PROVER_SAVE_CHUNK || 0) ||
+          Number(process.env.PROVER_CONCURRENCY || 1),
+      )
+      let nextSubmitTally = uiStart
+      if (usePipeline && nextSubmitTally < tally.length) {
+        let si = nextSubmitTally
+        while (si < tally.length) {
+          const end = Math.min(si + submitBatchTally, tally.length)
+          const items = tally.slice(si, end).map((x) => ({ groth16Proof: x.proofHex as any, newTallyCommitment: x.commitment as any }))
+          let left = 0, right = items.length
+          while (left < right) {
+            const size = right - left
+            const slice = items.slice(left, right)
+            try {
+              const res = await withRetry(() => maciClient.processTallyBatch(slice, 'auto'), { context: 'RPC-PROCESS-TALLY-BATCH', maxRetries: 3 })
+              info(`Processed TALLY cached batch [${si + left}..${si + right - 1}] ✅ tx=${res.transactionHash}`,'TALLY-TASK')
+              break
+            } catch (e) {
+              if (size === 1) {
+                const single = slice[0]
+                const res = await withRetry(() => maciClient.processTally({ groth16Proof: single.groth16Proof, newTallyCommitment: single.newTallyCommitment }, 'auto'), { context: 'RPC-PROCESS-TALLY', maxRetries: 3 })
+                info(`Processed TALLY cached #${si + left} ✅ tx=${res.transactionHash}`,'TALLY-TASK')
+                break
+              } else {
+                right = left + Math.floor(size / 2)
+              }
+            }
+          }
+          si = end
+        }
+        nextSubmitTally = tally.length
+      }
+
       while (startTally < res.tallyInputs.length) {
         const end = Math.min(startTally + chunk, res.tallyInputs.length)
         const slice = res.tallyInputs.slice(startTally, end)
@@ -302,6 +471,32 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
           result,
           salt,
         })
+        if (usePipeline) {
+          const submitStart = Math.max(nextSubmitTally, startTally)
+          if (submitStart < end) {
+            const items = tally.slice(submitStart, end).map((x) => ({ groth16Proof: x.proofHex as any, newTallyCommitment: x.commitment as any }))
+            let left = 0, right = items.length
+            while (left < right) {
+              const size = right - left
+              const ps = items.slice(left, right)
+              try {
+                const res = await withRetry(() => maciClient.processTallyBatch(ps, 'auto'), { context: 'RPC-PROCESS-TALLY-BATCH', maxRetries: 3 })
+                info(`Processed TALLY batch [${submitStart + left}..${submitStart + right - 1}] ✅ tx=${res.transactionHash}`,'TALLY-TASK')
+                break
+              } catch (e) {
+                if (size === 1) {
+                  const single = ps[0]
+                  const res = await withRetry(() => maciClient.processTally({ groth16Proof: single.groth16Proof, newTallyCommitment: single.newTallyCommitment }, 'auto'), { context: 'RPC-PROCESS-TALLY', maxRetries: 3 })
+                  info(`Processed TALLY #${submitStart + left} ✅ tx=${res.transactionHash}`,'TALLY-TASK')
+                  break
+                } else {
+                  right = left + Math.floor(size / 2)
+                }
+              }
+            }
+            nextSubmitTally = end
+          }
+        }
         startTally = end
       }
       recordProverPhaseDuration(id, 'tally', (Date.now() - tallyStart) / 1000)
@@ -327,40 +522,69 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
 
     let mi = Math.ceil(Number(mc) / params.batchSize)
     info(`Prepare to process msg`, 'TALLY-TASK')
-    if (mi < allData.msg.length) {
-      for (; mi < allData.msg.length; mi++) {
-        const { proofHex, commitment } = allData.msg[mi]
-        const res = await withRetry(
-          () =>
-            maciClient.processMessage(
-              {
-                groth16Proof: proofHex,
-                newStateCommitment: commitment,
-              },
-              1.5,
-            ),
-          {
-            context: 'RPC-PROCESS-MESSAGE',
-            maxRetries: 3,
-          },
-        )
-        debug(
-          `processedMessage #${mi} 🛠️🛠️🛠️🛠️ with tx hash successfully ✅: ${res.transactionHash}`,
-          'TALLY-TASK',
-        )
+    if (!usePipeline && mi < allData.msg.length) {
+      const submitBatch = Math.max(
+        1,
+        Number(process.env.SUBMIT_BATCH_MSG || 0) ||
+          Number(process.env.PROVER_SAVE_CHUNK || 0) ||
+          Number(process.env.PROVER_CONCURRENCY || 1),
+      )
+      while (mi < allData.msg.length) {
+        const end = Math.min(mi + submitBatch, allData.msg.length)
+        const items = allData.msg.slice(mi, end).map((x) => ({
+          groth16Proof: x.proofHex as any,
+          newStateCommitment: x.commitment as any,
+        }))
+        // try batch, degrade to smaller if fails
+        let left = 0
+        let right = items.length
+        while (left < right) {
+          const size = right - left
+          const slice = items.slice(left, right)
+          try {
+            const res = await withRetry(
+              () => maciClient.processMessagesBatch(slice, 'auto'), 
+              { context: 'RPC-PROCESS-MESSAGE-BATCH', maxRetries: 3 },
+            )
+            info(`Processed MSG batch [${mi + left}..${mi + right - 1}] ✅ tx=${res.transactionHash}`,'TALLY-TASK')
+            break
+          } catch (e) {
+            if (size === 1) {
+              // fallback to single
+              const single = slice[0]
+              const res = await withRetry(
+                () =>
+                  maciClient.processMessage(
+                    {
+                      groth16Proof: single.groth16Proof,
+                      newStateCommitment: single.newStateCommitment,
+                    },
+                    'auto',
+                  ),
+                { context: 'RPC-PROCESS-MESSAGE', maxRetries: 3 },
+              )
+              info(`Processed MSG #${mi + left} ✅ tx=${res.transactionHash}`,'TALLY-TASK')
+              break
+            } else {
+              // split range: try first half
+              right = left + Math.floor(size / 2)
+            }
+          }
+        }
+        mi = end
       }
 
-      await withRetry(() => maciClient.stopProcessingPeriod(1.5), {
+      await withRetry(() => maciClient.stopProcessingPeriod('auto'), {
         context: 'RPC-STOP-PROCESSING-PERIOD',
         maxRetries: 3,
       })
-    } else {
+    } else if (!usePipeline) {
       const period = await withRetry(() => maciClient.getPeriod(), {
         context: 'RPC-GET-PERIOD-FINAL',
         maxRetries: 3,
       })
       if (period.status === 'processing') {
-        await withRetry(() => maciClient.stopProcessingPeriod(1.5), {
+        await withRetry(() => maciClient.stopProcessingPeriod('auto'), {
           context: 'RPC-STOP-PROCESSING-PERIOD',
           maxRetries: 3,
         })
@@ -371,27 +595,53 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
 
     let ui = Math.ceil(Number(uc) / 5 ** params.intStateTreeDepth)
     info(`Prepare to process tally`, 'TALLY-TASK')
-    if (ui < allData.tally.length) {
-      for (; ui < allData.tally.length; ui++) {
-        const { proofHex, commitment } = allData.tally[ui]
-        const res = await withRetry(
-          () =>
-            maciClient.processTally(
-              {
-                groth16Proof: proofHex,
-                newTallyCommitment: commitment,
-              },
-              1.5,
-            ),
-          {
-            context: 'RPC-PROCESS-TALLY',
-            maxRetries: 3,
-          },
-        )
-        debug(
-          `processedTally #${ui} 🛠️🛠️🛠️🛠️ with tx hash successfully ✅: ${res.transactionHash}`,
-          'TALLY-TASK',
-        )
+    if (!usePipeline && ui < allData.tally.length) {
+      const submitBatch = Math.max(
+        1,
+        Number(process.env.SUBMIT_BATCH_TALLY || 0) ||
+          Number(process.env.PROVER_SAVE_CHUNK || 0) ||
+          Number(process.env.PROVER_CONCURRENCY || 1),
+      )
+      while (ui < allData.tally.length) {
+        const end = Math.min(ui + submitBatch, allData.tally.length)
+        const items = allData.tally.slice(ui, end).map((x) => ({
+          groth16Proof: x.proofHex as any,
+          newTallyCommitment: x.commitment as any,
+        }))
+        let left = 0
+        let right = items.length
+        while (left < right) {
+          const size = right - left
+          const slice = items.slice(left, right)
+          try {
+            const res = await withRetry(
+              () => maciClient.processTallyBatch(slice, 'auto'),
+              { context: 'RPC-PROCESS-TALLY-BATCH', maxRetries: 3 },
+            )
+            info(`Processed TALLY batch [${ui + left}..${ui + right - 1}] ✅ tx=${res.transactionHash}`,'TALLY-TASK')
+            break
+          } catch (e) {
+            if (size === 1) {
+              const single = slice[0]
+              const res = await withRetry(
+                () =>
+                  maciClient.processTally(
+                    {
+                      groth16Proof: single.groth16Proof,
+                      newTallyCommitment: single.newTallyCommitment,
+                    },
+                    'auto',
+                  ),
+                { context: 'RPC-PROCESS-TALLY', maxRetries: 3 },
+              )
+              info(`Processed TALLY #${ui + left} ✅ tx=${res.transactionHash}`,'TALLY-TASK')
+              break
+            } else {
+              right = left + Math.floor(size / 2)
+            }
+          }
+        }
+        ui = end
       }
 
       try {

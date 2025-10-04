@@ -957,6 +957,106 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
       _funds,
     )
   }
+
+  // Batch submit: process_message[]
+  processMessagesBatch = async (
+    items: Array<{ groth16Proof: Groth16ProofType; newStateCommitment: Uint256 }>,
+    fee: number | StdFee | 'auto' = 'auto',
+    memo?: string,
+    _funds?: Coin[],
+  ): Promise<ExecuteResult> => {
+    const msgs: MsgExecuteContractEncodeObject[] = items.map((it) => ({
+      typeUrl: '/cosmwasm.wasm.v1.MsgExecuteContract',
+      value: MsgExecuteContract.fromPartial({
+        sender: this.sender,
+        contract: this.contractAddress,
+        msg: new TextEncoder().encode(
+          JSON.stringify({
+            process_message: {
+              groth16_proof: it.groth16Proof,
+              new_state_commitment: it.newStateCommitment,
+            },
+          }),
+        ),
+      }),
+    }))
+    const response = await this.client.signAndBroadcast(
+      this.sender,
+      msgs,
+      fee,
+      memo || '',
+    )
+    return response as unknown as ExecuteResult
+  }
+
+  // Batch submit: process_tally[]
+  processTallyBatch = async (
+    items: Array<{ groth16Proof: Groth16ProofType; newTallyCommitment: Uint256 }>,
+    fee: number | StdFee | 'auto' = 'auto',
+    memo?: string,
+    _funds?: Coin[],
+  ): Promise<ExecuteResult> => {
+    const msgs: MsgExecuteContractEncodeObject[] = items.map((it) => ({
+      typeUrl: '/cosmwasm.wasm.v1.MsgExecuteContract',
+      value: MsgExecuteContract.fromPartial({
+        sender: this.sender,
+        contract: this.contractAddress,
+        msg: new TextEncoder().encode(
+          JSON.stringify({
+            process_tally: {
+              groth16_proof: it.groth16Proof,
+              new_tally_commitment: it.newTallyCommitment,
+            },
+          }),
+        ),
+      }),
+    }))
+    const response = await this.client.signAndBroadcast(
+      this.sender,
+      msgs,
+      fee,
+      memo || '',
+    )
+    return response as unknown as ExecuteResult
+  }
+
+  // Batch submit: process_deactivate_message[]
+  processDeactivateMessageBatch = async (
+    items: Array<{
+      groth16Proof: Groth16ProofType
+      newDeactivateCommitment: Uint256
+      newDeactivateRoot: Uint256
+      size: Uint256
+    }>,
+    fee: number | StdFee | 'auto' = 'auto',
+    memo?: string,
+    _funds?: Coin[],
+  ): Promise<ExecuteResult> => {
+    const msgs: MsgExecuteContractEncodeObject[] = items.map((it) => ({
+      typeUrl: '/cosmwasm.wasm.v1.MsgExecuteContract',
+      value: MsgExecuteContract.fromPartial({
+        sender: this.sender,
+        contract: this.contractAddress,
+        msg: new TextEncoder().encode(
+          JSON.stringify({
+            process_deactivate_message: {
+              groth16_proof: it.groth16Proof,
+              new_deactivate_commitment: it.newDeactivateCommitment,
+              new_deactivate_root: it.newDeactivateRoot,
+              size: it.size,
+            },
+          }),
+        ),
+      }),
+    }))
+    const response = await this.client.signAndBroadcast(
+      this.sender,
+      msgs,
+      fee,
+      memo || '',
+    )
+    return response as unknown as ExecuteResult
+  }
   stopTallyingAndClaim = async (
     {
       results,

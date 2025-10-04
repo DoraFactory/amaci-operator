@@ -173,38 +173,59 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
       }
       recordProverPhaseDuration(id, 'deactivate', (Date.now() - phaseStart) / 1000)
 
-      info(
-        `Prepare to send ${dmsg.length} deactivate messages`,
-        'DEACTIVATE-TASK',
+      info(`Prepare to send ${dmsg.length} deactivate messages`, 'DEACTIVATE-TASK')
+
+      const submitBatch = Math.max(
+        1,
+        Number(process.env.SUBMIT_BATCH_DEACTIVATE || 0) ||
+          Number(process.env.PROVER_SAVE_CHUNK || 0) ||
+          Number(process.env.PROVER_CONCURRENCY || 1),
       )
-
-      for (let i = 0; i < dmsg.length; i++) {
-        const { proofHex, commitment, root, size } = dmsg[i]
-
-        const res = await withRetry(
-          () =>
-            maciClient.processDeactivateMessage(
-              {
-                groth16Proof: proofHex,
-                newDeactivateCommitment: commitment,
-                newDeactivateRoot: root,
-                size,
-              },
-              1.5,
-            ),
-          {
-            context: 'RPC-PROCESS-DEACTIVATE',
-            maxRetries: 3,
-          },
-        )
-
-        info(
-          `Processed deactivate message #${i} successfully✅`,
-          'DEACTIVATE-TASK',
-          {
-            txHash: res.transactionHash,
-          },
-        )
+      let di = 0
+      while (di < dmsg.length) {
+        const end = Math.min(di + submitBatch, dmsg.length)
+        const items = dmsg.slice(di, end).map((x) => ({
+          groth16Proof: x.proofHex as any,
+          newDeactivateCommitment: x.commitment as any,
+          newDeactivateRoot: x.root as any,
+          size: x.size as any,
+        }))
+        let left = 0
+        let right = items.length
+        while (left < right) {
+          const size = right - left
+          const slice = items.slice(left, right)
+          try {
+            const res = await withRetry(
+              () => maciClient.processDeactivateMessageBatch(slice, 'auto'),
+              { context: 'RPC-PROCESS-DEACTIVATE-BATCH', maxRetries: 3 },
+            )
+            info(`Processed deactivate batch [${di + left}..${di + right - 1}] ✅`, 'DEACTIVATE-TASK', { txHash: res.transactionHash })
+            break
+          } catch (e) {
+            if (size === 1) {
+              const single = slice[0]
+              const res = await withRetry(
+                () =>
+                  maciClient.processDeactivateMessage(
+                    {
+                      groth16Proof: single.groth16Proof,
+                      newDeactivateCommitment: single.newDeactivateCommitment,
+                      newDeactivateRoot: single.newDeactivateRoot,
+                      size: single.size,
+                    },
+                    'auto',
+                  ),
+                { context: 'RPC-PROCESS-DEACTIVATE', maxRetries: 3 },
+              )
+              info(`Processed deactivate #${di + left} ✅`, 'DEACTIVATE-TASK', { txHash: res.transactionHash })
+              break
+            } else {
+              right = left + Math.floor(size / 2)
+            }
+          }
+        }
+        di = end
       }
 
       const uploadRes = await uploadDeactivateHistory(
