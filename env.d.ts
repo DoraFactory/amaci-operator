@@ -10,6 +10,10 @@ declare global {
       CODE_IDS: string[]
       PROVER_CONCURRENCY: string
       PROVER_SAVE_CHUNK: string
+      SUBMIT_BATCH_MSG: string
+      SUBMIT_BATCH_TALLY: string
+      SUBMIT_BATCH_DEACTIVATE: string
+      PROVER_PIPELINE: string
 
       WORK_PATH: string
       LOG_LEVEL: string
