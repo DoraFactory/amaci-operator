@@ -4,7 +4,7 @@ import path from 'path'
 import { GasPrice, calculateFee } from '@cosmjs/stargate'
 
 import { fetchAllVotesLogs, fetchRound } from '../vota/indexer'
-import { getContractSignerClient, withRetry } from '../lib/client/utils'
+import { getContractSignerClient, withRetry, withBroadcastRetry } from '../lib/client/utils'
 import { maciParamsFromCircuitPower, ProofData, TaskAct } from '../types'
 import {
   info,
@@ -27,7 +27,7 @@ import {
 
 import { genMaciInputs } from '../operator/genInputs'
 import { proveMany } from '../prover/pool'
-import { loadProofCache, saveProofCache } from '../storage/proofCache'
+import { loadProofCache, saveProofCache, buildInputsSignature } from '../storage/proofCache'
 
 const zkeyPath = './zkey/'
 
@@ -167,7 +167,28 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         },
       )
 
-      const res = genMaciInputs(
+      // Try reuse cached inputs (skip genMaciInputs if signature matches)
+      const inputsSig = buildInputsSignature({
+        circuitPower: maciRound.circuitPower,
+        circuitType: maciRound.circuitType,
+        maxVoteOptions: Number(maxVoteOptions),
+        signupCount: logs.signup.length,
+        lastSignupId: logs.signup[logs.signup.length - 1]?.id,
+        msgCount: logs.msg.length,
+        lastMsgId: logs.msg[logs.msg.length - 1]?.id,
+        dmsgCount: logs.dmsg.length,
+        lastDmsgId: logs.dmsg[logs.dmsg.length - 1]?.id,
+        processedDMsgCount: Number(dc),
+      })
+      let res: any
+      if (cache && cache.inputsSig === inputsSig && cache.inputs?.msgInputs && cache.inputs?.tallyInputs && cache.result && cache.salt) {
+        res = {
+          msgInputs: cache.inputs.msgInputs,
+          tallyInputs: cache.inputs.tallyInputs,
+          result: cache.result,
+        }
+      } else {
+        res = genMaciInputs(
         {
           ...params,
           coordPriKey: BigInt(process.env.COORDINATOR_PRI_KEY),
@@ -204,13 +225,22 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
           })),
         },
         Number(dc),
-      )
+        )
+        // Save inputs + signature immediately to speed up restarts
+        saveProofCache(id, {
+          circuitPower: maciRound.circuitPower,
+          inputsSig,
+          inputs: { msgInputs: res.msgInputs, tallyInputs: res.tallyInputs },
+          result: res.result.map((x: any) => x.toString()),
+          salt: (res.tallyInputs.length ? res.tallyInputs[res.tallyInputs.length - 1].newResultsRootSalt.toString() : '0'),
+        })
+      }
 
       const lastTallyInput = res.tallyInputs[res.tallyInputs.length - 1]
-      const result = res.result.map((i) => i.toString())
-      const salt = lastTallyInput
-        ? lastTallyInput.newResultsRootSalt.toString()
-        : '0'
+      const result = (cache && cache.inputsSig === inputsSig && cache.result) ? cache.result : res.result.map((i: any) => i.toString())
+      const salt = (cache && cache.inputsSig === inputsSig && cache.salt)
+        ? cache.salt
+        : (lastTallyInput ? lastTallyInput.newResultsRootSalt.toString() : '0')
 
       const msg: ProofData[] = []
       const tally: ProofData[] = []
@@ -265,7 +295,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
             const size = right - left
             const slice = items.slice(left, right)
             try {
-              const res = await withRetry(
+              const res = await withBroadcastRetry(
                 () => maciClient.processMessagesBatch(slice, 'auto'),
                 { context: 'RPC-PROCESS-MESSAGE-BATCH', maxRetries: 3 },
               )
@@ -274,7 +304,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
             } catch (e) {
               if (size === 1) {
                 const single = slice[0]
-                const res = await withRetry(
+                const res = await withBroadcastRetry(
                   () => maciClient.processMessage({ groth16Proof: single.groth16Proof, newStateCommitment: single.newStateCommitment }, 'auto'),
                   { context: 'RPC-PROCESS-MESSAGE', maxRetries: 3 },
                 )
@@ -317,7 +347,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
               const size = right - left
               const slice = items.slice(left, right)
               try {
-                const res = await withRetry(
+                const res = await withBroadcastRetry(
                   () => maciClient.processMessagesBatch(slice, 'auto'),
                   { context: 'RPC-PROCESS-MESSAGE-BATCH', maxRetries: 3 },
                 )
@@ -326,7 +356,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
               } catch (e) {
                 if (size === 1) {
                   const single = slice[0]
-                  const res = await withRetry(
+                  const res = await withBroadcastRetry(
                     () => maciClient.processMessage({ groth16Proof: single.groth16Proof, newStateCommitment: single.newStateCommitment }, 'auto'),
                     { context: 'RPC-PROCESS-MESSAGE', maxRetries: 3 },
                   )
@@ -429,13 +459,13 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
             const size = right - left
             const slice = items.slice(left, right)
             try {
-              const res = await withRetry(() => maciClient.processTallyBatch(slice, 'auto'), { context: 'RPC-PROCESS-TALLY-BATCH', maxRetries: 3 })
+              const res = await withBroadcastRetry(() => maciClient.processTallyBatch(slice, 'auto'), { context: 'RPC-PROCESS-TALLY-BATCH', maxRetries: 3 })
               info(`Processed TALLY cached batch [${si + left}..${si + right - 1}] ✅ tx=${res.transactionHash}`,'TALLY-TASK')
               break
             } catch (e) {
               if (size === 1) {
                 const single = slice[0]
-                const res = await withRetry(() => maciClient.processTally({ groth16Proof: single.groth16Proof, newTallyCommitment: single.newTallyCommitment }, 'auto'), { context: 'RPC-PROCESS-TALLY', maxRetries: 3 })
+                const res = await withBroadcastRetry(() => maciClient.processTally({ groth16Proof: single.groth16Proof, newTallyCommitment: single.newTallyCommitment }, 'auto'), { context: 'RPC-PROCESS-TALLY', maxRetries: 3 })
                 info(`Processed TALLY cached #${si + left} ✅ tx=${res.transactionHash}`,'TALLY-TASK')
                 break
               } else {
@@ -480,13 +510,13 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
               const size = right - left
               const ps = items.slice(left, right)
               try {
-                const res = await withRetry(() => maciClient.processTallyBatch(ps, 'auto'), { context: 'RPC-PROCESS-TALLY-BATCH', maxRetries: 3 })
+                const res = await withBroadcastRetry(() => maciClient.processTallyBatch(ps, 'auto'), { context: 'RPC-PROCESS-TALLY-BATCH', maxRetries: 3 })
                 info(`Processed TALLY batch [${submitStart + left}..${submitStart + right - 1}] ✅ tx=${res.transactionHash}`,'TALLY-TASK')
                 break
               } catch (e) {
                 if (size === 1) {
                   const single = ps[0]
-                  const res = await withRetry(() => maciClient.processTally({ groth16Proof: single.groth16Proof, newTallyCommitment: single.newTallyCommitment }, 'auto'), { context: 'RPC-PROCESS-TALLY', maxRetries: 3 })
+                  const res = await withBroadcastRetry(() => maciClient.processTally({ groth16Proof: single.groth16Proof, newTallyCommitment: single.newTallyCommitment }, 'auto'), { context: 'RPC-PROCESS-TALLY', maxRetries: 3 })
                   info(`Processed TALLY #${submitStart + left} ✅ tx=${res.transactionHash}`,'TALLY-TASK')
                   break
                 } else {
@@ -614,7 +644,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
           const size = right - left
           const slice = items.slice(left, right)
           try {
-            const res = await withRetry(
+            const res = await withBroadcastRetry(
               () => maciClient.processTallyBatch(slice, 'auto'),
               { context: 'RPC-PROCESS-TALLY-BATCH', maxRetries: 3 },
             )
@@ -623,7 +653,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
           } catch (e) {
             if (size === 1) {
               const single = slice[0]
-              const res = await withRetry(
+              const res = await withBroadcastRetry(
                 () =>
                   maciClient.processTally(
                     {
@@ -649,7 +679,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
           'Executing stopTallying and claim as batch operation...',
           'TALLY-TASK',
         )
-        const batchResult = await withRetry(
+        const batchResult = await withBroadcastRetry(
           () =>
             maciClient.stopTallyingAndClaim(
               {
@@ -672,7 +702,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
 
         info('Trying operations separately...', 'TALLY-TASK')
         try {
-          await withRetry(
+          await withBroadcastRetry(
             () =>
               maciClient.stopTallyingPeriod(
                 {
@@ -688,7 +718,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
           )
 
           info('Executing claim operation.....', 'TALLY-TASK')
-          const claimResult = await withRetry(() => maciClient.claim(1.5), {
+          const claimResult = await withBroadcastRetry(() => maciClient.claim(1.5), {
             context: 'RPC-CLAIM',
             maxRetries: 3,
           })

@@ -5,7 +5,8 @@ import {
 import { GasPrice } from '@cosmjs/stargate'
 
 import { GenerateWallet } from '../../wallet'
-import { withRetry } from './utils'
+import { withRetry, withBroadcastRetry } from './utils'
+import { withTxLock } from './txLock'
 
 export const uploadDeactivateHistory = async (
   contract: string,
@@ -14,8 +15,8 @@ export const uploadDeactivateHistory = async (
   return withRetry(
     async () => {
       const defaultSigningClientOptions: SigningCosmWasmClientOptions = {
-        broadcastPollIntervalMs: 8_000,
-        broadcastTimeoutMs: 16_000,
+        broadcastPollIntervalMs: 5_000,
+        broadcastTimeoutMs: 60_000,
         gasPrice: GasPrice.fromString('10000000000peaka'),
       }
       const contractAddress = contract
@@ -29,15 +30,21 @@ export const uploadDeactivateHistory = async (
           },
         )
       const [{ address }] = await wallet.getAccounts()
-      return signingCosmWasmClient.execute(
-        address,
-        contractAddress,
-        {
-          upload_deactivate_message: {
-            deactivate_message: deactivate,
-          },
-        },
-        'auto',
+      return withTxLock(address, () =>
+        withBroadcastRetry(
+          () =>
+            signingCosmWasmClient.execute(
+              address,
+              contractAddress,
+              {
+                upload_deactivate_message: {
+                  deactivate_message: deactivate,
+                },
+              },
+              'auto',
+            ),
+          { context: 'UPLOAD-DEACTIVATE-HISTORY', maxRetries: 3 },
+        ),
       )
     },
     {

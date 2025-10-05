@@ -90,9 +90,35 @@ export async function withRetry<T>(
   throw lastError
 }
 
+// Helper for tx broadcasts that sometimes return
+// "Transaction ... was submitted but was not yet found on the chain"
+// Falls back to polling tx status and returns a minimal result with transactionHash
+export async function withBroadcastRetry<T extends { transactionHash?: string }>(
+  fn: () => Promise<T>,
+  options: {
+    maxRetries?: number
+    initialDelay?: number
+    maxDelay?: number
+    backoffFactor?: number
+    context?: string
+  } = {},
+): Promise<T> {
+  const client = await CosmWasmClient.connect(process.env.RPC_ENDPOINT!)
+  return withRetry(fn, {
+    ...options,
+    checkTxStatus: async (txId: string) => {
+      const tx = await client.getTx(txId)
+      if (tx) {
+        return { confirmed: true, result: ({ transactionHash: txId } as any) as T }
+      }
+      return { confirmed: false, result: undefined as any }
+    },
+  })
+}
+
 const defaultSigningClientOptions: SigningCosmWasmClientOptions = {
-  broadcastPollIntervalMs: 8_000,
-  broadcastTimeoutMs: 16_000,
+  broadcastPollIntervalMs: 5_000,
+  broadcastTimeoutMs: 60_000,
   gasPrice: GasPrice.fromString('10000000000peaka'),
 }
 
