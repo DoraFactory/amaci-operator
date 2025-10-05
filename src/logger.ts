@@ -146,6 +146,9 @@ const winstonLogger = winston.createLogger({
   exitOnError: false,
 })
 
+// swallow transport-level errors to avoid 'Unhandled "error" event' during shutdown
+winstonLogger.on('error', () => {})
+
 // current context
 let currentContext: Record<string, any> = {}
 
@@ -355,6 +358,7 @@ function getRoundLogger(roundId: string, forceRebuild = false): winston.Logger {
 
 // add a lock, prevent multiple calls to closeAllTransports
 let isClosingLoggers = false
+let isShuttingDown = false
 let forceExitTimeout: NodeJS.Timeout | null = null
 
 // modify the method to close all transports
@@ -423,6 +427,16 @@ const logWithContext = (
   moduleOrContext?: string | Record<string, any>,
   context?: Record<string, any>,
 ) => {
+  if (isShuttingDown) {
+    // Avoid writing to winston transports during shutdown
+    try {
+      const ts = new Date().toISOString()
+      const lvl = String(level || 'info').toUpperCase()
+      const mod = typeof moduleOrContext === 'string' ? moduleOrContext : ''
+      console.log(`[${ts}][${lvl}]${mod ? ' [' + mod + ']' : ''} ${String(message)}`)
+    } catch {}
+    return
+  }
   let moduleStr = ''
   let contextObj = { ...currentContext }
 
@@ -738,6 +752,14 @@ export default {
 }
 
 export const gracefulShutdown = async (timeout = 5000): Promise<boolean> => {
+  isShuttingDown = true
+  // detach exception/rejection handlers to prevent writes after end
+  try {
+    ;(winstonLogger as any).exceptions?.unhandle?.()
+  } catch {}
+  try {
+    ;(winstonLogger as any).rejections?.unhandle?.()
+  } catch {}
   console.log(
     `[${new Date().toISOString()}][LOGGER] Starting graceful shutdown with ${timeout}ms timeout`,
   )
@@ -801,10 +823,12 @@ export const gracefulShutdown = async (timeout = 5000): Promise<boolean> => {
 
 // modify the process exit handling
 process.on('exit', () => {
-  console.log(
-    `[${new Date().toISOString()}][LOGGER] Process exit - emergency cleanup`,
-  )
-  emergencyCloseLoggers()
+  if (!isShuttingDown) {
+    console.log(
+      `[${new Date().toISOString()}][LOGGER] Process exit - emergency cleanup`,
+    )
+    emergencyCloseLoggers()
+  }
 })
 
 // add other signal handling
