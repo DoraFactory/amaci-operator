@@ -2,7 +2,16 @@ import fs from 'fs'
 import path from 'path'
 
 let timer: Record<string, number> | undefined
-const saveFile = path.join(process.env.WORK_PATH || './work', `deactivate`)
+// move timer file into cache for clarity
+const saveFile = path.join(
+  process.env.WORK_PATH || './work',
+  'cache',
+  'deactivate-timer.json',
+)
+try {
+  const dir = path.dirname(saveFile)
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+} catch {}
 if (fs.existsSync(saveFile)) {
   const file = fs.readFileSync(saveFile).toString()
   try {

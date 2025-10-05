@@ -31,9 +31,9 @@ import { loadProofCache, saveProofCache, buildInputsSignature } from '../storage
 
 const zkeyPath = './zkey/'
 
-const inputsPath = path.join(process.env.WORK_PATH || './work', 'inputs')
+const inputsPath = path.join(process.env.WORK_PATH || './work', 'cache')
 if (!fs.existsSync(inputsPath)) {
-  fs.mkdirSync(inputsPath)
+  fs.mkdirSync(inputsPath, { recursive: true })
 }
 
 interface AllData {

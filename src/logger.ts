@@ -60,8 +60,14 @@ const levelColors = {
 // add alias for color
 colors.setTheme(levelColors)
 
-// determine the log directory
-const logDir = process.env.WORK_PATH || './work'
+// determine the log directories
+const workRoot = process.env.WORK_PATH || './work'
+const dataDir = path.join(workRoot, 'data')
+const roundDir = path.join(workRoot, 'round')
+try {
+  if (!require('fs').existsSync(dataDir)) require('fs').mkdirSync(dataDir, { recursive: true })
+  if (!require('fs').existsSync(roundDir)) require('fs').mkdirSync(roundDir, { recursive: true })
+} catch {}
 
 // create the formatter
 const formats = {
@@ -112,13 +118,15 @@ const LOG_LEVEL = (process.env.LOG_LEVEL || 'info').toLowerCase()
 
 // create the file transport, rotate the log file daily
 const fileTransport = new winston.transports.DailyRotateFile({
-  dirname: logDir,
+  dirname: dataDir,
   filename: 'log-%DATE%.log',
   datePattern: 'YYYY-MM-DD',
   maxSize: '20m',
   maxFiles: '100000d',
   level: LOG_LEVEL,
   format: formats.file,
+  // put audit file at a stable, readable path
+  auditFile: path.join(dataDir, '.log-rotate-audit.json'),
 })
 
 // the console transport
@@ -281,10 +289,7 @@ setInterval(() => cleanupTransports(), TRANSPORT_IDLE_TIMEOUT)
 
 // create a dedicated round logger
 function createRoundLogger(roundId: string): winston.Logger {
-  const roundLogPath = path.join(
-    process.env.WORK_PATH || './work',
-    `round_${roundId}.log`,
-  )
+  const roundLogPath = path.join(roundDir, `${roundId}.log`)
 
   // create a dedicated Winston logger instance
   const roundLogger = winston.createLogger({

@@ -37,6 +37,17 @@ export async function init() {
   if (!fs.existsSync(process.env.WORK_PATH || './work')) {
     fs.mkdirSync(process.env.WORK_PATH || './work')
   }
+  // ensure sub-directories exist for new layout
+  try {
+    const root = process.env.WORK_PATH || './work'
+    const ensure = (p: string) => {
+      if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true })
+    }
+    ensure(root)
+    ensure(root + '/cache')
+    ensure(root + '/data')
+    ensure(root + '/round')
+  } catch {}
 
   const coordinator = genKeypair(BigInt(process.env.COORDINATOR_PRI_KEY))
   const wallet = await GenerateWallet(0)

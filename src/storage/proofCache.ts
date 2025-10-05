@@ -28,9 +28,9 @@ export interface ProofCache {
 const VERSION = 1
 
 function getCachePath(id: string) {
-  const inputsPath = path.join(process.env.WORK_PATH || './work', 'inputs')
-  if (!fs.existsSync(inputsPath)) fs.mkdirSync(inputsPath, { recursive: true })
-  return path.join(inputsPath, id + '.json')
+  const cacheDir = path.join(process.env.WORK_PATH || './work', 'cache')
+  if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true })
+  return path.join(cacheDir, id + '.json')
 }
 
 export function loadProofCache(id: string): ProofCache | undefined {
