@@ -7,7 +7,7 @@ declare global {
       IND_ENDPOINT: string
       DEACTIVATE_RECORDER: string
       DEACTIVATE_INTERVAL: string
-      CODE_IDS: string[]
+      CODE_IDS: string
       PROVER_CONCURRENCY: string
       PROVER_SAVE_CHUNK: string
       SUBMIT_BATCH_MSG: string
@@ -20,6 +20,8 @@ declare global {
       MNEMONIC: string
       PRIVATE: string
       METRICS_PORT: string
+      ZKEY_PATH: string
+      AMACI_CLI?: string
     }
   }
 }

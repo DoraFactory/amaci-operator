@@ -33,7 +33,7 @@ import {
   DeactivateError,
   categorizeError,
 } from '../error'
-const zkeyPath = './zkey/'
+const zkeyRoot = process.env.ZKEY_PATH || path.join(process.env.WORK_PATH || './work', 'zkey')
 
 const deactivateInterval = Number(process.env.DEACTIVATE_INTERVAL || 60000)
 
@@ -227,8 +227,8 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
         }
       }
       const phaseStart = Date.now()
-      const wasm = zkeyPath + maciRound.circuitPower + '_v3/deactivate.wasm'
-      const zkey = zkeyPath + maciRound.circuitPower + '_v3/deactivate.zkey'
+      const wasm = path.join(zkeyRoot, `${maciRound.circuitPower}_v3`, 'deactivate.wasm')
+      const zkey = path.join(zkeyRoot, `${maciRound.circuitPower}_v3`, 'deactivate.zkey')
       const chunk = Math.max(1, Number(process.env.PROVER_SAVE_CHUNK || 0) || Number(process.env.PROVER_CONCURRENCY || 2))
       // If pipeline: submit cached prefix first
       const submitBatch = Math.max(

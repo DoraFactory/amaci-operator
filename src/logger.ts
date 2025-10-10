@@ -60,6 +60,9 @@ const levelColors = {
 // add alias for color
 colors.setTheme(levelColors)
 
+// detect CLI mode to suppress exit-handler chatter when used as short-lived CLI
+const CLI_MODE = process.env.AMACI_CLI === '1'
+
 // determine the log directories
 const workRoot = process.env.WORK_PATH || './work'
 const dataDir = path.join(workRoot, 'data')
@@ -412,13 +415,15 @@ export const emergencyCloseLoggers = () => {
 
 // register exit handler - only register for logger.ts to clean up logger resources
 // the handler in index.ts is for application level exit
-process.on('exit', () => {
-  console.log(
-    `[${new Date().toISOString()}][LOGGER] Process exit - final cleanup`,
-  )
-  // only synchronous operations can be performed in the exit event, so use emergencyCloseLoggers
-  emergencyCloseLoggers()
-})
+if (!CLI_MODE) {
+  process.on('exit', () => {
+    console.log(
+      `[${new Date().toISOString()}][LOGGER] Process exit - final cleanup`,
+    )
+    // only synchronous operations can be performed in the exit event, so use emergencyCloseLoggers
+    emergencyCloseLoggers()
+  })
+}
 
 // modify the logWithContext function, optimize the writing method
 const logWithContext = (
@@ -821,32 +826,36 @@ export const gracefulShutdown = async (timeout = 5000): Promise<boolean> => {
   })
 }
 
-// modify the process exit handling
-process.on('exit', () => {
-  if (!isShuttingDown) {
-    console.log(
-      `[${new Date().toISOString()}][LOGGER] Process exit - emergency cleanup`,
-    )
-    emergencyCloseLoggers()
-  }
-})
-
-// add other signal handling
-;['SIGINT', 'SIGTERM', 'SIGQUIT'].forEach((signal) => {
-  process.on(signal, async () => {
-    console.log(
-      `[${new Date().toISOString()}][LOGGER] Received ${signal} signal`,
-    )
-
-    try {
-      const success = await gracefulShutdown(5000)
-      process.exit(success ? 0 : 1)
-    } catch (err) {
-      console.error(
-        `[${new Date().toISOString()}][LOGGER] Error during shutdown:`,
-        err,
+// modify the process exit handling (disabled in CLI mode)
+if (!CLI_MODE) {
+  process.on('exit', () => {
+    if (!isShuttingDown) {
+      console.log(
+        `[${new Date().toISOString()}][LOGGER] Process exit - emergency cleanup`,
       )
-      process.exit(1)
+      emergencyCloseLoggers()
     }
   })
-})
+}
+
+// add other signal handling
+if (!CLI_MODE) {
+  ;['SIGINT', 'SIGTERM', 'SIGQUIT'].forEach((signal) => {
+    process.on(signal, async () => {
+      console.log(
+        `[${new Date().toISOString()}][LOGGER] Received ${signal} signal`,
+      )
+
+      try {
+        const success = await gracefulShutdown(5000)
+        process.exit(success ? 0 : 1)
+      } catch (err) {
+        console.error(
+          `[${new Date().toISOString()}][LOGGER] Error during shutdown:`,
+          err,
+        )
+        process.exit(1)
+      }
+    })
+  })
+}

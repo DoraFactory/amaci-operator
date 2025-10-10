@@ -29,7 +29,7 @@ import { genMaciInputs } from '../operator/genInputs'
 import { proveMany } from '../prover/pool'
 import { loadProofCache, saveProofCache, buildInputsSignature } from '../storage/proofCache'
 
-const zkeyPath = './zkey/'
+const zkeyRoot = process.env.ZKEY_PATH || path.join(process.env.WORK_PATH || './work', 'zkey')
 
 const inputsPath = path.join(process.env.WORK_PATH || './work', 'cache')
 if (!fs.existsSync(inputsPath)) {
@@ -251,8 +251,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         period: maciRound.period,
         circuitPower: maciRound.circuitPower,
       })
-      const msgWasm = zkeyPath + maciRound.circuitPower + '_v3/msg.wasm'
-      const msgZkey = zkeyPath + maciRound.circuitPower + '_v3/msg.zkey'
+      const msgWasm = path.join(zkeyRoot, `${maciRound.circuitPower}_v3`, 'msg.wasm')
+      const msgZkey = path.join(zkeyRoot, `${maciRound.circuitPower}_v3`, 'msg.zkey')
       const cachedMsg = cache?.msg?.proofs || []
       let startMsg = 0
       for (let i = 0; i < Math.min(cachedMsg.length, res.msgInputs.length); i++) {
@@ -427,8 +427,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
           return { error: { msg: 'period_not_tallying' } }
         }
       }
-      const tallyWasm = zkeyPath + maciRound.circuitPower + '_v3/tally.wasm'
-      const tallyZkey = zkeyPath + maciRound.circuitPower + '_v3/tally.zkey'
+      const tallyWasm = path.join(zkeyRoot, `${maciRound.circuitPower}_v3`, 'tally.wasm')
+      const tallyZkey = path.join(zkeyRoot, `${maciRound.circuitPower}_v3`, 'tally.zkey')
       const cachedTally = cache?.tally?.proofs || []
       let startTally = 0
       for (let i = 0; i < Math.min(cachedTally.length, res.tallyInputs.length); i++) {

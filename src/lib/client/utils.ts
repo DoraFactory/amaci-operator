@@ -6,6 +6,7 @@ import {
 import { GasPrice } from '@cosmjs/stargate'
 
 import { MaciClient } from './Maci.client'
+import { RegistryClient } from './Registry.client'
 import { GenerateWallet } from '../../wallet'
 import { info, warn, error as logError } from '../../logger'
 
@@ -162,6 +163,32 @@ export async function getAccountBalance(
       maxRetries: 3,
       initialDelay: 1000,
       context: 'BALANCE-CHECK',
+    },
+  )
+}
+
+export async function getRegistrySignerClient(contract: string) {
+  return withRetry(
+    async () => {
+      const contractAddress = contract
+      const wallet = await GenerateWallet(0)
+
+      const signingCosmWasmClient =
+        await SigningCosmWasmClient.connectWithSigner(
+          process.env.RPC_ENDPOINT,
+          wallet,
+          {
+            ...defaultSigningClientOptions,
+          },
+        )
+
+      const [{ address }] = await wallet.getAccounts()
+      return new RegistryClient(signingCosmWasmClient, address, contractAddress)
+    },
+    {
+      maxRetries: 3,
+      initialDelay: 2000,
+      context: 'REGISTRY-CLIENT',
     },
   )
 }
