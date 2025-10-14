@@ -1,10 +1,21 @@
 {
-    "name": "amaci-operator",
-    "version": "1.2.1",
-    "description": "anonymous MACI operator for tallying votes on-chain",
-    "main": "index.js",
+    "name": "@dorafactory/maci-operator",
+    "version": "1.4.0",
+    "description": "An operator for managing MACI (Minimal Anti-Collusion Infrastructure)/aMACI deployments and interactions.",
+    "main": "dist/index.js",
     "bin": {
-        "amaci": "dist/cli/index.js"
+        "maci": "dist/cli/index.js"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/DoraFactory/amaci-operator.git"
+    },
+    "bugs": {
+        "url": "https://github.com/DoraFactory/amaci-operator/issues"
+    },
+    "homepage": "https://github.com/DoraFactory/amaci-operator#readme",
+    "engines": {
+        "node": ">=18.0.0"
     },
     "scripts": {
         "build": "rm -rf dist && tsc",
@@ -16,7 +27,12 @@
         "test:ui": "vitest --ui",
         "test:coverage": "vitest run --coverage",
         "test:ci": "vitest run --coverage --reporter=json --reporter=default",
-        "prepublishOnly": "npm run build"
+        "prepublishOnly": "npm run build",
+        "docker:build": "docker build -t maci-operator .",
+        "docker:run": "docker-compose up -d",
+        "docker:stop": "docker-compose down",
+        "docker:logs": "docker-compose logs -f",
+        "docker:restart": "docker-compose restart"
     },
     "keywords": [
         "MACI"
@@ -26,7 +42,11 @@
     "files": [
         "dist",
         "README.md",
-        "CHANGELOG.md"
+        "CHANGELOG.md",
+        "Dockerfile",
+        "docker-compose.yml",
+        ".dockerignore",
+        "DOCKER.md"
     ],
     "devDependencies": {
         "@eslint/eslintrc": "^3.0.2",
