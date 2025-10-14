@@ -237,14 +237,32 @@ function applyEnvFromConfig(cfg: Config) {
   if (cfg.zkeyPath) process.env.ZKEY_PATH = cfg.zkeyPath
 }
 
+function getVersion(): string {
+  try {
+    // Try to read package.json from multiple possible locations
+    const pkg = require('../../package.json')
+    return pkg.version
+  } catch {
+    return 'unknown'
+  }
+}
+
+function printVersion() {
+  console.log(`maci-operator v${getVersion()}`)
+}
+
 function printHelp() {
-  console.log(`maci - MACI operator CLI\n`)
+  const version = getVersion()
+  console.log(`maci - MACI operator CLI v${version}\n`)
   console.log(`Usage:`)
   console.log(`  maci init <dir> [--zkey <path>] [--force]`)
   console.log(`  maci start <dir> [--zkey <path>]`)
   console.log(`  maci zkey download <dir> [--zkey <path>] [--force]`)
   console.log(`  maci set-operator identity <dir>`)
   console.log(`  maci set-operator maciPubKey <dir>`)
+  console.log(`\nOptions:`)
+  console.log(`  -h, --help       Show this help message`)
+  console.log(`  -v, --version    Show version number`)
 }
 
 async function main(argv: string[]) {
@@ -252,6 +270,10 @@ async function main(argv: string[]) {
   const cmd = args[0]
   if (!cmd || cmd === '--help' || cmd === '-h') {
     printHelp()
+    process.exit(0)
+  }
+  if (cmd === '--version' || cmd === '-v') {
+    printVersion()
     process.exit(0)
   }
   if (cmd === 'init') {
