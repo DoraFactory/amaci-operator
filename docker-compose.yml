@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  maci-operator:
+    # Choose your image tag strategy:
+    # - Use specific version for production (recommended): dorafactory/maci-operator:1.4.0
+    # - Use tag for auto-updates: dorafactory/maci-operator:beta (always pulls latest beta)
+    # - Use latest for stable releases: dorafactory/maci-operator:latest
+
+    image: dorafactory/maci-operator:${MACI_VERSION}
+
+    # Alternative: Use GitHub Container Registry (uncomment to use)
+    # image: ghcr.io/dorafactory/amaci-operator:${MACI_VERSION:-beta}
+
+    # Alternative: Build from local Dockerfile (uncomment to use)
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+
+    container_name: maci-operator
+    restart: unless-stopped
+
+    # Mount the entire workspace directory
+    # This allows config.toml to reference relative paths correctly
+    volumes:
+      - .:/workspace
+
+    # Working directory inside container
+    working_dir: /workspace
+
+    # Override the default command to use the mounted workspace
+    command: ["node", "/app/dist/cli/index.js", "start", "/workspace"]
+
+    # Expose metrics port (default 3001, can be overridden in config.toml)
+    ports:
+      - "${METRICS_PORT:-3001}:${METRICS_PORT:-3001}"
+
+    # Resource limits (adjust as needed)
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          cpus: '2'
+          memory: 4G
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3001/metrics', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  default:
+    name: maci-network
