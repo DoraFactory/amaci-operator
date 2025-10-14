@@ -238,13 +238,13 @@ function applyEnvFromConfig(cfg: Config) {
 }
 
 function printHelp() {
-  console.log(`amaci - aMACI operator CLI\n`)
+  console.log(`maci - MACI operator CLI\n`)
   console.log(`Usage:`)
-  console.log(`  amaci init <dir> [--zkey <path>] [--force]`)
-  console.log(`  amaci start <dir> [--zkey <path>]`)
-  console.log(`  amaci zkey download <dir> [--zkey <path>] [--force]`)
-  console.log(`  amaci set-operator identity <dir>`)
-  console.log(`  amaci set-operator maciPubKey <dir>`)
+  console.log(`  maci init <dir> [--zkey <path>] [--force]`)
+  console.log(`  maci start <dir> [--zkey <path>]`)
+  console.log(`  maci zkey download <dir> [--zkey <path>] [--force]`)
+  console.log(`  maci set-operator identity <dir>`)
+  console.log(`  maci set-operator maciPubKey <dir>`)
 }
 
 async function main(argv: string[]) {
