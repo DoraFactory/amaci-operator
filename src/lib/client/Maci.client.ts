@@ -888,9 +888,11 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     return await withTxLock(this.sender, () =>
       this.client.execute(
         this.sender,
-        process.env.DEACTIVATE_RECORDER,
+        // process.env.DEACTIVATE_RECORDER,
+        this.contractAddress,
         {
-          claim: { round_addr: this.contractAddress },
+          // claim: { round_addr: this.contractAddress },
+          claim: {}
         },
         fee,
         memo,
@@ -1100,10 +1102,12 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
         typeUrl: '/cosmwasm.wasm.v1.MsgExecuteContract',
         value: MsgExecuteContract.fromPartial({
           sender: this.sender,
-          contract: process.env.DEACTIVATE_RECORDER,
+          // contract: process.env.DEACTIVATE_RECORDER,
+          contract: this.contractAddress,
           msg: new TextEncoder().encode(
             JSON.stringify({
-              claim: { round_addr: this.contractAddress },
+              // claim: { round_addr: this.contractAddress },
+              claim: {}
             }),
           ),
         }),
