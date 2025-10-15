@@ -9,9 +9,6 @@ services:
 
     image: dorafactory/maci-operator:${MACI_VERSION}
 
-    # Alternative: Use GitHub Container Registry (uncomment to use)
-    # image: ghcr.io/dorafactory/amaci-operator:${MACI_VERSION:-beta}
-
     # Alternative: Build from local Dockerfile (uncomment to use)
     # build:
     #   context: .
