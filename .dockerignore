@@ -4,13 +4,10 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Build output
+# Build output (will be rebuilt in container)
 dist/
 
-# Source files (will be copied separately)
-src/
-
-# Testing
+# Testing (not needed in Docker)
 coverage/
 .nyc_output/
 tests/
@@ -21,7 +18,7 @@ test/
 *.spec.js
 vitest.config.*
 
-# Configuration files
+# Runtime config (will be mounted at runtime)
 .env
 .env.*
 config.toml
@@ -43,7 +40,7 @@ config.toml
 .DS_Store
 Thumbs.db
 
-# Data directories
+# Data directories (will be mounted at runtime)
 cache/
 data/
 round/
@@ -61,10 +58,7 @@ docs/
 .gitlab-ci.yml
 .travis.yml
 
-# TypeScript
-tsconfig.json
-
-# Linting
+# Linting (not needed for build)
 .eslintrc*
 .prettierrc*
 eslint.config.mjs
