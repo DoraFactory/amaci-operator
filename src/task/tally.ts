@@ -168,146 +168,146 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       )
 
       // Fast-path: if there are votes but NO signups, skip proving and finalize directly
-      if (logs.signup.length === 0) {
-        info(
-          'No signups detected. Skipping proof generation and finalizing directly.',
-          'TALLY-TASK',
-        )
+      // if (logs.signup.length === 0) {
+      //   info(
+      //     'No signups detected. Skipping proof generation and finalizing directly.',
+      //     'TALLY-TASK',
+      //   )
 
-        // Build zeroed tally results and zero salt
-        const zeroResults = new Array(Number(maxVoteOptions)).fill('0')
-        const zeroSalt = '0'
+      //   // Build zeroed tally results and zero salt
+      //   const zeroResults = new Array(Number(maxVoteOptions)).fill('0')
+      //   const zeroSalt = '0'
 
-        // Ensure contract is in tallying period before finalization
-        const ensureTallyingNoSignup = async () => {
-          try {
-            await withRetry(() => maciClient.stopProcessingPeriod('auto'), {
-              context: 'RPC-STOP-PROCESSING-PERIOD-GATE-NO-SIGNUP',
-              maxRetries: 3,
-            })
-          } catch (e) {
-            // best-effort: ignore and rely on subsequent period checks
-          }
-          for (let i = 0; i < 20; i++) {
-            const p = await withRetry(() => maciClient.getPeriod(), {
-              context: 'RPC-GET-PERIOD-TALLYING-NO-SIGNUP',
-              maxRetries: 3,
-            })
-            if (p.status === 'tallying') return true
-            await sleep(3000)
-          }
-          return false
-        }
+      //   // Ensure contract is in tallying period before finalization
+      //   const ensureTallyingNoSignup = async () => {
+      //     try {
+      //       await withRetry(() => maciClient.stopProcessingPeriod('auto'), {
+      //         context: 'RPC-STOP-PROCESSING-PERIOD-GATE-NO-SIGNUP',
+      //         maxRetries: 3,
+      //       })
+      //     } catch (e) {
+      //       // best-effort: ignore and rely on subsequent period checks
+      //     }
+      //     for (let i = 0; i < 20; i++) {
+      //       const p = await withRetry(() => maciClient.getPeriod(), {
+      //         context: 'RPC-GET-PERIOD-TALLYING-NO-SIGNUP',
+      //         maxRetries: 3,
+      //       })
+      //       if (p.status === 'tallying') return true
+      //       await sleep(3000)
+      //     }
+      //     return false
+      //   }
 
-        const pBeforeNoSignup = await withRetry(() => maciClient.getPeriod(), {
-          context: 'RPC-GET-PERIOD-BEFORE-TALLY-NO-SIGNUP',
-          maxRetries: 3,
-        })
-        if (pBeforeNoSignup.status !== 'tallying') {
-          const ok = await ensureTallyingNoSignup()
-          if (!ok) {
-            logError(
-              new TallyError('Contract not in tallying period', 'CONTRACT_ERROR', {
-                roundId: id,
-                operation: 'tally',
-                timestamp: Date.now(),
-              }),
-              'TALLY-TASK',
-            )
-            endOperation('tally', false, operationContext)
-            return { error: { msg: 'period_not_tallying' } }
-          }
-        }
+      //   const pBeforeNoSignup = await withRetry(() => maciClient.getPeriod(), {
+      //     context: 'RPC-GET-PERIOD-BEFORE-TALLY-NO-SIGNUP',
+      //     maxRetries: 3,
+      //   })
+      //   if (pBeforeNoSignup.status !== 'tallying') {
+      //     const ok = await ensureTallyingNoSignup()
+      //     if (!ok) {
+      //       logError(
+      //         new TallyError('Contract not in tallying period', 'CONTRACT_ERROR', {
+      //           roundId: id,
+      //           operation: 'tally',
+      //           timestamp: Date.now(),
+      //         }),
+      //         'TALLY-TASK',
+      //       )
+      //       endOperation('tally', false, operationContext)
+      //       return { error: { msg: 'period_not_tallying' } }
+      //     }
+      //   }
 
-        // Finalize: stop tallying and claim with zeroed results
-        try {
-          info(
-            'Executing stopTallying and claim as batch operation (no-signup fast-path)...',
-            'TALLY-TASK',
-          )
-          const batchResult = await withRetry(
-            () =>
-              maciClient.stopTallyingAndClaim(
-                {
-                  results: zeroResults,
-                  salt: zeroSalt,
-                },
-                1.5,
-              ),
-            {
-              context: 'RPC-STOP-TALLYING-AND-CLAIM-NO-SIGNUP',
-              maxRetries: 3,
-            },
-          )
-          info(
-            `Batch operation completed successfully✅, tx hash: ${batchResult.transactionHash}`,
-            'TALLY-TASK',
-          )
-        } catch (error) {
-          warn(`Error during batch operation (no-signup fast-path): ${error}`, 'TALLY-TASK')
+      //   // Finalize: stop tallying and claim with zeroed results
+      //   try {
+      //     info(
+      //       'Executing stopTallying and claim as batch operation (no-signup fast-path)...',
+      //       'TALLY-TASK',
+      //     )
+      //     const batchResult = await withRetry(
+      //       () =>
+      //         maciClient.stopTallyingAndClaim(
+      //           {
+      //             results: zeroResults,
+      //             salt: zeroSalt,
+      //           },
+      //           1.5,
+      //         ),
+      //       {
+      //         context: 'RPC-STOP-TALLYING-AND-CLAIM-NO-SIGNUP',
+      //         maxRetries: 3,
+      //       },
+      //     )
+      //     info(
+      //       `Batch operation completed successfully✅, tx hash: ${batchResult.transactionHash}`,
+      //       'TALLY-TASK',
+      //     )
+      //   } catch (error) {
+      //     warn(`Error during batch operation (no-signup fast-path): ${error}`, 'TALLY-TASK')
 
-          info('Trying operations separately (no-signup fast-path)...', 'TALLY-TASK')
-          try {
-            await withRetry(
-              () =>
-                maciClient.stopTallyingPeriod(
-                  {
-                    results: zeroResults,
-                    salt: zeroSalt,
-                  },
-                  1.5,
-                ),
-              {
-                context: 'RPC-STOP-TALLYING-PERIOD-NO-SIGNUP',
-                maxRetries: 3,
-              },
-            )
+      //     info('Trying operations separately (no-signup fast-path)...', 'TALLY-TASK')
+      //     try {
+      //       await withRetry(
+      //         () =>
+      //           maciClient.stopTallyingPeriod(
+      //             {
+      //               results: zeroResults,
+      //               salt: zeroSalt,
+      //             },
+      //             1.5,
+      //           ),
+      //         {
+      //           context: 'RPC-STOP-TALLYING-PERIOD-NO-SIGNUP',
+      //           maxRetries: 3,
+      //         },
+      //       )
 
-            info('Executing claim operation (no-signup fast-path).....', 'TALLY-TASK')
-            const claimResult = await withRetry(() => maciClient.claim(1.5), {
-              context: 'RPC-CLAIM-NO-SIGNUP',
-              maxRetries: 3,
-            })
-            info(
-              `Claim operation completed successfully✅, tx hash: ${claimResult.transactionHash}`,
-              'TALLY-TASK',
-            )
-          } catch (fallbackError) {
-            logError(
-              new TallyError(
-                'Error during fallback operations (no-signup fast-path)',
-                'FALLBACK_ERROR',
-                {
-                  roundId: id,
-                  operation: 'tally',
-                  timestamp: Date.now(),
-                  originalError: fallbackError,
-                },
-              ),
-              'TALLY-TASK',
-            )
-            endOperation('tally', false, operationContext)
-            return {
-              error: {
-                msg: 'fallback_error',
-                details: String(fallbackError),
-              },
-            }
-          }
-        }
+      //       info('Executing claim operation (no-signup fast-path).....', 'TALLY-TASK')
+      //       const claimResult = await withRetry(() => maciClient.claim(1.5), {
+      //         context: 'RPC-CLAIM-NO-SIGNUP',
+      //         maxRetries: 3,
+      //       })
+      //       info(
+      //         `Claim operation completed successfully✅, tx hash: ${claimResult.transactionHash}`,
+      //         'TALLY-TASK',
+      //       )
+      //     } catch (fallbackError) {
+      //       logError(
+      //         new TallyError(
+      //           'Error during fallback operations (no-signup fast-path)',
+      //           'FALLBACK_ERROR',
+      //           {
+      //             roundId: id,
+      //             operation: 'tally',
+      //             timestamp: Date.now(),
+      //             originalError: fallbackError,
+      //           },
+      //         ),
+      //         'TALLY-TASK',
+      //       )
+      //       endOperation('tally', false, operationContext)
+      //       return {
+      //         error: {
+      //           msg: 'fallback_error',
+      //           details: String(fallbackError),
+      //         },
+      //       }
+      //     }
+      //   }
 
-        info(`Completed round Tally for ${id} (no-signup fast-path)`, 'TALLY-TASK')
+      //   info(`Completed round Tally for ${id} (no-signup fast-path)`, 'TALLY-TASK')
 
-        // logger: end the operation - 使用保存的上下文
-        endOperation('tally', true, operationContext)
-        // Metrics: record the task success
-        recordTaskSuccess('tally')
-        // Metrics: record the round completion
-        recordRoundCompletion(id)
-        // Metrics: record the task end
-        recordTaskEnd('tally', id)
-        return {}
-      }
+      //   // logger: end the operation - 使用保存的上下文
+      //   endOperation('tally', true, operationContext)
+      //   // Metrics: record the task success
+      //   recordTaskSuccess('tally')
+      //   // Metrics: record the round completion
+      //   recordRoundCompletion(id)
+      //   // Metrics: record the task end
+      //   recordTaskEnd('tally', id)
+      //   return {}
+      // }
 
       // Try reuse cached inputs (skip genMaciInputs if signature matches)
       const inputsSig = buildInputsSignature({
