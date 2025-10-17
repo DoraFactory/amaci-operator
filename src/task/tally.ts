@@ -465,7 +465,10 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       while (startMsg < res.msgInputs.length) {
         const end = Math.min(startMsg + chunk, res.msgInputs.length)
         const sliceInputs = res.msgInputs.slice(startMsg, end)
-        const proofs = await proveMany(sliceInputs, msgWasm, msgZkey, { phase: 'msg' })
+        const _p0 = Date.now()
+        const proofs = await proveMany(sliceInputs, msgWasm, msgZkey, { phase: 'msg', baseIndex: startMsg })
+        const _pd = Date.now() - _p0
+        info(`Generated MSG proof batch [${startMsg}..${end - 1}] in ${_pd}ms`, 'TALLY-TASK')
         for (let i = 0; i < sliceInputs.length; i++) {
           const input = sliceInputs[i]
           const proofHex = proofs[i]
@@ -623,9 +626,13 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       while (startTally < res.tallyInputs.length) {
         const end = Math.min(startTally + chunk, res.tallyInputs.length)
         const slice = res.tallyInputs.slice(startTally, end)
+        const _p0 = Date.now()
         const proofs = await proveMany(slice, tallyWasm, tallyZkey, {
           phase: 'tally',
+          baseIndex: startTally,
         })
+        const _pd = Date.now() - _p0
+        info(`Generated TALLY proof batch [${startTally}..${end - 1}] in ${_pd}ms`, 'TALLY-TASK')
         for (let i = 0; i < slice.length; i++) {
           const input = slice[i]
           const proofHex = proofs[i]

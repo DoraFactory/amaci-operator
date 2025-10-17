@@ -22,6 +22,9 @@ type InternalJob = {
   zkeyPath: string
   resolve: (p: ProofHex) => void
   reject: (e: any) => void
+  phase?: string
+  absIndex?: number
+  startTime?: number
 }
 
 class ProverPool {
@@ -107,9 +110,21 @@ class ProverPool {
   private onMessage(child: ChildProcess, m: any) {
     const job = this.active.get(child.pid!)
     if (!job) return
+    if (m?.type === 'started') {
+      // mark actual start time when child begins work
+      job.startTime = Date.now()
+      return
+    }
     if (m?.type === 'result') {
       try {
         job.resolve(m.proofHex as ProofHex)
+        // log per-proof duration based on actual start
+        if (job.startTime) {
+          const dt = Date.now() - job.startTime
+          const phase = (job.phase || 'proof').toUpperCase()
+          const idx = job.absIndex ?? job.id
+          info(`Generated ${phase} proof #${idx} in ${dt}ms`, 'PROVER')
+        }
       } finally {
         this.finishJob(child)
       }
@@ -190,7 +205,7 @@ export async function proveMany(
   inputs: any[],
   wasmPath: string,
   zkeyPath: string,
-  opts?: { concurrency?: number; phase?: string },
+  opts?: { concurrency?: number; phase?: string; baseIndex?: number },
 ): Promise<ProofHex[]> {
   if (inputs.length === 0) return []
   const pool = getPool(opts?.concurrency)
@@ -205,6 +220,7 @@ export async function proveMany(
   )
   if (opts?.phase) incProverJobs(inputs.length, opts.phase)
   const results: ProofHex[] = new Array(inputs.length)
+  const base = opts?.baseIndex || 0
   await Promise.all(
     inputs.map(
       (input, i) =>
@@ -214,6 +230,8 @@ export async function proveMany(
             input,
             wasmPath,
             zkeyPath,
+            phase: opts?.phase,
+            absIndex: base + i,
             resolve: (p) => {
               results[i] = p
               resolve()

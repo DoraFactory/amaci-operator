@@ -303,7 +303,12 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
       while (start < res.dMsgInputs.length && !stopSubmitting) {
         const end = Math.min(start + chunk, res.dMsgInputs.length)
         const slice = res.dMsgInputs.slice(start, end)
-        const proofs = await proveMany(slice.map((s: any) => s.input), wasm, zkey, { phase: 'deactivate' })
+        const proofs = await proveMany(
+          slice.map((s: any) => s.input),
+          wasm,
+          zkey,
+          { phase: 'deactivate', baseIndex: start },
+        )
         for (let i = 0; i < slice.length; i++) {
           const { input, size } = slice[i]
           const proofHex = proofs[i]

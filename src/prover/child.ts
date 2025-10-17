@@ -21,6 +21,11 @@ type ResultMessage = {
   proofHex: { a: string; b: string; c: string }
 }
 
+type StartedMessage = {
+  type: 'started'
+  jobId: number
+}
+
 type ErrorMessage = {
   type: 'error'
   jobId: number
@@ -43,6 +48,11 @@ process.on('message', async (msg: ProveMessage | DropExceptMessage) => {
   if (!msg || msg.type !== 'prove') return
   const { jobId, input, wasmPath, zkeyPath } = msg
   try {
+    // notify parent this job has actually started (for accurate timing)
+    try {
+      const started: StartedMessage = { type: 'started', jobId }
+      process.send && process.send(started)
+    } catch {}
     // Load wasm/zkey once and reuse to reduce I/O
     const wasmData = await loadCached(wasmPath, wasmCache)
     const zkeyData = await loadCached(zkeyPath, zkeyCache)

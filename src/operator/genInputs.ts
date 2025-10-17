@@ -1,6 +1,7 @@
 import { genStaticRandomKey } from '../lib/keypair'
 import { MACI, MACI_STATES, MsgInput, TallyInput } from '../lib/Maci'
 import { IContractLogs } from '../types'
+import { info } from '../logger'
 
 interface IGenMaciInputsParams {
   stateTreeDepth: number
@@ -69,7 +70,8 @@ export const genMaciInputs = (
 
   let nonce = 1n
 
-  // PROCESSING
+  // PROCESSING (generate msgInputs)
+  const msgInputsStart = Date.now()
   const msgInputs: MsgInput[] = []
   while (maci.states === MACI_STATES.PROCESSING) {
     const input = maci.processMessage(
@@ -78,8 +80,11 @@ export const genMaciInputs = (
 
     msgInputs.push(input)
   }
+  const msgInputsMs = Date.now() - msgInputsStart
+  info(`GenInputs MSG produced ${msgInputs.length} inputs in ${msgInputsMs}ms`, 'TALLY-TASK')
 
-  // TALLYING
+  // TALLYING (generate tallyInputs)
+  const tallyInputsStart = Date.now()
   const tallyInputs: TallyInput[] = []
   while (maci.states === MACI_STATES.TALLYING) {
     const input = maci.processTally(
@@ -88,6 +93,8 @@ export const genMaciInputs = (
 
     tallyInputs.push(input)
   }
+  const tallyInputsMs = Date.now() - tallyInputsStart
+  info(`GenInputs TALLY produced ${tallyInputs.length} inputs in ${tallyInputsMs}ms`, 'TALLY-TASK')
 
   // RESULT
   const result = maci.tallyResultsLeaves.slice(0, maxVoteOptions)
