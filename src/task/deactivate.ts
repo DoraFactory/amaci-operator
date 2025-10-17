@@ -303,12 +303,15 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
       while (start < res.dMsgInputs.length && !stopSubmitting) {
         const end = Math.min(start + chunk, res.dMsgInputs.length)
         const slice = res.dMsgInputs.slice(start, end)
+        const _p0 = Date.now()
         const proofs = await proveMany(
           slice.map((s: any) => s.input),
           wasm,
           zkey,
           { phase: 'deactivate', baseIndex: start },
         )
+        const _pd = Date.now() - _p0
+        info(`Generated DEACTIVATE proof batch [${start}..${end - 1}] in ${_pd}ms`, 'DEACTIVATE-TASK')
         for (let i = 0; i < slice.length; i++) {
           const { input, size } = slice[i]
           const proofHex = proofs[i]
