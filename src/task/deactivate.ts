@@ -27,6 +27,7 @@ import {
   setCurrentRound,
 } from '../logger'
 import { recordTaskSuccess, recordTaskStart, recordTaskEnd } from '../metrics'
+import { createSubmitter } from './submitter'
 import {
   NetworkError,
   ContractError,
@@ -237,67 +238,39 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
           Number(process.env.PROVER_SAVE_CHUNK || 0) ||
           Number(process.env.PROVER_CONCURRENCY || 1),
       )
+      // Background submitter for DEACTIVATE
       let stopSubmitting = false
-      if (usePipeline && dmsg.length > 0) {
-        let si = 0
-        while (si < dmsg.length && !stopSubmitting) {
-          const end = Math.min(si + submitBatch, dmsg.length)
-          const items = dmsg.slice(si, end).map((x) => ({
-            groth16Proof: x.proofHex as any,
-            newDeactivateCommitment: x.commitment as any,
-            newDeactivateRoot: x.root as any,
-            size: x.size as any,
-          }))
-          let left = 0
-          let right = items.length
-          while (left < right && !stopSubmitting) {
-            const size = right - left
-            const slice = items.slice(left, right)
-            try {
-              const res = await withBroadcastRetry(
-                () => maciClient.processDeactivateMessageBatch(slice, 'auto'),
-                { context: 'RPC-PROCESS-DEACTIVATE-BATCH', maxRetries: 3 },
-              )
-              info(`Processed deactivate cached batch [${si + left}..${si + right - 1}] ✅`, 'DEACTIVATE-TASK', { txHash: res.transactionHash })
-              break
-            } catch (e) {
-              if (isAllProcessedError(e)) {
-                warn('All deactivate messages already processed on-chain, stopping submissions', 'DEACTIVATE-TASK')
-                stopSubmitting = true
-                break
-              }
-              if (size === 1) {
-                const single = slice[0]
-                try {
-                  const res = await withBroadcastRetry(
-                    () =>
-                      maciClient.processDeactivateMessage(
-                        {
-                          groth16Proof: single.groth16Proof,
-                          newDeactivateCommitment: single.newDeactivateCommitment,
-                          newDeactivateRoot: single.newDeactivateRoot,
-                          size: single.size,
-                        },
-                        'auto',
-                      ),
-                    { context: 'RPC-PROCESS-DEACTIVATE', maxRetries: 3 },
-                  )
-                  info(`Processed deactivate cached #${si + left} ✅`, 'DEACTIVATE-TASK', { txHash: res.transactionHash })
-                  break
-                } catch (e2) {
-                  if (isAllProcessedError(e2)) {
-                    warn('All deactivate messages already processed on-chain, stopping submissions', 'DEACTIVATE-TASK')
-                    stopSubmitting = true
-                    break
-                  }
-                  throw e2
-                }
-              } else {
-                right = left + Math.floor(size / 2)
-              }
-            }
+      let deactSubmitter: any = null
+      if (usePipeline) {
+        deactSubmitter = createSubmitter(
+          (items: any[]) => maciClient.processDeactivateMessageBatch(items, 'auto'),
+          (item: any) =>
+            maciClient.processDeactivateMessage(
+              item,
+              'auto',
+            ),
+          {
+            batchLimit: submitBatch,
+            contextBatch: 'RPC-PROCESS-DEACTIVATE-BATCH',
+            contextSingle: 'RPC-PROCESS-DEACTIVATE',
+            phaseLabel: 'DEACTIVATE',
+            shouldStop: (e: any) => isAllProcessedError(e),
+          },
+        )
+        // seed cached region
+        if (dmsg.length > 0) {
+          let si = 0
+          while (si < dmsg.length) {
+            const end = Math.min(si + submitBatch, dmsg.length)
+            const items = dmsg.slice(si, end).map((x) => ({
+              groth16Proof: x.proofHex as any,
+              newDeactivateCommitment: x.commitment as any,
+              newDeactivateRoot: x.root as any,
+              size: x.size as any,
+            }))
+            deactSubmitter.enqueue(items)
+            si = end
           }
-          si = end
         }
       }
       while (start < res.dMsgInputs.length && !stopSubmitting) {
@@ -321,7 +294,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
           dmsg.push({ proofHex, commitment, root, size })
         }
         saveProofCache(id, { circuitPower: maciRound.circuitPower, deactivate: { proofs: dmsg } })
-        if (usePipeline && !stopSubmitting) {
+        if (usePipeline && deactSubmitter) {
           const submitStart = end - slice.length
           const items = dmsg.slice(submitStart, end).map((x) => ({
             groth16Proof: x.proofHex as any,
@@ -329,59 +302,14 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
             newDeactivateRoot: x.root as any,
             size: x.size as any,
           }))
-          let left = 0
-          let right = items.length
-          while (left < right && !stopSubmitting) {
-            const size = right - left
-            const ps = items.slice(left, right)
-            try {
-              const res = await withBroadcastRetry(
-                () => maciClient.processDeactivateMessageBatch(ps, 'auto'),
-                { context: 'RPC-PROCESS-DEACTIVATE-BATCH', maxRetries: 3 },
-              )
-              info(`Processed deactivate batch [${submitStart + left}..${submitStart + right - 1}] ✅`, 'DEACTIVATE-TASK', { txHash: res.transactionHash })
-              break
-            } catch (e) {
-              if (isAllProcessedError(e)) {
-                warn('All deactivate messages already processed on-chain, stopping submissions', 'DEACTIVATE-TASK')
-                stopSubmitting = true
-                break
-              }
-              if (size === 1) {
-                const single = ps[0]
-                try {
-                  const res = await withBroadcastRetry(
-                    () =>
-                      maciClient.processDeactivateMessage(
-                        {
-                          groth16Proof: single.groth16Proof,
-                          newDeactivateCommitment: single.newDeactivateCommitment,
-                          newDeactivateRoot: single.newDeactivateRoot,
-                          size: single.size,
-                        },
-                        'auto',
-                      ),
-                    { context: 'RPC-PROCESS-DEACTIVATE', maxRetries: 3 },
-                  )
-                  info(`Processed deactivate #${submitStart + left} ✅`, 'DEACTIVATE-TASK', { txHash: res.transactionHash })
-                  break
-                } catch (e2) {
-                  if (isAllProcessedError(e2)) {
-                    warn('All deactivate messages already processed on-chain, stopping submissions', 'DEACTIVATE-TASK')
-                    stopSubmitting = true
-                    break
-                  }
-                  throw e2
-                }
-              } else {
-                right = left + Math.floor(size / 2)
-              }
-            }
-          }
+          deactSubmitter.enqueue(items)
         }
         start = end
       }
       recordProverPhaseDuration(id, 'deactivate', (Date.now() - phaseStart) / 1000)
+      if (usePipeline && deactSubmitter) {
+        await deactSubmitter.close()
+      }
       // If not pipeline, submit remaining accumulated dmsg in one pass
       if (!usePipeline && dmsg.length > 0 && !stopSubmitting) {
         info(`Prepare to send ${dmsg.length} deactivate messages`, 'DEACTIVATE-TASK')

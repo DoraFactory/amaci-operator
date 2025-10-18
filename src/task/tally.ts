@@ -28,6 +28,7 @@ import {
 import { genMaciInputs } from '../operator/genInputs'
 import { proveMany } from '../prover/pool'
 import { loadProofCache, saveProofCache, buildInputsSignature } from '../storage/proofCache'
+import { createSubmitter } from './submitter'
 
 const zkeyRoot = process.env.ZKEY_PATH || path.join(process.env.WORK_PATH || './work', 'zkey')
 
@@ -424,45 +425,33 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
           Number(process.env.PROVER_CONCURRENCY || 1),
       )
       let nextSubmitMsg = miStart
-      if (usePipeline && nextSubmitMsg < msg.length) {
-        // submit cached region [miStart, msg.length)
-        let si = nextSubmitMsg
-        while (si < msg.length) {
-          const end = Math.min(si + submitBatchMsg, msg.length)
-          const items = msg.slice(si, end).map((x) => ({
-            groth16Proof: x.proofHex as any,
-            newStateCommitment: x.commitment as any,
-          }))
-          // batch with degrade
-          let left = 0
-          let right = items.length
-          while (left < right) {
-            const size = right - left
-            const slice = items.slice(left, right)
-            try {
-              const res = await withBroadcastRetry(
-                () => maciClient.processMessagesBatch(slice, 'auto'),
-                { context: 'RPC-PROCESS-MESSAGE-BATCH', maxRetries: 3 },
-              )
-              info(`Processed MSG cached batch [${si + left}..${si + right - 1}] ✅ tx=${res.transactionHash}`,'TALLY-TASK')
-              break
-            } catch (e) {
-              if (size === 1) {
-                const single = slice[0]
-                const res = await withBroadcastRetry(
-                  () => maciClient.processMessage({ groth16Proof: single.groth16Proof, newStateCommitment: single.newStateCommitment }, 'auto'),
-                  { context: 'RPC-PROCESS-MESSAGE', maxRetries: 3 },
-                )
-                info(`Processed MSG cached #${si + left} ✅ tx=${res.transactionHash}`,'TALLY-TASK')
-                break
-              } else {
-                right = left + Math.floor(size / 2)
-              }
-            }
+      // Background submitter for MSG when pipeline is enabled
+      let msgSubmitter: any = null
+      if (usePipeline) {
+        msgSubmitter = createSubmitter(
+          (items: any[]) => maciClient.processMessagesBatch(items, 'auto'),
+          (item: any) => maciClient.processMessage(item, 'auto'),
+          {
+            batchLimit: submitBatchMsg,
+            contextBatch: 'RPC-PROCESS-MESSAGE-BATCH',
+            contextSingle: 'RPC-PROCESS-MESSAGE',
+            phaseLabel: 'MSG',
+          },
+        )
+        // seed cached region [miStart, msg.length)
+        if (nextSubmitMsg < msg.length) {
+          let si = nextSubmitMsg
+          while (si < msg.length) {
+            const end = Math.min(si + submitBatchMsg, msg.length)
+            const items = msg.slice(si, end).map((x) => ({
+              groth16Proof: x.proofHex as any,
+              newStateCommitment: x.commitment as any,
+            }))
+            msgSubmitter.enqueue(items)
+            si = end
           }
-          si = end
+          nextSubmitMsg = msg.length
         }
-        nextSubmitMsg = msg.length
       }
 
       while (startMsg < res.msgInputs.length) {
@@ -481,46 +470,25 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         }
         saveProofCache(id, { circuitPower: maciRound.circuitPower, msg: { proofs: msg }, result, salt })
 
-        if (usePipeline) {
-          // submit this chunk portion not yet submitted
+        if (usePipeline && msgSubmitter) {
           const submitStart = Math.max(nextSubmitMsg, startMsg)
           if (submitStart < end) {
             const items = msg.slice(submitStart, end).map((x) => ({
               groth16Proof: x.proofHex as any,
               newStateCommitment: x.commitment as any,
             }))
-            let left = 0
-            let right = items.length
-            while (left < right) {
-              const size = right - left
-              const slice = items.slice(left, right)
-              try {
-                const res = await withBroadcastRetry(
-                  () => maciClient.processMessagesBatch(slice, 'auto'),
-                  { context: 'RPC-PROCESS-MESSAGE-BATCH', maxRetries: 3 },
-                )
-                info(`Processed MSG batch [${submitStart + left}..${submitStart + right - 1}] ✅ tx=${res.transactionHash}`,'TALLY-TASK')
-                break
-              } catch (e) {
-                if (size === 1) {
-                  const single = slice[0]
-                  const res = await withBroadcastRetry(
-                    () => maciClient.processMessage({ groth16Proof: single.groth16Proof, newStateCommitment: single.newStateCommitment }, 'auto'),
-                    { context: 'RPC-PROCESS-MESSAGE', maxRetries: 3 },
-                  )
-                  info(`Processed MSG #${submitStart + left} ✅ tx=${res.transactionHash}`,'TALLY-TASK')
-                  break
-                } else {
-                  right = left + Math.floor(size / 2)
-                }
-              }
-            }
+            msgSubmitter.enqueue(items)
             nextSubmitMsg = end
           }
         }
         startMsg = end
       }
       recordProverPhaseDuration(id, 'msg', (Date.now() - msgStart) / 1000)
+
+      // Ensure all message submissions flushed before moving to tallying gate
+      if (usePipeline && msgSubmitter) {
+        await msgSubmitter.close()
+      }
 
       info('Start to generate proof for tally', 'TALLY-TASK', {
         period: maciRound.period,
@@ -599,33 +567,29 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
           Number(process.env.PROVER_CONCURRENCY || 1),
       )
       let nextSubmitTally = uiStart
-      if (usePipeline && nextSubmitTally < tally.length) {
-        let si = nextSubmitTally
-        while (si < tally.length) {
-          const end = Math.min(si + submitBatchTally, tally.length)
-          const items = tally.slice(si, end).map((x) => ({ groth16Proof: x.proofHex as any, newTallyCommitment: x.commitment as any }))
-          let left = 0, right = items.length
-          while (left < right) {
-            const size = right - left
-            const slice = items.slice(left, right)
-            try {
-              const res = await withBroadcastRetry(() => maciClient.processTallyBatch(slice, 'auto'), { context: 'RPC-PROCESS-TALLY-BATCH', maxRetries: 3 })
-              info(`Processed TALLY cached batch [${si + left}..${si + right - 1}] ✅ tx=${res.transactionHash}`,'TALLY-TASK')
-              break
-            } catch (e) {
-              if (size === 1) {
-                const single = slice[0]
-                const res = await withBroadcastRetry(() => maciClient.processTally({ groth16Proof: single.groth16Proof, newTallyCommitment: single.newTallyCommitment }, 'auto'), { context: 'RPC-PROCESS-TALLY', maxRetries: 3 })
-                info(`Processed TALLY cached #${si + left} ✅ tx=${res.transactionHash}`,'TALLY-TASK')
-                break
-              } else {
-                right = left + Math.floor(size / 2)
-              }
-            }
+      // Background submitter for TALLY when pipeline is enabled
+      let tallySubmitter: any = null
+      if (usePipeline) {
+        tallySubmitter = createSubmitter(
+          (items: any[]) => maciClient.processTallyBatch(items, 'auto'),
+          (item: any) => maciClient.processTally(item, 'auto'),
+          {
+            batchLimit: submitBatchTally,
+            contextBatch: 'RPC-PROCESS-TALLY-BATCH',
+            contextSingle: 'RPC-PROCESS-TALLY',
+            phaseLabel: 'TALLY',
+          },
+        )
+        if (nextSubmitTally < tally.length) {
+          let si = nextSubmitTally
+          while (si < tally.length) {
+            const end = Math.min(si + submitBatchTally, tally.length)
+            const items = tally.slice(si, end).map((x) => ({ groth16Proof: x.proofHex as any, newTallyCommitment: x.commitment as any }))
+            tallySubmitter.enqueue(items)
+            si = end
           }
-          si = end
+          nextSubmitTally = tally.length
         }
-        nextSubmitTally = tally.length
       }
 
       while (startTally < res.tallyInputs.length) {
@@ -655,35 +619,22 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
           result,
           salt,
         })
-        if (usePipeline) {
+        if (usePipeline && tallySubmitter) {
           const submitStart = Math.max(nextSubmitTally, startTally)
           if (submitStart < end) {
             const items = tally.slice(submitStart, end).map((x) => ({ groth16Proof: x.proofHex as any, newTallyCommitment: x.commitment as any }))
-            let left = 0, right = items.length
-            while (left < right) {
-              const size = right - left
-              const ps = items.slice(left, right)
-              try {
-                const res = await withBroadcastRetry(() => maciClient.processTallyBatch(ps, 'auto'), { context: 'RPC-PROCESS-TALLY-BATCH', maxRetries: 3 })
-                info(`Processed TALLY batch [${submitStart + left}..${submitStart + right - 1}] ✅ tx=${res.transactionHash}`,'TALLY-TASK')
-                break
-              } catch (e) {
-                if (size === 1) {
-                  const single = ps[0]
-                  const res = await withBroadcastRetry(() => maciClient.processTally({ groth16Proof: single.groth16Proof, newTallyCommitment: single.newTallyCommitment }, 'auto'), { context: 'RPC-PROCESS-TALLY', maxRetries: 3 })
-                  info(`Processed TALLY #${submitStart + left} ✅ tx=${res.transactionHash}`,'TALLY-TASK')
-                  break
-                } else {
-                  right = left + Math.floor(size / 2)
-                }
-              }
-            }
+            tallySubmitter.enqueue(items)
             nextSubmitTally = end
           }
         }
         startTally = end
       }
       recordProverPhaseDuration(id, 'tally', (Date.now() - tallyStart) / 1000)
+
+      // Drain tally submitter before finalization
+      if (usePipeline && tallySubmitter) {
+        await tallySubmitter.close()
+      }
 
       allData = {
         result,
