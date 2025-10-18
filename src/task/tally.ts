@@ -59,6 +59,9 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
   const operationContext = startOperation('tally', 'TALLY-TASK')
 
   const usePipeline = Number(process.env.PROVER_PIPELINE || 0) > 0
+  // Track submitters for cleanup on error
+  let globalMsgSubmitter: any = null
+  let globalTallySubmitter: any = null
 
   // Metrics: Record the task start
   recordTaskStart('tally', id)
@@ -453,6 +456,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
           nextSubmitMsg = msg.length
         }
       }
+      globalMsgSubmitter = msgSubmitter
 
       while (startMsg < res.msgInputs.length) {
         const end = Math.min(startMsg + chunk, res.msgInputs.length)
@@ -591,6 +595,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
           nextSubmitTally = tally.length
         }
       }
+      globalTallySubmitter = tallySubmitter
 
       while (startTally < res.tallyInputs.length) {
         const end = Math.min(startTally + chunk, res.tallyInputs.length)
@@ -1003,6 +1008,9 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     endOperation('tally', false, operationContext)
     throw categorizedError
   } finally {
+    // Ensure background submitters are closed on any exit path
+    try { if (globalMsgSubmitter) await globalMsgSubmitter.close() } catch {}
+    try { if (globalTallySubmitter) await globalTallySubmitter.close() } catch {}
     // Always record task end in finally block
     recordTaskEnd('tally', id)
   }

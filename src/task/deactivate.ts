@@ -48,6 +48,8 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
   // Metrics: record the task starttrics: record the task start
   recordTaskStart('deactivate', id)
 
+  // Track submitter for cleanup across the task
+  let deactSubmitterGlobal: any = null
   try {
     const isAllProcessedError = (e: any) =>
       typeof e?.message === 'string' &&
@@ -257,6 +259,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
             shouldStop: (e: any) => isAllProcessedError(e),
           },
         )
+        deactSubmitterGlobal = deactSubmitter
         // seed cached region
         if (dmsg.length > 0) {
           let si = 0
@@ -452,6 +455,12 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
     endOperation('deactivate', false, operationContext)
     throw categorizedError
   } finally {
+    // Ensure submitter is closed on any exit path (if created)
+    try {
+      if (deactSubmitterGlobal && typeof deactSubmitterGlobal.close === 'function') {
+        await deactSubmitterGlobal.close()
+      }
+    } catch {}
     // Always record task end in finally block
     recordTaskEnd('deactivate', id)
   }

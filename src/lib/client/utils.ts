@@ -104,13 +104,18 @@ export async function withBroadcastRetry<T extends { transactionHash?: string }>
     context?: string
   } = {},
 ): Promise<T> {
-  const client = await CosmWasmClient.connect(process.env.RPC_ENDPOINT!)
+  // Reuse a shared read-only client to avoid repeatedly creating connections
+  const client = await getSharedReadonlyClient()
   return withRetry(fn, {
     ...options,
     checkTxStatus: async (txId: string) => {
-      const tx = await client.getTx(txId)
-      if (tx) {
-        return { confirmed: true, result: ({ transactionHash: txId } as any) as T }
+      try {
+        const tx = await client.getTx(txId)
+        if (tx) {
+          return { confirmed: true, result: ({ transactionHash: txId } as any) as T }
+        }
+      } catch {
+        // In case of client error, allow outer retry/backoff to handle
       }
       return { confirmed: false, result: undefined as any }
     },
@@ -155,7 +160,7 @@ export async function getAccountBalance(
 ) {
   return withRetry(
     async () => {
-      const client = await CosmWasmClient.connect(process.env.RPC_ENDPOINT)
+      const client = await getSharedReadonlyClient()
       const balance = await client.getBalance(address, denom)
       return balance
     },
@@ -191,4 +196,20 @@ export async function getRegistrySignerClient(contract: string) {
       context: 'REGISTRY-CLIENT',
     },
   )
+}
+
+// Shared read-only client cache
+let sharedReadonlyClientPromise: Promise<CosmWasmClient> | null = null
+async function getSharedReadonlyClient(): Promise<CosmWasmClient> {
+  if (sharedReadonlyClientPromise) return sharedReadonlyClientPromise
+  const endpoint = process.env.RPC_ENDPOINT!
+  sharedReadonlyClientPromise = CosmWasmClient.connect(endpoint)
+  try {
+    const c = await sharedReadonlyClientPromise
+    return c
+  } catch (e) {
+    // reset on failure
+    sharedReadonlyClientPromise = null
+    throw e
+  }
 }
