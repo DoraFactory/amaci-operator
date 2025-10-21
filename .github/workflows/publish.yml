@@ -124,10 +124,7 @@ jobs:
             ### Docker
 
             ```bash
-            # Pull from GitHub Container Registry
-            docker pull ghcr.io/dorafactory/amaci-operator:${{ steps.meta.outputs.npm_tag }}
-
-            # Or from Docker Hub
+            # Pull from Docker Hub
             docker pull dorafactory/maci-operator:${{ steps.meta.outputs.npm_tag }}
             ```
 
