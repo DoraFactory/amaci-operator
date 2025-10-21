@@ -7,7 +7,7 @@ services:
     # - Use tag for auto-updates: dorafactory/maci-operator:beta (always pulls latest beta)
     # - Use latest for stable releases: dorafactory/maci-operator:latest
 
-    image: dorafactory/maci-operator:${MACI_VERSION}
+    image: dorafactory/maci-operator:$VERSION
 
     # Alternative: Build from local Dockerfile (uncomment to use)
     # build:
@@ -17,18 +17,33 @@ services:
     container_name: maci-operator
     restart: unless-stopped
 
-    # Mount the entire workspace directory
-    # This allows config.toml to reference relative paths correctly
+    # Mount host paths into the SAME absolute paths inside container.
+    # Use env vars to avoid hardcoding machine-specific paths.
+    # Set these via: `./gen-compose-env.sh` or by creating `.env` with
+    # HOST_WORK_PATH and HOST_ZKEY_PATH equal to values in your config.toml.
     volumes:
-      - .:/workspace
+      - ${HOST_WORK_PATH}:${HOST_WORK_PATH}
+      - ${HOST_ZKEY_PATH}:${HOST_ZKEY_PATH}:ro
 
-    # Working directory inside container
-    working_dir: /workspace
+    # Working directory inside container matches your config.workPath
+    working_dir: ${HOST_WORK_PATH}
 
-    # Override the default command to use the mounted workspace
-    command: ["node", "/app/dist/cli/index.js", "start", "/workspace"]
+    # Start operator pointing at your config.workPath
+    command: ["node", "/app/dist/cli/index.js", "start", "${HOST_WORK_PATH}"]
 
-    # Expose metrics port (default 3001, can be overridden in config.toml)
+    # Environment variables (optional, will override config.toml settings)
+    # You can set these in a .env file or export them before running docker-compose
+    # environment:
+      # Uncomment to override config.toml settings
+      # - RPC_ENDPOINT=${RPC_ENDPOINT}
+      # - IND_ENDPOINT=${IND_ENDPOINT}
+      # - DEACTIVATE_RECORDER=${DEACTIVATE_RECORDER}
+      # - MNEMONIC=${MNEMONIC}
+      # - COORDINATOR_PRI_KEY=${COORDINATOR_PRI_KEY}
+      # - LOG_LEVEL=${LOG_LEVEL:-info}
+      # - METRICS_PORT=${METRICS_PORT:-3001}
+
+    # Expose metrics port (default 3001, can be overridden in config.toml or env)
     ports:
       - "${METRICS_PORT:-3001}:${METRICS_PORT:-3001}"
 
@@ -44,7 +59,7 @@ services:
 
     # Health check
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3001/metrics', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:${METRICS_PORT:-3001}/metrics', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -60,3 +75,4 @@ services:
 networks:
   default:
     name: maci-network
+    external: true
