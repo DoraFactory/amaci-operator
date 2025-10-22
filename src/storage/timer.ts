@@ -2,10 +2,10 @@ import fs from 'fs'
 import path from 'path'
 
 let timer: Record<string, number> | undefined
-// move timer file into cache for clarity
+// move timer file into data directory for clarity
 const saveFile = path.join(
   process.env.WORK_PATH || './work',
-  'cache',
+  'data',
   'deactivate-timer.json',
 )
 try {

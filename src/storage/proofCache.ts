@@ -28,7 +28,8 @@ export interface ProofCache {
 const VERSION = 1
 
 function getCachePath(id: string) {
-  const cacheDir = path.join(process.env.WORK_PATH || './work', 'cache')
+  // New layout: use 'data' directory for caches
+  const cacheDir = path.join(process.env.WORK_PATH || './work', 'data')
   if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true })
   return path.join(cacheDir, id + '.json')
 }

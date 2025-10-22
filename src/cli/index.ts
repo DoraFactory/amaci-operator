@@ -288,8 +288,9 @@ async function main(argv: string[]) {
     }
     const workDir = path.resolve(dir)
     ensureDir(workDir)
-    ensureDir(path.join(workDir, 'cache'))
+    // New directory layout: data (cache), log (logs), round (per-round logs)
     ensureDir(path.join(workDir, 'data'))
+    ensureDir(path.join(workDir, 'log'))
     ensureDir(path.join(workDir, 'round'))
     const defaultZkey = path.join(workDir, 'zkey')
     const zkeyPath = zkeyOpt ? path.resolve(zkeyOpt) : defaultZkey
@@ -348,9 +349,9 @@ async function main(argv: string[]) {
       process.exit(1)
     }
     console.log(`Initialized work directory at ${workDir}`)
-    console.log(`- cache/: inputs and proof cache`)
-    console.log(`- data/: daily rotated logs`)
-    console.log(`- round/: per-round logs`)
+        console.log(`- data/: inputs and proof cache`)
+        console.log(`- log/: daily rotated logs`)
+        console.log(`- round/: per-round logs`)
     console.log(`- config.toml: operator configuration`)
     console.log(`- zkey/: circuit files at ${zkeyPath}`)
     process.exit(0)

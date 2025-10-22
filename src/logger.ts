@@ -65,10 +65,11 @@ const CLI_MODE = process.env.AMACI_CLI === '1'
 
 // determine the log directories
 const workRoot = process.env.WORK_PATH || './work'
-const dataDir = path.join(workRoot, 'data')
+// New layout: logs are under 'log', not 'data'
+const logDir = path.join(workRoot, 'log')
 const roundDir = path.join(workRoot, 'round')
 try {
-  if (!require('fs').existsSync(dataDir)) require('fs').mkdirSync(dataDir, { recursive: true })
+  if (!require('fs').existsSync(logDir)) require('fs').mkdirSync(logDir, { recursive: true })
   if (!require('fs').existsSync(roundDir)) require('fs').mkdirSync(roundDir, { recursive: true })
 } catch {}
 
@@ -121,7 +122,7 @@ const LOG_LEVEL = (process.env.LOG_LEVEL || 'info').toLowerCase()
 
 // create the file transport, rotate the log file daily
 const fileTransport = new winston.transports.DailyRotateFile({
-  dirname: dataDir,
+  dirname: logDir,
   filename: 'log-%DATE%.log',
   datePattern: 'YYYY-MM-DD',
   maxSize: '20m',
@@ -129,7 +130,7 @@ const fileTransport = new winston.transports.DailyRotateFile({
   level: LOG_LEVEL,
   format: formats.file,
   // put audit file at a stable, readable path
-  auditFile: path.join(dataDir, '.log-rotate-audit.json'),
+  auditFile: path.join(logDir, '.log-rotate-audit.json'),
 })
 
 // the console transport

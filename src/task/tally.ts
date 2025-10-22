@@ -32,7 +32,8 @@ import { createSubmitter } from './submitter'
 
 const zkeyRoot = process.env.ZKEY_PATH || path.join(process.env.WORK_PATH || './work', 'zkey')
 
-const inputsPath = path.join(process.env.WORK_PATH || './work', 'cache')
+// New layout: inputs/proof cache under 'data'
+const inputsPath = path.join(process.env.WORK_PATH || './work', 'data')
 if (!fs.existsSync(inputsPath)) {
   fs.mkdirSync(inputsPath, { recursive: true })
 }

@@ -46,8 +46,24 @@ export async function init() {
       if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true })
     }
     ensure(root)
-    ensure(root + '/cache')
+    // Migrate old layout if detected: cache -> data, data -> log
+    try {
+      const oldCache = root + '/cache'
+      const oldData = root + '/data'
+      const newLog = root + '/log'
+      const newData = root + '/data'
+      // 1) Move old data (logs) to new log if present and new log missing
+      if (fs.existsSync(oldData) && !fs.existsSync(newLog)) {
+        fs.renameSync(oldData, newLog)
+      }
+      // 2) Move old cache to new data if present and new data missing
+      if (fs.existsSync(oldCache) && !fs.existsSync(newData)) {
+        fs.renameSync(oldCache, newData)
+      }
+    } catch {}
+    // New layout: 'data' for caches, 'log' for logs, 'round' unchanged
     ensure(root + '/data')
+    ensure(root + '/log')
     ensure(root + '/round')
   } catch {}
 
