@@ -1,5 +1,6 @@
 import { DMsgInput, MACI } from '../lib/Maci'
 import { IContractLogs } from '../types'
+import { info } from '../logger'
 
 interface IGenMaciInputsParams {
   stateTreeDepth: number
@@ -23,6 +24,7 @@ export const genDeacitveMaciInputs = (
   // deactivates: bigint[][],
   deactivateSize: number,
 ) => {
+  const t0 = Date.now()
   const maci = new MACI(
     stateTreeDepth,
     intStateTreeDepth,
@@ -77,6 +79,12 @@ export const genDeacitveMaciInputs = (
     newDeactivates.push(...newDeactivate)
     dMsgInputs.push({ input, size: size.toString() })
   }
+
+  const ms = Date.now() - t0
+  info(
+    `GenInputs DEACTIVATE produced ${dMsgInputs.length} inputs in ${ms}ms`,
+    'DEACTIVATE-TASK',
+  )
 
   return {
     dMsgInputs,

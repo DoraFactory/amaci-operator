@@ -1,0 +1,53 @@
+# Source files
+src/
+tests/
+test/
+*.test.ts
+*.test.js
+*.spec.ts
+*.spec.js
+
+# Config files
+.env
+.env.*
+config.toml
+tsconfig.json
+eslint.config.mjs
+.eslintrc*
+.prettierrc*
+vitest.config.*
+
+# Build artifacts
+node_modules/
+.cache/
+.vscode/
+.idea/
+*.log
+npm-debug.log*
+
+# Data directories
+cache/
+data/
+round/
+zkey/
+zkeys/
+zkey-backend/
+zkeys-backend/
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Testing
+coverage/
+.nyc_output/
+
+# OS
+.DS_Store
+Thumbs.db

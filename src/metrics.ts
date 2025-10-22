@@ -77,12 +77,36 @@ const completedRoundsCounter = new client.Counter({
   registers: [register],
 })
 
+// Prover metrics: active children and jobs
+const proverActiveChildren = new client.Gauge({
+  name: 'amaci_prover_active_children',
+  help: 'Number of active prover child processes',
+  registers: [register],
+})
+
+const proverJobsTotal = new client.Counter({
+  name: 'amaci_prover_jobs_total',
+  help: 'Total number of prover jobs processed',
+  labelNames: ['phase'],
+  registers: [register],
+})
+
+// Prover phase duration (proof generation time per phase)
+const proverPhaseDuration = new client.Histogram({
+  name: 'amaci_prover_phase_duration_seconds',
+  help: 'Time spent generating proofs per phase (deactivate/msg/tally)',
+  labelNames: ['phase', 'round_id'],
+  // Buckets in seconds
+  buckets: [1, 2, 5, 10, 20, 30, 60, 120, 300, 600],
+  registers: [register],
+})
+
 // Active tasks gauge
 const activeTasksGauge = new client.Gauge({
   name: 'amaci_operator_active_tasks',
   help: 'Number of active tasks by type',
   labelNames: ['task_type'],
-  registers: [register]
+  registers: [register],
 })
 
 // new: Inspect task metrics
@@ -90,7 +114,7 @@ const inspectedTasksGauge = new client.Gauge({
   name: 'amaci_operator_inspected_tasks',
   help: 'Number of tasks found during inspection',
   labelNames: ['task_type'],
-  registers: [register]
+  registers: [register],
 })
 
 // Operator current state gauge
@@ -98,7 +122,7 @@ const operatorStateGauge = new client.Gauge({
   name: 'amaci_operator_current_state',
   help: 'Current state of the operator (1 = active, 0 = inactive)',
   labelNames: ['state'],
-  registers: [register]
+  registers: [register],
 })
 
 // Task duration gauge
@@ -106,7 +130,7 @@ const taskDurationGauge = new client.Gauge({
   name: 'amaci_operator_task_duration_seconds',
   help: 'Duration of current running tasks in seconds',
   labelNames: ['task_type', 'round_id'],
-  registers: [register]
+  registers: [register],
 })
 
 // Task start times map
@@ -148,13 +172,13 @@ export const recordTaskSuccess = (taskType: string) => {
  */
 export const updateRoundStatus = (statusCounts: Record<string, number>) => {
   // Reset all metrics
-  roundStatusGauge.reset();
-  
+  roundStatusGauge.reset()
+
   // Set new values
   Object.entries(statusCounts).forEach(([status, count]) => {
-    roundStatusGauge.set({ status }, count);
-  });
-};
+    roundStatusGauge.set({ status }, count)
+  })
+}
 
 /**
  * Update active round list
@@ -183,6 +207,48 @@ export const recordRoundCompletion = (roundId: string) => {
   info(`Round ${roundId} successfully completed`, 'METRICS')
 }
 
+/** Prover metrics helpers */
+export const incProverActiveChildren = () => {
+  proverActiveChildren.inc()
+}
+
+export const decProverActiveChildren = () => {
+  // Guard against going below zero
+  try {
+    proverActiveChildren.dec()
+  } catch {}
+}
+
+export const incProverJobs = (count: number, phase: string = 'unknown') => {
+  if (count > 0) proverJobsTotal.inc({ phase }, count)
+}
+
+/** Record prover phase duration (in seconds) */
+export const recordProverPhaseDuration = (
+  roundId: string,
+  phase: string,
+  seconds: number,
+) => {
+  if (seconds >= 0) {
+    proverPhaseDuration.labels(phase, roundId).observe(seconds)
+    info(
+      `Prover phase ${phase} took ${seconds.toFixed(2)}s for round ${roundId}`,
+      'METRICS',
+    )
+  }
+}
+
+// Total children in the pool (long-lived)
+const proverPoolSize = new client.Gauge({
+  name: 'amaci_prover_pool_children',
+  help: 'Number of child processes in the prover pool',
+  registers: [register],
+})
+
+export const setProverPoolSize = (size: number) => {
+  proverPoolSize.set(size)
+}
+
 /**
  * Record task start
  * @param taskType Task type
@@ -190,29 +256,32 @@ export const recordRoundCompletion = (roundId: string) => {
  */
 export const recordTaskStart = (taskType: string, roundId: string) => {
   // Metrics: Update operator state - ensure the status is updated to the current task type
-  updateOperatorState(taskType);
-  
+  updateOperatorState(taskType)
+
   // Record start time
-  const now = Date.now();
-  
+  const now = Date.now()
+
   if (!taskStartTimes.has(taskType)) {
-    taskStartTimes.set(taskType, new Map());
+    taskStartTimes.set(taskType, new Map())
   }
-  
-  const taskMap = taskStartTimes.get(taskType)!;
-  taskMap.set(roundId, now);
-  
+
+  const taskMap = taskStartTimes.get(taskType)!
+  taskMap.set(roundId, now)
+
   // Metrics: Only increase the active tasks count and track the duration for non-inspect tasks
   if (taskType !== 'inspect') {
     // Increment active tasks count
-    activeTasksGauge.inc({ task_type: taskType });
-    
+    activeTasksGauge.inc({ task_type: taskType })
+
     // Start tracking task duration
-    startTrackingTaskDuration(taskType, roundId);
+    startTrackingTaskDuration(taskType, roundId)
   }
-  
+
   // Add log for debugging
-  info(`Task ${taskType} started for round ${roundId}. Operator state updated to ${taskType}.`, 'METRICS');
+  info(
+    `Task ${taskType} started for round ${roundId}. Operator state updated to ${taskType}.`,
+    'METRICS',
+  )
 }
 
 /**
@@ -226,26 +295,29 @@ export const recordTaskEnd = (taskType: string, roundId: string) => {
     const taskMap = taskStartTimes.get(taskType)!
     taskMap.delete(roundId)
   }
-  
+
   // Metrics: Only decrease the active tasks count and delete the duration for non-inspect tasks
   if (taskType !== 'inspect') {
     // Decrement active tasks count
     activeTasksGauge.dec({ task_type: taskType })
-    
+
     // Metrics: Completely delete the duration metric for this task, not just set to 0
     taskDurationGauge.remove({ task_type: taskType, round_id: roundId })
   }
-  
+
   // Check if all tasks are empty
   let allTasksEmpty = true
   let hasHigherPriorityTask = false
-  
+
   // Metrics: Check if there is a higher priority task running
   // Priority: tally > deactivate > inspect
   if (taskStartTimes.has('tally') && taskStartTimes.get('tally')!.size > 0) {
     hasHigherPriorityTask = true
     updateOperatorState('tally')
-  } else if (taskStartTimes.has('deactivate') && taskStartTimes.get('deactivate')!.size > 0) {
+  } else if (
+    taskStartTimes.has('deactivate') &&
+    taskStartTimes.get('deactivate')!.size > 0
+  ) {
     hasHigherPriorityTask = true
     updateOperatorState('deactivate')
   } else {
@@ -259,16 +331,15 @@ export const recordTaskEnd = (taskType: string, roundId: string) => {
  * @param currentState Current state
  */
 export const updateOperatorState = (currentState: string) => {
-  
-  const allStates = ['inspect', 'tally', 'deactivate'];
-  
-  allStates.forEach(state => {
+  const allStates = ['inspect', 'tally', 'deactivate']
+
+  allStates.forEach((state) => {
     if (state === currentState) {
-      operatorStateGauge.set({ state }, 1);
+      operatorStateGauge.set({ state }, 1)
     } else {
-      operatorStateGauge.set({ state }, 0);
+      operatorStateGauge.set({ state }, 0)
     }
-  });
+  })
 }
 
 /**
@@ -280,11 +351,17 @@ const startTrackingTaskDuration = (taskType: string, roundId: string) => {
   // Update duration every second
   const intervalId = setInterval(() => {
     // Check if task is still running
-    if (taskStartTimes.has(taskType) && taskStartTimes.get(taskType)!.has(roundId)) {
+    if (
+      taskStartTimes.has(taskType) &&
+      taskStartTimes.get(taskType)!.has(roundId)
+    ) {
       const startTime = taskStartTimes.get(taskType)!.get(roundId)!
       const durationSeconds = (Date.now() - startTime) / 1000
-      
-      taskDurationGauge.set({ task_type: taskType, round_id: roundId }, durationSeconds)
+
+      taskDurationGauge.set(
+        { task_type: taskType, round_id: roundId },
+        durationSeconds,
+      )
     } else {
       // If task no longer exists, clear timer
       clearInterval(intervalId)
@@ -298,7 +375,7 @@ const startTrackingTaskDuration = (taskType: string, roundId: string) => {
 export const updateActiveTasksCount = () => {
   // Reset active tasks count
   activeTasksGauge.reset()
-  
+
   // Count active tasks for each type
   for (const [taskType, taskMap] of taskStartTimes.entries()) {
     activeTasksGauge.set({ task_type: taskType }, taskMap.size)
@@ -309,10 +386,12 @@ export const updateActiveTasksCount = () => {
  * Update the number of tasks found during inspection
  * @param taskCounts The mapping of task types and their counts
  */
-export const updateInspectedTasksCount = (taskCounts: Record<string, number>) => {
+export const updateInspectedTasksCount = (
+  taskCounts: Record<string, number>,
+) => {
   // Reset the inspected tasks count
   inspectedTasksGauge.reset()
-  
+
   Object.entries(taskCounts).forEach(([taskType, count]) => {
     inspectedTasksGauge.set({ task_type: taskType }, count)
   })
@@ -324,7 +403,7 @@ export const updateInspectedTasksCount = (taskCounts: Record<string, number>) =>
  */
 export const updateOperatorBalance = (balance: number) => {
   operatorBalanceGauge.set(balance)
-  
+
   // Add log for debugging
   info(`Updated operator balance metrics: ${balance} DORA`, 'METRICS')
 }
@@ -337,13 +416,19 @@ export const updateOperatorBalance = (balance: number) => {
 export const updateOperatorStatus = (isUp: boolean) => {
   // this function now only records logs, no longer sets the binary status
   // the uptime metric will be updated automatically, no need to set manually
-  debug(`Operator status tracking: ${isUp ? 'Running' : 'Shutting down'}`, 'METRICS')
-  
+  debug(
+    `Operator status tracking: ${isUp ? 'Running' : 'Shutting down'}`,
+    'METRICS',
+  )
+
   // if the service is about to shut down, record the final uptime
   if (!isUp) {
     const finalUptimeSeconds = (Date.now() - startTime) / 1000
     operatorUptime.set(finalUptimeSeconds)
-    debug(`Final operator uptime: ${finalUptimeSeconds.toFixed(2)} seconds`, 'METRICS')
+    debug(
+      `Final operator uptime: ${finalUptimeSeconds.toFixed(2)} seconds`,
+      'METRICS',
+    )
   }
 }
 

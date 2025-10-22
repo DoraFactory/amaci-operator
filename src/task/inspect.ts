@@ -29,7 +29,7 @@ export const inspect: TaskAct = async () => {
   // clear the current round id, so the inspect log will not be included in the round id named log
   setCurrentRound('')
   clearContext(['round'])
-  
+
   // Metrics: record the task start with a global id which is used for all tasks
   recordTaskStart('inspect', 'global')
 

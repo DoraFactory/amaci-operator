@@ -8,11 +8,12 @@ import {
   CosmWasmClient,
   SigningCosmWasmClient,
   ExecuteResult,
-  MsgExecuteContractEncodeObject
+  MsgExecuteContractEncodeObject,
 } from '@cosmjs/cosmwasm-stargate'
 import { Coin, StdFee } from '@cosmjs/amino'
-import { MsgExecuteContract } from 'cosmjs-types/cosmwasm/wasm/v1/tx';
-type MixedData<T> = T | Array<MixedData<T>> | { [key: string]: MixedData<T> };
+import { withTxLock } from './txLock'
+import { MsgExecuteContract } from 'cosmjs-types/cosmwasm/wasm/v1/tx'
+type MixedData<T> = T | Array<MixedData<T>> | { [key: string]: MixedData<T> }
 import {
   Uint256,
   Timestamp,
@@ -37,6 +38,7 @@ import {
   Boolean,
   ArrayOfString,
 } from './Maci.types'
+import { round } from 'lodash'
 export interface MaciReadOnlyInterface {
   contractAddress: string
   getRoundInfo: () => Promise<RoundInfo>
@@ -91,24 +93,24 @@ export class MaciQueryClient implements MaciReadOnlyInterface {
 
   stringizing = (
     o: MixedData<bigint>,
-    path: MixedData<bigint>[] = []
+    path: MixedData<bigint>[] = [],
   ): MixedData<string> => {
     if (path.includes(o)) {
-      throw new Error('loop nesting!');
+      throw new Error('loop nesting!')
     }
-    const newPath = [...path, o];
+    const newPath = [...path, o]
     if (Array.isArray(o)) {
-      return o.map((item) => this.stringizing(item, newPath));
+      return o.map((item) => this.stringizing(item, newPath))
     } else if (typeof o === 'object') {
-      const output: { [key: string]: MixedData<string> } = {};
+      const output: { [key: string]: MixedData<string> } = {}
       for (const key in o) {
-        output[key] = this.stringizing(o[key], newPath);
+        output[key] = this.stringizing(o[key], newPath)
       }
-      return output;
+      return output
     } else {
-      return o.toString();
+      return o.toString()
     }
-  };
+  }
 
   getRoundInfo = async (): Promise<RoundInfo> => {
     return this.client.queryContractSmart(this.contractAddress, {
@@ -625,15 +627,17 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     memo?: string,
     _funds?: Coin[],
   ): Promise<ExecuteResult> => {
-    return await this.client.execute(
-      this.sender,
-      this.contractAddress,
-      {
-        start_process_period: {},
-      },
-      fee,
-      memo,
-      _funds,
+    return await withTxLock(this.sender, () =>
+      this.client.execute(
+        this.sender,
+        this.contractAddress,
+        {
+          start_process_period: {},
+        },
+        fee,
+        memo,
+        _funds,
+      ),
     )
   }
   stopVotingPeriod = async (
@@ -664,18 +668,20 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     memo?: string,
     _funds?: Coin[],
   ): Promise<ExecuteResult> => {
-    return await this.client.execute(
-      this.sender,
-      this.contractAddress,
-      {
-        publish_deactivate_message: {
-          enc_pub_key: encPubKey,
-          message,
+    return await withTxLock(this.sender, () =>
+      this.client.execute(
+        this.sender,
+        this.contractAddress,
+        {
+          publish_deactivate_message: {
+            enc_pub_key: encPubKey,
+            message,
+          },
         },
-      },
-      fee,
-      memo,
-      _funds,
+        fee,
+        memo,
+        _funds,
+      ),
     )
   }
   processDeactivateMessage = async (
@@ -694,20 +700,22 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     memo?: string,
     _funds?: Coin[],
   ): Promise<ExecuteResult> => {
-    return await this.client.execute(
-      this.sender,
-      this.contractAddress,
-      {
-        process_deactivate_message: {
-          groth16_proof: groth16Proof,
-          new_deactivate_commitment: newDeactivateCommitment,
-          new_deactivate_root: newDeactivateRoot,
-          size,
+    return await withTxLock(this.sender, () =>
+      this.client.execute(
+        this.sender,
+        this.contractAddress,
+        {
+          process_deactivate_message: {
+            groth16_proof: groth16Proof,
+            new_deactivate_commitment: newDeactivateCommitment,
+            new_deactivate_root: newDeactivateRoot,
+            size,
+          },
         },
-      },
-      fee,
-      memo,
-      _funds,
+        fee,
+        memo,
+        _funds,
+      ),
     )
   }
   addNewKey = async (
@@ -754,18 +762,20 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     memo?: string,
     _funds?: Coin[],
   ): Promise<ExecuteResult> => {
-    return await this.client.execute(
-      this.sender,
-      this.contractAddress,
-      {
-        publish_message: {
-          enc_pub_key: encPubKey,
-          message,
+    return await withTxLock(this.sender, () =>
+      this.client.execute(
+        this.sender,
+        this.contractAddress,
+        {
+          publish_message: {
+            enc_pub_key: encPubKey,
+            message,
+          },
         },
-      },
-      fee,
-      memo,
-      _funds,
+        fee,
+        memo,
+        _funds,
+      ),
     )
   }
   processMessage = async (
@@ -780,18 +790,20 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     memo?: string,
     _funds?: Coin[],
   ): Promise<ExecuteResult> => {
-    return await this.client.execute(
-      this.sender,
-      this.contractAddress,
-      {
-        process_message: {
-          groth16_proof: groth16Proof,
-          new_state_commitment: newStateCommitment,
+    return await withTxLock(this.sender, () =>
+      this.client.execute(
+        this.sender,
+        this.contractAddress,
+        {
+          process_message: {
+            groth16_proof: groth16Proof,
+            new_state_commitment: newStateCommitment,
+          },
         },
-      },
-      fee,
-      memo,
-      _funds,
+        fee,
+        memo,
+        _funds,
+      ),
     )
   }
   stopProcessingPeriod = async (
@@ -799,15 +811,17 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     memo?: string,
     _funds?: Coin[],
   ): Promise<ExecuteResult> => {
-    return await this.client.execute(
-      this.sender,
-      this.contractAddress,
-      {
-        stop_processing_period: {},
-      },
-      fee,
-      memo,
-      _funds,
+    return await withTxLock(this.sender, () =>
+      this.client.execute(
+        this.sender,
+        this.contractAddress,
+        {
+          stop_processing_period: {},
+        },
+        fee,
+        memo,
+        _funds,
+      ),
     )
   }
   processTally = async (
@@ -822,18 +836,20 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     memo?: string,
     _funds?: Coin[],
   ): Promise<ExecuteResult> => {
-    return await this.client.execute(
-      this.sender,
-      this.contractAddress,
-      {
-        process_tally: {
-          groth16_proof: groth16Proof,
-          new_tally_commitment: newTallyCommitment,
+    return await withTxLock(this.sender, () =>
+      this.client.execute(
+        this.sender,
+        this.contractAddress,
+        {
+          process_tally: {
+            groth16_proof: groth16Proof,
+            new_tally_commitment: newTallyCommitment,
+          },
         },
-      },
-      fee,
-      memo,
-      _funds,
+        fee,
+        memo,
+        _funds,
+      ),
     )
   }
   stopTallyingPeriod = async (
@@ -848,18 +864,20 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     memo?: string,
     _funds?: Coin[],
   ): Promise<ExecuteResult> => {
-    return await this.client.execute(
-      this.sender,
-      this.contractAddress,
-      {
-        stop_tallying_period: {
-          results,
-          salt,
+    return await withTxLock(this.sender, () =>
+      this.client.execute(
+        this.sender,
+        this.contractAddress,
+        {
+          stop_tallying_period: {
+            results,
+            salt,
+          },
         },
-      },
-      fee,
-      memo,
-      _funds,
+        fee,
+        memo,
+        _funds,
+      ),
     )
   }
   claim = async (
@@ -867,15 +885,19 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     memo?: string,
     _funds?: Coin[],
   ): Promise<ExecuteResult> => {
-    return await this.client.execute(
-      this.sender,
-      this.contractAddress,
-      {
-        claim: {},
-      },
-      fee,
-      memo,
-      _funds,
+    return await withTxLock(this.sender, () =>
+      this.client.execute(
+        this.sender,
+        // process.env.DEACTIVATE_RECORDER,
+        this.contractAddress,
+        {
+          // claim: { round_addr: this.contractAddress },
+          claim: {}
+        },
+        fee,
+        memo,
+        _funds,
+      ),
     )
   }
   grant = async (
@@ -956,6 +978,97 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
       _funds,
     )
   }
+
+  // Batch submit: process_message[]
+  processMessagesBatch = async (
+    items: Array<{ groth16Proof: Groth16ProofType; newStateCommitment: Uint256 }>,
+    fee: number | StdFee | 'auto' = 'auto',
+    memo?: string,
+    _funds?: Coin[],
+  ): Promise<ExecuteResult> => {
+    const msgs: MsgExecuteContractEncodeObject[] = items.map((it) => ({
+      typeUrl: '/cosmwasm.wasm.v1.MsgExecuteContract',
+      value: MsgExecuteContract.fromPartial({
+        sender: this.sender,
+        contract: this.contractAddress,
+        msg: new TextEncoder().encode(
+          JSON.stringify({
+            process_message: {
+              groth16_proof: it.groth16Proof,
+              new_state_commitment: it.newStateCommitment,
+            },
+          }),
+        ),
+      }),
+    }))
+    const response = await withTxLock(this.sender, () =>
+      this.client.signAndBroadcast(this.sender, msgs, fee, memo || ''),
+    )
+    return response as unknown as ExecuteResult
+  }
+
+  // Batch submit: process_tally[]
+  processTallyBatch = async (
+    items: Array<{ groth16Proof: Groth16ProofType; newTallyCommitment: Uint256 }>,
+    fee: number | StdFee | 'auto' = 'auto',
+    memo?: string,
+    _funds?: Coin[],
+  ): Promise<ExecuteResult> => {
+    const msgs: MsgExecuteContractEncodeObject[] = items.map((it) => ({
+      typeUrl: '/cosmwasm.wasm.v1.MsgExecuteContract',
+      value: MsgExecuteContract.fromPartial({
+        sender: this.sender,
+        contract: this.contractAddress,
+        msg: new TextEncoder().encode(
+          JSON.stringify({
+            process_tally: {
+              groth16_proof: it.groth16Proof,
+              new_tally_commitment: it.newTallyCommitment,
+            },
+          }),
+        ),
+      }),
+    }))
+    const response = await withTxLock(this.sender, () =>
+      this.client.signAndBroadcast(this.sender, msgs, fee, memo || ''),
+    )
+    return response as unknown as ExecuteResult
+  }
+
+  // Batch submit: process_deactivate_message[]
+  processDeactivateMessageBatch = async (
+    items: Array<{
+      groth16Proof: Groth16ProofType
+      newDeactivateCommitment: Uint256
+      newDeactivateRoot: Uint256
+      size: Uint256
+    }>,
+    fee: number | StdFee | 'auto' = 'auto',
+    memo?: string,
+    _funds?: Coin[],
+  ): Promise<ExecuteResult> => {
+    const msgs: MsgExecuteContractEncodeObject[] = items.map((it) => ({
+      typeUrl: '/cosmwasm.wasm.v1.MsgExecuteContract',
+      value: MsgExecuteContract.fromPartial({
+        sender: this.sender,
+        contract: this.contractAddress,
+        msg: new TextEncoder().encode(
+          JSON.stringify({
+            process_deactivate_message: {
+              groth16_proof: it.groth16Proof,
+              new_deactivate_commitment: it.newDeactivateCommitment,
+              new_deactivate_root: it.newDeactivateRoot,
+              size: it.size,
+            },
+          }),
+        ),
+      }),
+    }))
+    const response = await withTxLock(this.sender, () =>
+      this.client.signAndBroadcast(this.sender, msgs, fee, memo || ''),
+    )
+    return response as unknown as ExecuteResult
+  }
   stopTallyingAndClaim = async (
     {
       results,
@@ -968,49 +1081,43 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     memo?: string,
     _funds?: Coin[],
   ): Promise<ExecuteResult> => {
-
     // 创建批量消息
     const msgs: MsgExecuteContractEncodeObject[] = [
       {
-        typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
+        typeUrl: '/cosmwasm.wasm.v1.MsgExecuteContract',
         value: MsgExecuteContract.fromPartial({
           sender: this.sender,
           contract: this.contractAddress,
           msg: new TextEncoder().encode(
-            JSON.stringify(
-              {
-                stop_tallying_period: {
-                  results,
-                  salt,
-                }
-              }
-            )
+            JSON.stringify({
+              stop_tallying_period: {
+                results,
+                salt,
+              },
+            }),
           ),
-        })
+        }),
       },
       {
-        typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
+        typeUrl: '/cosmwasm.wasm.v1.MsgExecuteContract',
         value: MsgExecuteContract.fromPartial({
           sender: this.sender,
+          // contract: process.env.DEACTIVATE_RECORDER,
           contract: this.contractAddress,
           msg: new TextEncoder().encode(
-            JSON.stringify(
-              {
-                claim: {}
-              }
-            )
+            JSON.stringify({
+              // claim: { round_addr: this.contractAddress },
+              claim: {}
+            }),
           ),
-        })
-      }
-    ];
+        }),
+      },
+    ]
 
-    const response = await this.client.signAndBroadcast(
-      this.sender,
-      msgs,
-      fee,
-      memo || ''
-    );
-    
-    return response as unknown as ExecuteResult;
+    const response = await withTxLock(this.sender, () =>
+      this.client.signAndBroadcast(this.sender, msgs, fee, memo || ''),
+    )
+
+    return response as unknown as ExecuteResult
   }
 }
