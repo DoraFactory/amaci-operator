@@ -138,6 +138,9 @@ jobs:
             cd my-operator
             vim config.toml
 
+            # Run with maci-operator CLI
+            maci start ./my-operator
+
             # Run with Docker
             docker-compose up -d
             ```
