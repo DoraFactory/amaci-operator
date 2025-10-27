@@ -7,7 +7,7 @@ services:
     # - Use tag for auto-updates: dorafactory/maci-operator:beta (always pulls latest beta)
     # - Use latest for stable releases: dorafactory/maci-operator:latest
 
-    image: dorafactory/maci-operator:$VERSION
+    image: dorafactory/maci-operator:${VERSION}
 
     # Alternative: Build from local Dockerfile (uncomment to use)
     # build:
@@ -20,16 +20,16 @@ services:
     # Mount host paths into the SAME absolute paths inside container.
     # Use env vars to avoid hardcoding machine-specific paths.
     # Set these via: `./gen-compose-env.sh` or by creating `.env` with
-    # HOST_WORK_PATH and HOST_ZKEY_PATH equal to values in your config.toml.
+    # WORK_PATH and ZKEY_PATH equal to values in your config.toml.
     volumes:
-      - ${HOST_WORK_PATH}:${HOST_WORK_PATH}
-      - ${HOST_ZKEY_PATH}:${HOST_ZKEY_PATH}:ro
+      - ${WORK_PATH}:${WORK_PATH}
+      - ${ZKEY_PATH}:${ZKEY_PATH}:ro
 
     # Working directory inside container matches your config.workPath
-    working_dir: ${HOST_WORK_PATH}
+    working_dir: ${WORK_PATH}
 
     # Start operator pointing at your config.workPath
-    command: ["node", "/app/dist/cli/index.js", "start", "${HOST_WORK_PATH}"]
+    command: ["node", "/app/dist/cli/index.js", "start", "${WORK_PATH}"]
 
     # Environment variables (optional, will override config.toml settings)
     # You can set these in a .env file or export them before running docker-compose
