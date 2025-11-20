@@ -99,7 +99,7 @@ function writeConfigToml(cfgPath: string, cfg: Config) {
   lines.push('# Operator identity (set on registry via: amaci set-operator identity <workDir>)')
   lines.push(`identity = "${cfg.identity || ''}"`)
   lines.push('')
-  lines.push('# Filter rounds by code IDs (array of strings)')
+  lines.push('# Blacklist of round code IDs to exclude (array of strings)')
   const codeIds = (cfg.codeIds && cfg.codeIds.length ? cfg.codeIds : [''])
     .map((s) => `"${s}"`)
     .join(', ')

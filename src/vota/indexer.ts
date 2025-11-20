@@ -129,9 +129,9 @@ const ROUNDS_QUERY = (
       },
       period: {
         notIn: ["Ended"]
-      }
+      },
       codeId: {
-        in: ${codeIds}
+        notIn: ${codeIds}
       }
     }
   ) {
