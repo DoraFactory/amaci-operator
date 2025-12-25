@@ -133,6 +133,14 @@ const taskDurationGauge = new client.Gauge({
   registers: [register],
 })
 
+// API retry exhausted counter
+const apiRetryExhaustedCounter = new client.Counter({
+  name: 'amaci_operator_api_retry_exhausted_total',
+  help: 'Total number of API calls that exhausted retries',
+  labelNames: ['context'],
+  registers: [register],
+})
+
 // Task start times map
 const taskStartTimes = new Map<string, Map<string, number>>()
 
@@ -406,6 +414,29 @@ export const updateOperatorBalance = (balance: number) => {
 
   // Add log for debugging
   info(`Updated operator balance metrics: ${balance} DORA`, 'METRICS')
+}
+
+/**
+ * Record an API retry exhaustion
+ * @param context Context label for the API call
+ */
+const normalizeRetryContext = (context: string) => {
+  const value = (context || '').toLowerCase()
+  if (!value) return 'unknown'
+  if (value.includes('indexer')) return 'indexer'
+  if (
+    value.includes('rpc') ||
+    value.includes('balance') ||
+    value.includes('contract') ||
+    value.includes('registry')
+  ) {
+    return 'rpc'
+  }
+  return 'unknown'
+}
+
+export const recordApiRetryExhausted = (context: string) => {
+  apiRetryExhaustedCounter.inc({ context: normalizeRetryContext(context) })
 }
 
 /**
