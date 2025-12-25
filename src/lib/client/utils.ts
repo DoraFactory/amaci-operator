@@ -9,6 +9,7 @@ import { MaciClient } from './Maci.client'
 import { RegistryClient } from './Registry.client'
 import { GenerateWallet } from '../../wallet'
 import { info, warn, error as logError } from '../../logger'
+import { recordApiRetryExhausted } from '../../metrics'
 
 export const prefix = 'dora'
 
@@ -79,6 +80,7 @@ export async function withRetry<T>(
         await new Promise((resolve) => setTimeout(resolve, delay))
         delay = Math.min(delay * backoffFactor, maxDelay)
       } else if (attempt > maxRetries) {
+        recordApiRetryExhausted(context)
         logError(
           `API call failed, max retries reached: ${error.message}`,
           context,

@@ -26,7 +26,7 @@ import {
   endOperation,
   setCurrentRound,
 } from '../logger'
-import { recordTaskSuccess, recordTaskStart, recordTaskEnd } from '../metrics'
+import { recordTaskFailure, recordTaskSuccess, recordTaskStart, recordTaskEnd } from '../metrics'
 import { createSubmitter } from './submitter'
 import {
   NetworkError,
@@ -69,6 +69,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
     if (now < Number(maciRound.votingEnd) / 1e6) {
       if (!['Pending', 'Voting'].includes(maciRound.period)) {
         logError('Round not in proper state for deactivate', 'DEACTIVATE-TASK')
+        recordTaskFailure('deactivate')
         endOperation('deactivate', false, operationContext)
         return { error: { msg: 'error status' } }
       }
@@ -77,6 +78,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
 
       if (latestdeactivateAt + deactivateInterval > now) {
         logError('Too early to deactivate again', 'DEACTIVATE-TASK')
+        recordTaskFailure('deactivate')
         endOperation('deactivate', false, operationContext)
         return { error: { msg: 'too earlier' } }
       }
@@ -420,6 +422,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
         ),
         'DEACTIVATE-TASK',
       )
+      recordTaskFailure('deactivate')
       endOperation('deactivate', false, operationContext)
       return {
         error: { msg: 'network_error', details: categorizedError.message },
@@ -436,6 +439,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
         ),
         'DEACTIVATE-TASK',
       )
+      recordTaskFailure('deactivate')
       endOperation('deactivate', false, operationContext)
       return {
         error: { msg: 'contract_error', details: categorizedError.message },
@@ -452,6 +456,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
       'DEACTIVATE-TASK',
     )
 
+    recordTaskFailure('deactivate')
     endOperation('deactivate', false, operationContext)
     throw categorizedError
   } finally {

@@ -15,7 +15,7 @@ import {
   endOperation,
   setCurrentRound,
 } from '../logger'
-import { recordTaskSuccess, recordRoundCompletion } from '../metrics'
+import { recordTaskFailure, recordTaskSuccess, recordRoundCompletion } from '../metrics'
 import { recordProverPhaseDuration } from '../metrics'
 import { recordTaskStart, recordTaskEnd } from '../metrics'
 import {
@@ -84,6 +84,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       now < Number(maciRound.votingEnd) / 1e6
     ) {
       logError('Round not in proper state for tally', 'TALLY-TASK')
+      recordTaskFailure('tally')
       endOperation('tally', false, operationContext)
       return {
         error: {
@@ -222,6 +223,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
               }),
               'TALLY-TASK',
             )
+            recordTaskFailure('tally')
             endOperation('tally', false, operationContext)
             return { error: { msg: 'period_not_tallying' } }
           }
@@ -294,6 +296,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
               ),
               'TALLY-TASK',
             )
+            recordTaskFailure('tally')
             endOperation('tally', false, operationContext)
             return {
               error: {
@@ -546,6 +549,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
             }),
             'TALLY-TASK',
           )
+          recordTaskFailure('tally')
           endOperation('tally', false, operationContext)
           return { error: { msg: 'period_not_tallying' } }
         }
@@ -851,6 +855,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
             ),
             'TALLY-TASK',
           )
+          recordTaskFailure('tally')
           endOperation('tally', false, operationContext)
           return {
             error: {
@@ -932,6 +937,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
               ),
               'TALLY-TASK',
             )
+            recordTaskFailure('tally')
             endOperation('tally', false, operationContext)
             return {
               error: {
@@ -974,6 +980,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         ),
         'TALLY-TASK',
       )
+      recordTaskFailure('tally')
       endOperation('tally', false, operationContext)
       return {
         error: { msg: 'network_error', details: categorizedError.message },
@@ -990,6 +997,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         ),
         'TALLY-TASK',
       )
+      recordTaskFailure('tally')
       endOperation('tally', false, operationContext)
       return {
         error: { msg: 'contract_error', details: categorizedError.message },
@@ -1006,6 +1014,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       'TALLY-TASK',
     )
 
+    recordTaskFailure('tally')
     endOperation('tally', false, operationContext)
     throw categorizedError
   } finally {

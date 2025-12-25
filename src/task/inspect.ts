@@ -14,6 +14,7 @@ import {
 } from '../logger'
 import {
   recordTaskSuccess,
+  recordTaskFailure,
   updateActiveRounds,
   recordTaskStart,
   recordTaskEnd,
@@ -150,6 +151,7 @@ export const inspect: TaskAct = async () => {
       `Inspection failed after ${duration}ms: ${err.message || String(err)}`,
       'INSPECT',
     )
+    recordTaskFailure('inspect')
     // 使用保存的操作上下文
     endOperation('inspect', false, operationContext)
     recordTaskEnd('inspect', 'global')
