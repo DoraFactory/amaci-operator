@@ -175,6 +175,14 @@ export const recordTaskSuccess = (taskType: string) => {
 }
 
 /**
+ * Record a failed task execution
+ * @param taskType Task type
+ */
+export const recordTaskFailure = (taskType: string) => {
+  taskCounter.inc({ task_type: taskType, status: 'failed' })
+}
+
+/**
  * Update round status statistics
  * @param statusCounts Status count object
  */
