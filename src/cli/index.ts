@@ -121,7 +121,7 @@ function writeConfigToml(cfgPath: string, cfg: Config) {
   lines.push(`metricsPort = ${cfg.metricsPort ?? 3001}`)
   lines.push('')
   lines.push(
-    '# Path to zkey folder containing circuit packs (2-1-1-5_v3, 4-2-2-25_v3)',
+    '# Path to zkey folder containing circuit packs (2-1-1-5_v3, 4-2-2-25_v3, 6-3-3-125_v3)',
   )
   lines.push(`zkeyPath = "${cfg.zkeyPath || path.join(cfg.workPath, 'zkey')}"`)
   lines.push('')
@@ -327,12 +327,15 @@ async function main(argv: string[]) {
       const { downloadAndExtractZKeys } = await import(
         '../lib/downloadZkeys.js'
       )
-      // Download two circuit packs by default
+      // Download three circuit packs by default
       if (doDownload) {
         await downloadAndExtractZKeys('2-1-1-5_v3', destRoot, {
           force: forceDownload,
         })
         await downloadAndExtractZKeys('4-2-2-25_v3', destRoot, {
+          force: forceDownload,
+        })
+        await downloadAndExtractZKeys('6-3-3-125_v3', destRoot, {
           force: forceDownload,
         })
         // If actual extracted path is destRoot/zkey but zkeyPath differs, rename
@@ -389,7 +392,7 @@ async function main(argv: string[]) {
     const zk = cfg.zkeyPath || path.join(workDir, 'zkey')
     console.log(`Using config: ${cfgPath}`)
     console.log(`Using zkeyPath: ${zk}`)
-    const required = ['2-1-1-5_v3', '4-2-2-25_v3']
+    const required = ['2-1-1-5_v3', '4-2-2-25_v3', '6-3-3-125_v3']
     let missing = required.filter((r) => !fs.existsSync(path.join(zk, r)))
     if (missing.length) {
       const choice = readlineSync.question(
@@ -403,9 +406,12 @@ async function main(argv: string[]) {
           const { downloadAndExtractZKeys } = await import(
             '../lib/downloadZkeys.js'
           )
-          // download both packs (force to ensure presence)
+          // download required packs (force to ensure presence)
           await downloadAndExtractZKeys('2-1-1-5_v3', destRoot, { force: true })
           await downloadAndExtractZKeys('4-2-2-25_v3', destRoot, {
+            force: true,
+          })
+          await downloadAndExtractZKeys('6-3-3-125_v3', destRoot, {
             force: true,
           })
           moveExtractedZkeys(path.join(destRoot, 'zkey'), zk)
@@ -455,7 +461,7 @@ async function main(argv: string[]) {
     const targetZkey = zkeyOpt
       ? path.resolve(zkeyOpt)
       : cfgZkey || path.join(workDir, 'zkey')
-    // download two packs into parent of target zkey
+    // download required packs into parent of target zkey
     const destRoot = path.dirname(targetZkey)
     ensureDir(destRoot)
     // Single override prompt
@@ -480,6 +486,9 @@ async function main(argv: string[]) {
         force: forceDownload,
       })
       await downloadAndExtractZKeys('4-2-2-25_v3', destRoot, {
+        force: forceDownload,
+      })
+      await downloadAndExtractZKeys('6-3-3-125_v3', destRoot, {
         force: forceDownload,
       })
       const extracted = path.join(destRoot, 'zkey')

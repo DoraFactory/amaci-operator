@@ -92,4 +92,9 @@ export async function init() {
     info('download zkey: 4-2-2-25_v3', 'INIT')
     await downloadAndExtractZKeys('4-2-2-25_v3')
   }
+
+  if (!fs.existsSync(path.join(zkeyRoot, '6-3-3-125_v3'))) {
+    info('download zkey: 6-3-3-125_v3', 'INIT')
+    await downloadAndExtractZKeys('6-3-3-125_v3')
+  }
 }

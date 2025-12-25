@@ -34,9 +34,20 @@ type ErrorMessage = {
 
 const wasmCache = new Map<string, Uint8Array>()
 const zkeyCache = new Map<string, Uint8Array>()
+const largeFiles = new Set<string>()
+const MAX_IN_MEMORY_BYTES = 2 * 1024 * 1024 * 1024 - 1
 
-async function loadCached(pathname: string, cache: Map<string, Uint8Array>) {
+async function loadCached(
+  pathname: string,
+  cache: Map<string, Uint8Array>,
+): Promise<Uint8Array | string> {
   if (cache.has(pathname)) return cache.get(pathname)!
+  if (largeFiles.has(pathname)) return pathname
+  const stat = await fs.promises.stat(pathname)
+  if (stat.size >= MAX_IN_MEMORY_BYTES) {
+    largeFiles.add(pathname)
+    return pathname
+  }
   const buff = await fs.promises.readFile(pathname)
   // Convert Buffer view to Uint8Array view without copy
   const u8 = new Uint8Array(buff.buffer, buff.byteOffset, buff.byteLength)
