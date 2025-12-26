@@ -24,10 +24,12 @@ import {
   TallyError,
   categorizeError,
 } from '../error'
+import { getProverConcurrency } from '../prover/concurrency'
 
 import { genMaciInputs } from '../operator/genInputs'
 import { proveMany } from '../prover/pool'
 import { loadProofCache, saveProofCache, buildInputsSignature } from '../storage/proofCache'
+import { markRoundTallyCompleted } from '../storage/roundStatus'
 import { createSubmitter } from './submitter'
 
 const zkeyRoot = process.env.ZKEY_PATH || path.join(process.env.WORK_PATH || './work', 'zkey')
@@ -75,6 +77,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     info(`Current round period:' ${maciRound.period}`, 'TALLY-TASK')
 
     info('Start round Tally ', 'TALLY-TASK')
+    const circuitConcurrency = getProverConcurrency(maciRound.circuitPower)
     const now = Date.now()
 
     if (
@@ -315,6 +318,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         recordTaskSuccess('tally')
         // Metrics: record the round completion
         recordRoundCompletion(id)
+        markRoundTallyCompleted(id)
         // Metrics: record the task end
         recordTaskEnd('tally', id)
         return {}
@@ -421,7 +425,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       const chunk = Math.max(
         1,
         Number(process.env.PROVER_SAVE_CHUNK || 0) ||
-          Number(process.env.PROVER_CONCURRENCY || 2),
+          circuitConcurrency,
       )
       // if pipeline enabled, submit cached prefix (>= mi) first
       const miStart = Math.ceil(Number(mc) / params.batchSize)
@@ -429,7 +433,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         1,
         Number(process.env.SUBMIT_BATCH_MSG || 0) ||
           Number(process.env.PROVER_SAVE_CHUNK || 0) ||
-          Number(process.env.PROVER_CONCURRENCY || 1),
+          circuitConcurrency,
       )
       let nextSubmitMsg = miStart
       // Background submitter for MSG when pipeline is enabled
@@ -466,7 +470,11 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         const end = Math.min(startMsg + chunk, res.msgInputs.length)
         const sliceInputs = res.msgInputs.slice(startMsg, end)
         const _p0 = Date.now()
-        const proofs = await proveMany(sliceInputs, msgWasm, msgZkey, { phase: 'msg', baseIndex: startMsg })
+        const proofs = await proveMany(sliceInputs, msgWasm, msgZkey, {
+          phase: 'msg',
+          baseIndex: startMsg,
+          concurrency: circuitConcurrency,
+        })
         const _pd = Date.now() - _p0
         info(`Generated MSG proof batch [${startMsg}..${end - 1}] in ${_pd}ms`, 'TALLY-TASK')
         for (let i = 0; i < sliceInputs.length; i++) {
@@ -573,7 +581,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         1,
         Number(process.env.SUBMIT_BATCH_TALLY || 0) ||
           Number(process.env.PROVER_SAVE_CHUNK || 0) ||
-          Number(process.env.PROVER_CONCURRENCY || 1),
+          circuitConcurrency,
       )
       let nextSubmitTally = uiStart
       // Background submitter for TALLY when pipeline is enabled
@@ -606,10 +614,11 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         const end = Math.min(startTally + chunk, res.tallyInputs.length)
         const slice = res.tallyInputs.slice(startTally, end)
         const _p0 = Date.now()
-        const proofs = await proveMany(slice, tallyWasm, tallyZkey, {
-          phase: 'tally',
-          baseIndex: startTally,
-        })
+      const proofs = await proveMany(slice, tallyWasm, tallyZkey, {
+        phase: 'tally',
+        baseIndex: startTally,
+        concurrency: circuitConcurrency,
+      })
         const _pd = Date.now() - _p0
         info(`Generated TALLY proof batch [${startTally}..${end - 1}] in ${_pd}ms`, 'TALLY-TASK')
         for (let i = 0; i < slice.length; i++) {
@@ -672,7 +681,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         1,
         Number(process.env.SUBMIT_BATCH_MSG || 0) ||
           Number(process.env.PROVER_SAVE_CHUNK || 0) ||
-          Number(process.env.PROVER_CONCURRENCY || 1),
+          circuitConcurrency,
       )
       while (mi < allData.msg.length) {
         const end = Math.min(mi + submitBatch, allData.msg.length)
@@ -745,7 +754,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         1,
         Number(process.env.SUBMIT_BATCH_TALLY || 0) ||
           Number(process.env.PROVER_SAVE_CHUNK || 0) ||
-          Number(process.env.PROVER_CONCURRENCY || 1),
+          circuitConcurrency,
       )
       while (ui < allData.tally.length) {
         const end = Math.min(ui + submitBatch, allData.tally.length)
@@ -958,6 +967,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     recordTaskSuccess('tally')
     // Metrics: record the round completion
     recordRoundCompletion(id)
+    markRoundTallyCompleted(id)
     // Metrics: record the task end
     recordTaskEnd('tally', id)
     return {}

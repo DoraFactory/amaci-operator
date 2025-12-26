@@ -2,6 +2,7 @@ import { fetchRounds } from '../vota/indexer'
 import { Task, TaskAct } from '../types'
 import { Timer } from '../storage/timer'
 import { genKeypair } from '../lib/keypair'
+import { loadRoundStatus } from '../storage/roundStatus'
 import {
   info,
   debug,
@@ -43,6 +44,7 @@ export const inspect: TaskAct = async () => {
     const coordinator = genKeypair(BigInt(process.env.COORDINATOR_PRI_KEY))
 
     const rounds = await fetchRounds(coordinator.pubKey.map(String))
+    const roundStatus = loadRoundStatus()
 
     const stats = {
       totalRounds: rounds.length,
@@ -61,6 +63,11 @@ export const inspect: TaskAct = async () => {
 
     let tasks = 0
     for (const maciRound of rounds) {
+      const status = roundStatus[maciRound.id]
+      if (status?.status === 'tally_completed') {
+        debug(`Skipping completed round ${maciRound.id}`, 'INSPECT')
+        continue
+      }
       // deactivate task
       if (
         now > Number(maciRound.votingStart) / 1e6 &&

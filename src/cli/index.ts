@@ -23,6 +23,7 @@ type Config = {
   prover?: {
     pipeline?: number
     concurrency?: number
+    concurrencyByCircuit?: Record<string, number>
     saveChunk?: number
     submitBatch?: {
       msg?: number
@@ -49,6 +50,11 @@ function defaultConfig(workPath: string): Config {
     prover: {
       pipeline: 1,
       concurrency: 2,
+      concurrencyByCircuit: {
+        '2-1-1-5': 3,
+        '4-2-2-25': 2,
+        '6-3-3-125': 1,
+      },
       saveChunk: 0,
       submitBatch: { msg: 0, tally: 0, deactivate: 0 },
     },
@@ -134,6 +140,20 @@ function writeConfigToml(cfgPath: string, cfg: Config) {
   lines.push('# Persist proofs/inputs in chunks (0 = use the number of concurrency)')
   lines.push(`saveChunk = ${cfg.prover?.saveChunk ?? 0}`)
   lines.push('')
+  lines.push('# Per-circuit concurrency overrides (keys are circuit power without _v3)')
+  lines.push('[prover.concurrencyByCircuit]')
+  const concurrencyByCircuit = cfg.prover?.concurrencyByCircuit || {}
+  const entries = Object.entries(concurrencyByCircuit)
+  if (entries.length === 0) {
+    lines.push('# "2-1-1-5" = 3')
+    lines.push('# "4-2-2-25" = 2')
+    lines.push('# "6-3-3-125" = 1')
+  } else {
+    for (const [key, value] of entries) {
+      lines.push(`"${key}" = ${value}`)
+    }
+  }
+  lines.push('')
   lines.push('# Submission batch sizes (0 = use saveChunk if > 0, otherwise concurrency)')
   lines.push('[prover.submitBatch]')
   lines.push(`msg = ${cfg.prover?.submitBatch?.msg ?? 0}`)
@@ -145,7 +165,7 @@ function writeConfigToml(cfgPath: string, cfg: Config) {
 function readConfigToml(cfgPath: string): Config {
   const text = fs.readFileSync(cfgPath, 'utf8')
   const lines = text.split(/\r?\n/)
-  const cfg: any = { prover: { submitBatch: {} } }
+  const cfg: any = { prover: { submitBatch: {}, concurrencyByCircuit: {} } }
   let section = ''
   const topKeys = new Set([
     'workPath',
@@ -197,6 +217,12 @@ function readConfigToml(cfgPath: string): Config {
       cfg[key] = value
     } else if (section === 'prover') {
       cfg.prover[key] = value
+    } else if (section === 'prover.concurrencyByCircuit') {
+      const map = cfg.prover.concurrencyByCircuit || {}
+      const normalizedKey = key.replace(/^['"]|['"]$/g, '')
+      const num = typeof value === 'number' ? value : Number(value)
+      if (Number.isFinite(num)) map[normalizedKey] = num
+      cfg.prover.concurrencyByCircuit = map
     } else if (section === 'prover.submitBatch') {
       cfg.prover.submitBatch[key] = value
     }
@@ -217,6 +243,10 @@ function applyEnvFromConfig(cfg: Config) {
   if (cfg.codeIds) process.env.CODE_IDS = JSON.stringify(cfg.codeIds)
   if (cfg.prover?.concurrency != null)
     process.env.PROVER_CONCURRENCY = String(cfg.prover.concurrency)
+  if (cfg.prover?.concurrencyByCircuit)
+    process.env.PROVER_CONCURRENCY_BY_CIRCUIT = JSON.stringify(
+      cfg.prover.concurrencyByCircuit,
+    )
   if (cfg.prover?.saveChunk != null)
     process.env.PROVER_SAVE_CHUNK = String(cfg.prover.saveChunk)
   if (cfg.prover?.pipeline != null)
