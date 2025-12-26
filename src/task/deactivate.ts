@@ -34,6 +34,7 @@ import {
   DeactivateError,
   categorizeError,
 } from '../error'
+import { getProverConcurrency } from '../prover/concurrency'
 const zkeyRoot = process.env.ZKEY_PATH || path.join(process.env.WORK_PATH || './work', 'zkey')
 
 const deactivateInterval = Number(process.env.DEACTIVATE_INTERVAL || 60000)
@@ -63,6 +64,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
     info('Start round deactivate', 'DEACTIVATE-TASK')
 
     const now = Date.now()
+    const circuitConcurrency = getProverConcurrency(maciRound.circuitPower)
 
     // If the round has already ended, you can ignore the condition
     // and execute a deactivate task.
@@ -234,13 +236,16 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
       const phaseStart = Date.now()
       const wasm = path.join(zkeyRoot, `${maciRound.circuitPower}_v3`, 'deactivate.wasm')
       const zkey = path.join(zkeyRoot, `${maciRound.circuitPower}_v3`, 'deactivate.zkey')
-      const chunk = Math.max(1, Number(process.env.PROVER_SAVE_CHUNK || 0) || Number(process.env.PROVER_CONCURRENCY || 2))
+    const chunk = Math.max(
+      1,
+      Number(process.env.PROVER_SAVE_CHUNK || 0) || circuitConcurrency,
+    )
       // If pipeline: submit cached prefix first
       const submitBatch = Math.max(
         1,
         Number(process.env.SUBMIT_BATCH_DEACTIVATE || 0) ||
           Number(process.env.PROVER_SAVE_CHUNK || 0) ||
-          Number(process.env.PROVER_CONCURRENCY || 1),
+          circuitConcurrency,
       )
       // Background submitter for DEACTIVATE
       let stopSubmitting = false
@@ -286,7 +291,11 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
           slice.map((s: any) => s.input),
           wasm,
           zkey,
-          { phase: 'deactivate', baseIndex: start },
+          {
+            phase: 'deactivate',
+            baseIndex: start,
+            concurrency: circuitConcurrency,
+          },
         )
         const _pd = Date.now() - _p0
         info(`Generated DEACTIVATE proof batch [${start}..${end - 1}] in ${_pd}ms`, 'DEACTIVATE-TASK')

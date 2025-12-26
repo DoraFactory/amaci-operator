@@ -9,6 +9,7 @@ declare global {
       DEACTIVATE_INTERVAL: string
       CODE_IDS: string
       PROVER_CONCURRENCY: string
+      PROVER_CONCURRENCY_BY_CIRCUIT?: string
       PROVER_SAVE_CHUNK: string
       SUBMIT_BATCH_MSG: string
       SUBMIT_BATCH_TALLY: string

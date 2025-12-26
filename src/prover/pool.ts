@@ -46,6 +46,10 @@ class ProverPool {
     process.once('SIGTERM', cleanup)
   }
 
+  getSize() {
+    return this.maxChildren
+  }
+
   submit(job: InternalJob) {
     this.queue.push(job)
     this.schedule()
@@ -196,6 +200,9 @@ let singletonPool: ProverPool | null = null
 function getPool(desired?: number) {
   const size = Math.max(1, desired || DEFAULT_CONCURRENCY)
   if (!singletonPool) {
+    singletonPool = new ProverPool(size)
+  } else if (singletonPool.getSize() !== size) {
+    singletonPool.shutdown()
     singletonPool = new ProverPool(size)
   }
   return singletonPool
