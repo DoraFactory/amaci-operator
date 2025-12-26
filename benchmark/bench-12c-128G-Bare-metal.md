@@ -26,8 +26,8 @@ Fee cost: 0.014 * 11 = 0.16DORA -> 0.2DORA
 
 总成本：0.02$ + 0.2DORA
 
-- CPU: 高点达到73%
-- MEM：～16GB
+- CPU: Peak at 73%
+- MEM: ~16GB
 ![machine-status](image.png)
 
 
@@ -50,29 +50,32 @@ Fee cost: 3.26DORA -> 4DORA
 
 
 
-- CPU: 高点达到95%+
-- MEM: 达到20GB
+- CPU: Peak reaches 95%+
+- MEM: Reaches 20GB
 ![machine-status](image-2.png)
 
 
 
 
-## 对比
+## Comparasion
+Original Tally cost + gas fee:
 
-原来Tally成本 + gas fee：
-- 2-1-1-5: 0.2$
-- 4-2-2-25: 7.5$
+- 2-1-1-5: $0.2
+- 4-2-2-25: $7.5
 
-现在Tally成本 + gas fee：
-- 2-1-1-5： 0.02$  (降低了10倍)
-- 4-2-2-25：1$     (降低了7.5倍)
+Current Tally cost + gas fee:
 
-设计到机器闲置均摊的话，分别扩大10倍，也就是0.2$和10$
+- 2-1-1-5: $0.02 (reduced by 10 times)
+- 4-2-2-25: $1 (reduced by 7.5 times)
 
-按照DORA=0.1美金的话：
-- 2-1-1-5: 2DORA
-- 4-2-2-25: 100DORA
+If considering the idle machine sharing, it expands by 10 times, which is $0.2 and $10 respectively.
 
-变量：
-分摊闲置的比例： 目前暂定是10倍
-DORA单价：0.1美金
+According to DORA = $0.1:
+
+- 2-1-1-5: 2 DORA
+- 4-2-2-25: 100 DORA
+
+Variables:
+
+- Proportion of idle sharing: currently set at 10 times
+- DORA unit price: $0.1
