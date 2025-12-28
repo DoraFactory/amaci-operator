@@ -103,6 +103,7 @@
   "exclude": [
     "node_modules",
     "dist",
+    "scripts",
     "eslint.config.mjs",
     "zkey",
     "zkeys",
