@@ -1,20 +1,17 @@
 name: Generate Benchmark Report
 
 on:
-  # Trigger on push when cost.json is changed
+  # Trigger on push when cost.json is changed (all branches)
   push:
     paths:
       - 'benchmark/cost.json'
-    branches:
-      - main
-      - master
   
   # Trigger on pull request when cost.json is changed
   pull_request:
     paths:
       - 'benchmark/cost.json'
   
-  # Daily schedule at UTC 16:00 (Beijing Time 00:00)
+  # Daily schedule at UTC 16:00 (Beijing Time 00:00) - only runs on default branch (main)
   schedule:
     - cron: '0 16 * * *'
   
@@ -52,7 +49,7 @@ jobs:
           git diff --exit-code benchmark/report.json benchmark/report.md || echo "changed=true" >> $GITHUB_OUTPUT
       
       - name: Commit and push if changed
-        if: steps.git-check.outputs.changed == 'true'
+        if: steps.git-check.outputs.changed == 'true' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
