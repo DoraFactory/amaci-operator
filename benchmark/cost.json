@@ -1,11 +1,11 @@
 {
-    "machineTypes": {
-        "12c-128G-Bare-metal": {
-            "currentTallyCostUsd": {
-                "2-1-1-5": 0.02,
-                "4-2-2-25": 1
-            },
-            "idleSharingMultiplier": 10
-        }
+  "machineTypes": {
+    "12c-128G-Bare-metal": {
+      "currentTallyCostUsd": {
+        "2-1-1-5": 0.02001,
+        "4-2-2-25": 1
+      },
+      "idleSharingMultiplier": 10
     }
+  }
 }
