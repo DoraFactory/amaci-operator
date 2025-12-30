@@ -1,91 +1,91 @@
 {
-  "name": "@dorafactory/maci-operator",
-  "version": "1.4.1",
-  "description": "An operator for managing MACI (Minimal Anti-Collusion Infrastructure)/aMACI deployments and interactions.",
-  "main": "dist/index.js",
-  "bin": {
-    "maci": "dist/cli/index.js"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/DoraFactory/amaci-operator.git"
-  },
-  "bugs": {
-    "url": "https://github.com/DoraFactory/amaci-operator/issues"
-  },
-  "homepage": "https://github.com/DoraFactory/amaci-operator#readme",
-  "engines": {
-    "node": ">=18.0.0"
-  },
-  "scripts": {
-    "build": "rm -rf dist && tsc",
-    "manage": " node --env-file=.env dist/index.js",
-    "init": " node --env-file=.env dist/init.js",
-    "new-key": " node dist/generate_key.js",
-    "benchmark:calculate": "tsx scripts/calculate-benchmark.ts",
-    "test": "vitest run",
-    "test:watch": "vitest watch",
-    "test:ui": "vitest --ui",
-    "test:coverage": "vitest run --coverage",
-    "test:ci": "vitest run --coverage --reporter=json --reporter=default",
-    "prepublishOnly": "npm run build",
-    "docker:build": "docker build -t maci-operator .",
-    "docker:run": "docker-compose up -d",
-    "docker:stop": "docker-compose down",
-    "docker:logs": "docker-compose logs -f",
-    "docker:restart": "docker-compose restart"
-  },
-  "keywords": [
-    "MACI"
-  ],
-  "author": "Felix Cai & Vegebun-csj",
-  "license": "ISC",
-  "files": [
-    "dist",
-    "README.md",
-    "CHANGELOG.md",
-    "Dockerfile",
-    "docker-compose.yml",
-    ".dockerignore",
-    "DOCKER.md"
-  ],
-  "devDependencies": {
-    "@eslint/eslintrc": "^3.0.2",
-    "@eslint/js": "^9.1.1",
-    "@types/express": "^4.17.21",
-    "@types/lodash": "^4.17.0",
-    "@types/node": "^20.12.7",
-    "@types/progress": "^2.0.7",
-    "@types/readline-sync": "^1.4.8",
-    "@types/snarkjs": "^0.7.8",
-    "@typescript-eslint/eslint-plugin": "^7.7.1",
-    "@typescript-eslint/parser": "^7.7.1",
-    "@vitest/coverage-v8": "^3.2.4",
-    "@vitest/ui": "^3.2.4",
-    "eslint": "^8.57.0",
-    "eslint-config-prettier": "^9.1.0",
-    "eslint-config-xo-typescript": "^4.0.0",
-    "globals": "^15.0.0",
-    "msw": "^2.11.3",
-    "prettier": "^3.2.5",
-    "tsx": "^4.21.0",
-    "typescript": "^5.4.5"
-  },
-  "dependencies": {
-    "@cosmjs/cosmwasm-stargate": "^0.32.3",
-    "@cosmjs/launchpad": "^0.27.1",
-    "circomlib": "^0.5.5",
-    "colors": "^1.4.0",
-    "ethers": "^6.12.0",
-    "express": "^4.21.2",
-    "lodash": "^4.17.21",
-    "progress": "^2.0.3",
-    "prom-client": "^15.1.3",
-    "readline-sync": "^1.4.10",
-    "snarkjs": "^0.7.3",
-    "tar": "^7.4.0",
-    "web3": "^4.9.0",
-    "winston": "^3.17.0",
-    "winston-daily-rotate-file": "^5.0.0"
-  }
+    "name": "@dorafactory/maci-operator",
+    "version": "1.5.0",
+    "description": "An operator for managing MACI (Minimal Anti-Collusion Infrastructure)/aMACI deployments and interactions.",
+    "main": "dist/index.js",
+    "bin": {
+        "maci": "dist/cli/index.js"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/DoraFactory/amaci-operator.git"
+    },
+    "bugs": {
+        "url": "https://github.com/DoraFactory/amaci-operator/issues"
+    },
+    "homepage": "https://github.com/DoraFactory/amaci-operator#readme",
+    "engines": {
+        "node": ">=18.0.0"
+    },
+    "scripts": {
+        "build": "rm -rf dist && tsc",
+        "manage": " node --env-file=.env dist/index.js",
+        "init": " node --env-file=.env dist/init.js",
+        "new-key": " node dist/generate_key.js",
+        "benchmark:calculate": "tsx scripts/calculate-benchmark.ts",
+        "test": "vitest run",
+        "test:watch": "vitest watch",
+        "test:ui": "vitest --ui",
+        "test:coverage": "vitest run --coverage",
+        "test:ci": "vitest run --coverage --reporter=json --reporter=default",
+        "prepublishOnly": "npm run build",
+        "docker:build": "docker build -t maci-operator .",
+        "docker:run": "docker-compose up -d",
+        "docker:stop": "docker-compose down",
+        "docker:logs": "docker-compose logs -f",
+        "docker:restart": "docker-compose restart"
+    },
+    "keywords": [
+        "MACI"
+    ],
+    "author": "Felix Cai & Vegebun-csj",
+    "license": "ISC",
+    "files": [
+        "dist",
+        "README.md",
+        "CHANGELOG.md",
+        "Dockerfile",
+        "docker-compose.yml",
+        ".dockerignore",
+        "DOCKER.md"
+    ],
+    "devDependencies": {
+        "@eslint/eslintrc": "^3.0.2",
+        "@eslint/js": "^9.1.1",
+        "@types/express": "^4.17.21",
+        "@types/lodash": "^4.17.0",
+        "@types/node": "^20.12.7",
+        "@types/progress": "^2.0.7",
+        "@types/readline-sync": "^1.4.8",
+        "@types/snarkjs": "^0.7.8",
+        "@typescript-eslint/eslint-plugin": "^7.7.1",
+        "@typescript-eslint/parser": "^7.7.1",
+        "@vitest/coverage-v8": "^3.2.4",
+        "@vitest/ui": "^3.2.4",
+        "eslint": "^8.57.0",
+        "eslint-config-prettier": "^9.1.0",
+        "eslint-config-xo-typescript": "^4.0.0",
+        "globals": "^15.0.0",
+        "msw": "^2.11.3",
+        "prettier": "^3.2.5",
+        "tsx": "^4.21.0",
+        "typescript": "^5.4.5"
+    },
+    "dependencies": {
+        "@cosmjs/cosmwasm-stargate": "^0.32.3",
+        "@cosmjs/launchpad": "^0.27.1",
+        "circomlib": "^0.5.5",
+        "colors": "^1.4.0",
+        "ethers": "^6.12.0",
+        "express": "^4.21.2",
+        "lodash": "^4.17.21",
+        "progress": "^2.0.3",
+        "prom-client": "^15.1.3",
+        "readline-sync": "^1.4.10",
+        "snarkjs": "^0.7.3",
+        "tar": "^7.4.0",
+        "web3": "^4.9.0",
+        "winston": "^3.17.0",
+        "winston-daily-rotate-file": "^5.0.0"
+    }
 }
