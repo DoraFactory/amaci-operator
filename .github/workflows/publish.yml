@@ -20,11 +20,11 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
           registry-url: 'https://registry.npmjs.org'
 
       - name: Upgrade npm for trusted publishing
-        run: npm install -g npm@10.8.0
+        run: npm install -g npm@11.5.1
 
       - name: Show Node.js and npm versions
         run: |
@@ -65,16 +65,8 @@ jobs:
             echo "prerelease=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Ensure OIDC-only npm auth
-        run: |
-          npm config delete //registry.npmjs.org/:_authToken || true
-          npm config delete _authToken || true
-
       - name: Publish to npm
         run: npm publish --tag ${{ steps.meta.outputs.npm_tag }} --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ""
-          NPM_TOKEN: ""
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
