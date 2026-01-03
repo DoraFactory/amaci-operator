@@ -22,6 +22,11 @@ export interface ProofCache {
     // for deactivate upload history
     newDeactivates?: any[]
   }
+  inputsMeta?: {
+    mode: 'files'
+    msgCount: number
+    tallyCount: number
+  }
   inputsSig?: string
 }
 
@@ -71,6 +76,7 @@ export function saveProofCache(id: string, update: Partial<ProofCache>) {
     tally: { proofs: [] },
     deactivate: { proofs: [] },
     inputs: prev?.inputs,
+    inputsMeta: update.inputsMeta ?? prev?.inputsMeta,
     inputsSig: update.inputsSig ?? prev?.inputsSig,
   }
   // merge arrays by taking the longer one
@@ -87,7 +93,9 @@ export function saveProofCache(id: string, update: Partial<ProofCache>) {
   merged.deactivate = { proofs: dB.length >= dA.length ? dB : dA }
 
   // overwrite inputs fully if provided (they are deterministic for a signature)
-  if (update.inputs) {
+  if (update.inputsMeta?.mode === 'files') {
+    merged.inputs = undefined
+  } else if (update.inputs) {
     merged.inputs = sanitizeInputs(update.inputs)
   }
 

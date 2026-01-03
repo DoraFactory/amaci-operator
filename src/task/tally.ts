@@ -30,6 +30,7 @@ import { genMaciInputs } from '../operator/genInputs'
 import { proveMany } from '../prover/pool'
 import { loadProofCache, saveProofCache, buildInputsSignature } from '../storage/proofCache'
 import { markRoundTallyCompleted } from '../storage/roundStatus'
+import { clearInputsDir, loadInputFiles, saveInputFiles } from '../storage/inputFiles'
 import { createSubmitter } from './submitter'
 
 const zkeyRoot = process.env.ZKEY_PATH || path.join(process.env.WORK_PATH || './work', 'zkey')
@@ -338,13 +339,33 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         processedDMsgCount: Number(dc),
       })
       let res: any
-      if (cache && cache.inputsSig === inputsSig && cache.inputs?.msgInputs && cache.inputs?.tallyInputs && cache.result && cache.salt) {
-        res = {
-          msgInputs: cache.inputs.msgInputs,
-          tallyInputs: cache.inputs.tallyInputs,
-          result: cache.result,
+      const useFileInputs = maciRound.circuitPower === '6-3-3-125'
+      if (cache && cache.inputsSig === inputsSig && cache.result && cache.salt) {
+        if (
+          useFileInputs &&
+          cache.inputsMeta?.mode === 'files' &&
+          Number.isFinite(cache.inputsMeta.msgCount) &&
+          Number.isFinite(cache.inputsMeta.tallyCount)
+        ) {
+          try {
+            res = {
+              msgInputs: loadInputFiles(id, 'msg', cache.inputsMeta.msgCount),
+              tallyInputs: loadInputFiles(id, 'tally', cache.inputsMeta.tallyCount),
+              result: cache.result,
+            }
+          } catch (e) {
+            warn(`Failed to load cached inputs from files, regenerating: ${e}`, 'TALLY-TASK')
+          }
+        } else if (cache.inputs?.msgInputs && cache.inputs?.tallyInputs) {
+          res = {
+            msgInputs: cache.inputs.msgInputs,
+            tallyInputs: cache.inputs.tallyInputs,
+            result: cache.result,
+          }
         }
-      } else {
+      }
+
+      if (!res) {
         res = genMaciInputs(
         {
           ...params,
@@ -384,13 +405,30 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         Number(dc),
         )
         // Save inputs + signature immediately to speed up restarts
-        saveProofCache(id, {
-          circuitPower: maciRound.circuitPower,
-          inputsSig,
-          inputs: { msgInputs: res.msgInputs, tallyInputs: res.tallyInputs },
-          result: res.result.map((x: any) => x.toString()),
-          salt: (res.tallyInputs.length ? res.tallyInputs[res.tallyInputs.length - 1].newResultsRootSalt.toString() : '0'),
-        })
+        if (useFileInputs) {
+          clearInputsDir(id)
+          saveInputFiles(id, 'msg', res.msgInputs)
+          saveInputFiles(id, 'tally', res.tallyInputs)
+          saveProofCache(id, {
+            circuitPower: maciRound.circuitPower,
+            inputsSig,
+            inputsMeta: {
+              mode: 'files',
+              msgCount: res.msgInputs.length,
+              tallyCount: res.tallyInputs.length,
+            },
+            result: res.result.map((x: any) => x.toString()),
+            salt: (res.tallyInputs.length ? res.tallyInputs[res.tallyInputs.length - 1].newResultsRootSalt.toString() : '0'),
+          })
+        } else {
+          saveProofCache(id, {
+            circuitPower: maciRound.circuitPower,
+            inputsSig,
+            inputs: { msgInputs: res.msgInputs, tallyInputs: res.tallyInputs },
+            result: res.result.map((x: any) => x.toString()),
+            salt: (res.tallyInputs.length ? res.tallyInputs[res.tallyInputs.length - 1].newResultsRootSalt.toString() : '0'),
+          })
+        }
       }
 
       const lastTallyInput = res.tallyInputs[res.tallyInputs.length - 1]
