@@ -10,6 +10,8 @@ EventEmitter.defaultMaxListeners = 200
 
 // add write counters - for tracking write counts and triggering transport rebuild
 const writeCounters = new Map<string, number>()
+// Always disable round logger rebuilds to avoid write-after-end crashes.
+const DISABLE_ROUND_LOG_REBUILD = true
 // add max writes before rebuild, reduce rebuild frequency
 const MAX_WRITES_BEFORE_REBUILD = 10000 // 增加到10000次写入后才考虑重建
 
@@ -484,13 +486,15 @@ const logWithContext = (
     let writeCount = writeCounters.get(roundId) || 0
     writeCount++
 
-    // update the counter
+    // update the counter and last-used timestamp for cleanup
     writeCounters.set(roundId, writeCount)
+    lastRebuildTimes.set(roundId, Date.now())
 
     // check if a logger needs to be rebuilt - both count and time interval conditions
     const lastRebuildTime = lastRebuildTimes.get(roundId) || 0
     const timeSinceLastRebuild = Date.now() - lastRebuildTime
     const forceRebuild =
+      !DISABLE_ROUND_LOG_REBUILD &&
       writeCount >= MAX_WRITES_BEFORE_REBUILD &&
       timeSinceLastRebuild > MIN_REBUILD_INTERVAL
 
@@ -569,26 +573,7 @@ export const log = (...msgs: any[]) => {
   return info(msgs.join(' '))
 }
 
-// add a periodic force rebuild of all active loggers
-// rebuild every 3 hours, regardless of write count
-const FORCE_REBUILD_INTERVAL = 3 * 60 * 60 * 1000 // 改为3小时
-setInterval(() => {
-  const activeRoundIds = Array.from(roundLoggers.keys())
-  if (activeRoundIds.length > 0) {
-    console.log(
-      `[${new Date().toISOString()}][LOGGER] Periodic force rebuild of ${activeRoundIds.length} active loggers`,
-    )
-    for (const roundId of activeRoundIds) {
-      try {
-        getRoundLogger(roundId, true) // force rebuild
-      } catch (e) {
-        console.error(
-          `[${new Date().toISOString()}][LOGGER] Error during periodic rebuild of ${roundId}: ${e}`,
-        )
-      }
-    }
-  }
-}, FORCE_REBUILD_INTERVAL)
+// Periodic force rebuild disabled to avoid closing active loggers.
 
 // the periodic force rebuild mechanism only needs to keep one, delete the duplicate methods
 // reduce the cleanup interval to 30 minutes, reduce resource consumption
