@@ -24,7 +24,7 @@ concurrency: 3
 
 Fee cost: 0.014 * 11 = 0.16DORA -> 0.2DORA
 
-总成本：0.02$ + 0.2DORA
+Total cost：0.02$ + 0.2DORA
 
 - CPU: Peak at 73%
 - MEM: ~16GB
@@ -46,13 +46,38 @@ concurrency: 2
 
 Fee cost: 3.26DORA -> 4DORA
 
-总成本：1$ + 4DORA
+Total cost：1$ + 4DORA
 
+## Round 6-3-3-125
+### Data
+| Round ID | Voters | Votes per participant | Total votes | Msg count | DMsg count | Tally duration (s) | Notes | Tally cost |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+|dora192uyp4zgr7hu7rmmydxggyvur85tz2zc5y7n4rf6xv3zejcrcu4stsjens | 1610 | 20 | 614100 |  |  |  |  |  |
 
+Here is the estimation (assuming 15,625 people participate in the vote, each casting 125 votes):
+0. Pre-generation of inputs requires 4 hours
 
-- CPU: Peak reaches 95%+
-- MEM: Reaches 20GB
-![machine-status](image-2.png)
+1. The generation time for one MSG proof is:
+
+125163ms -> 130000ms -> 130s
+
+15,625 MSG proofs, so the total time to process MSG proofs is 23.5 days
+
+2. The generation time for one TALLY proof is:
+
+80619ms -> 80s
+
+A total of 15,625 people, so 125 TALLY proofs need to be processed, so the total time is approximately 3 hours
+
+So, in summary, the time required for these three parts is 24 days, and the machine cost is 180*(24/30) = $144
+
+Machine gas cost: 15,625*0.01 + 125*0.01 = 158 DORA (negligible)
+
+So, in summary, the cost is $145
+
+- CPU: Peak reaches 83%+
+- MEM: Reaches 32GB
+![image3](image-1.png)
 
 
 
