@@ -77,7 +77,7 @@ So, in summary, the cost is $145
 
 - CPU: Peak reaches 83%+
 - MEM: Reaches 32GB
-![image3](image-1.png)
+![machine-resources](image-3.png)
 
 
 
