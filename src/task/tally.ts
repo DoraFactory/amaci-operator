@@ -32,6 +32,7 @@ import { loadProofCache, saveProofCache, buildInputsSignature } from '../storage
 import { markRoundTallyCompleted } from '../storage/roundStatus'
 import { clearInputsDir, loadInputFiles, saveInputFiles } from '../storage/inputFiles'
 import { createSubmitter } from './submitter'
+import { parseMessageNumbers } from './messageParsing'
 
 const zkeyRoot = process.env.ZKEY_PATH || path.join(process.env.WORK_PATH || './work', 'zkey')
 
@@ -384,8 +385,11 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
           })),
           messages: logs.msg.map((m) => ({
             idx: m.msgChainLength,
-            msg: (m.message.match(/(?<=\()\d+(?=\))/g) || []).map((s) =>
-              BigInt(s),
+            msg: parseMessageNumbers(
+              m.message,
+              'msg',
+              m.msgChainLength,
+              'TALLY-TASK',
             ),
             pubkey: (m.encPubKey.match(/\d+/g) || []).map((n: string) =>
               BigInt(n),
@@ -394,8 +398,11 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
           dmessages: logs.dmsg.map((m) => ({
             idx: m.dmsgChainLength,
             numSignUps: m.numSignUps,
-            msg: (m.message.match(/(?<=\()\d+(?=\))/g) || []).map((s) =>
-              BigInt(s),
+            msg: parseMessageNumbers(
+              m.message,
+              'dmsg',
+              m.dmsgChainLength,
+              'TALLY-TASK',
             ),
             pubkey: (m.encPubKey.match(/\d+/g) || []).map((n: string) =>
               BigInt(n),

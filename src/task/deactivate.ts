@@ -28,6 +28,7 @@ import {
 } from '../logger'
 import { recordTaskFailure, recordTaskSuccess, recordTaskStart, recordTaskEnd } from '../metrics'
 import { createSubmitter } from './submitter'
+import { parseMessageNumbers } from './messageParsing'
 import {
   NetworkError,
   ContractError,
@@ -156,8 +157,11 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
               dmessages: logs.dmsg.map((m) => ({
                 idx: m.dmsgChainLength,
                 numSignUps: m.numSignUps,
-                msg: (m.message.match(/(?<=\()\d+(?=\))/g) || []).map((s) =>
-                  BigInt(s),
+                msg: parseMessageNumbers(
+                  m.message,
+                  'dmsg',
+                  m.dmsgChainLength,
+                  'DEACTIVATE-TASK',
                 ),
                 pubkey: (m.encPubKey.match(/\d+/g) || []).map((n: string) =>
                   BigInt(n),
@@ -196,8 +200,11 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
           dmessages: logs.dmsg.map((m) => ({
             idx: m.dmsgChainLength,
             numSignUps: m.numSignUps,
-            msg: (m.message.match(/(?<=\()\d+(?=\))/g) || []).map((s) =>
-              BigInt(s),
+            msg: parseMessageNumbers(
+              m.message,
+              'dmsg',
+              m.dmsgChainLength,
+              'DEACTIVATE-TASK',
             ),
             pubkey: (m.encPubKey.match(/\d+/g) || []).map((n: string) =>
               BigInt(n),
