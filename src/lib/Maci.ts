@@ -228,7 +228,6 @@ export class MACI {
       }
       return cmd
     } catch (e: any) {
-      LogError(`[dev] msg decrypt error' ${e.message}`, 'TALLY-TASK')
       return null
     }
   }
