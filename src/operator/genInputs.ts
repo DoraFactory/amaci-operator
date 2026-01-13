@@ -2,6 +2,7 @@ import { genStaticRandomKey } from '../lib/keypair'
 import { MACI, MACI_STATES, MsgInput, TallyInput } from '../lib/Maci'
 import { IContractLogs } from '../types'
 import { info } from '../logger'
+import type { MessageStoreReader } from '../storage/messageStore'
 
 interface IGenMaciInputsParams {
   stateTreeDepth: number
@@ -97,6 +98,93 @@ export const genMaciInputs = (
   info(`GenInputs TALLY produced ${tallyInputs.length} inputs in ${tallyInputsMs}ms`, 'TALLY-TASK')
 
   // RESULT
+  const result = maci.tallyResultsLeaves.slice(0, maxVoteOptions)
+
+  return {
+    msgInputs,
+    tallyInputs,
+    result,
+  }
+}
+
+export const genMaciInputsFromStore = (
+  {
+    stateTreeDepth,
+    intStateTreeDepth,
+    voteOptionTreeDepth,
+    batchSize,
+    coordPriKey,
+    maxVoteOptions,
+    isQuadraticCost,
+  }: IGenMaciInputsParams,
+  contractLogs: Omit<IContractLogs, 'messages'>,
+  messageStore: MessageStoreReader,
+  messageCount: number,
+  deactivateSize: number,
+) => {
+  const maci = new MACI(
+    stateTreeDepth,
+    intStateTreeDepth,
+    voteOptionTreeDepth,
+    batchSize,
+    coordPriKey,
+    maxVoteOptions,
+    contractLogs.states.length,
+    isQuadraticCost,
+  )
+
+  maci.setMessageStore(messageStore, messageCount)
+
+  for (const state of contractLogs.states) {
+    maci.initStateTree(state.idx, state.pubkey, state.balance, state.c)
+  }
+
+  for (const dmsg of contractLogs.dmessages) {
+    maci.pushDeactivateMessage(dmsg.msg, dmsg.pubkey)
+  }
+
+  let i = 0
+  while (maci.processedDMsgCount < deactivateSize) {
+    let size = maci.batchSize
+    if (size + i > deactivateSize) {
+      size = deactivateSize - i
+    }
+    i = i + size
+
+    maci.processDeactivateMessage(
+      size,
+      contractLogs.dmessages[i - 1].numSignUps,
+    )
+  }
+
+  maci.endVotePeriod()
+
+  let nonce = 1n
+
+  const msgInputsStart = Date.now()
+  const msgInputs: MsgInput[] = []
+  while (maci.states === MACI_STATES.PROCESSING) {
+    const input = maci.processMessage(
+      genStaticRandomKey(coordPriKey, 20041n, nonce++),
+    )
+
+    msgInputs.push(input)
+  }
+  const msgInputsMs = Date.now() - msgInputsStart
+  info(`GenInputs MSG produced ${msgInputs.length} inputs in ${msgInputsMs}ms`, 'TALLY-TASK')
+
+  const tallyInputsStart = Date.now()
+  const tallyInputs: TallyInput[] = []
+  while (maci.states === MACI_STATES.TALLYING) {
+    const input = maci.processTally(
+      genStaticRandomKey(coordPriKey, 20042n, nonce++),
+    )
+
+    tallyInputs.push(input)
+  }
+  const tallyInputsMs = Date.now() - tallyInputsStart
+  info(`GenInputs TALLY produced ${tallyInputs.length} inputs in ${tallyInputsMs}ms`, 'TALLY-TASK')
+
   const result = maci.tallyResultsLeaves.slice(0, maxVoteOptions)
 
   return {

@@ -3,7 +3,7 @@ import path from 'path'
 // proof generation is offloaded to worker pool
 import { GasPrice, calculateFee } from '@cosmjs/stargate'
 
-import { fetchAllVotesLogs, fetchRound } from '../vota/indexer'
+import { fetchAllDeactivateLogs, fetchAllVotesLogs, fetchRound, streamPublishMessageEvents } from '../vota/indexer'
 import { getContractSignerClient, withRetry, withBroadcastRetry } from '../lib/client/utils'
 import { maciParamsFromCircuitPower, ProofData, TaskAct } from '../types'
 import {
@@ -26,11 +26,12 @@ import {
 } from '../error'
 import { getProverConcurrency } from '../prover/concurrency'
 
-import { genMaciInputs } from '../operator/genInputs'
+import { genMaciInputs, genMaciInputsFromStore } from '../operator/genInputs'
 import { proveMany } from '../prover/pool'
 import { loadProofCache, saveProofCache, buildInputsSignature } from '../storage/proofCache'
 import { markRoundTallyCompleted } from '../storage/roundStatus'
 import { clearInputsDir, loadInputFiles, saveInputFiles } from '../storage/inputFiles'
+import { DiskMessageStore } from '../storage/messageStore'
 import { createSubmitter } from './submitter'
 import { parseMessageNumbers } from './messageParsing'
 
@@ -160,13 +161,61 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     }
 
     if (!allData) {
-      const logs = await withRetry(() => fetchAllVotesLogs(id), {
-        context: 'INDEXER-FETCH-VOTES-LOGS',
-        maxRetries: 3,
-      })
+      const useMessageStore =
+        maciRound.circuitPower === '6-3-3-125' ||
+        Number(process.env['MESSAGE_STORE'] || 0) > 0
+      let logs: any
+      let msgCount = 0
+      let lastMsgId = ''
+      let messageStore: DiskMessageStore | null = null
+
+      if (useMessageStore) {
+        const baseLogs = await withRetry(() => fetchAllDeactivateLogs(id), {
+          context: 'INDEXER-FETCH-VOTES-LOGS',
+          maxRetries: 3,
+        })
+        logs = baseLogs
+
+        const messagesDir = path.join(inputsPath, 'messages', id)
+        messageStore = new DiskMessageStore(messagesDir, params.batchSize)
+        messageStore.reset()
+
+        const streamResult = await withRetry(
+          () =>
+            streamPublishMessageEvents(id, async (nodes) => {
+              for (const m of nodes) {
+                const msg = parseMessageNumbers(
+                  m.message,
+                  'msg',
+                  m.msgChainLength,
+                  'TALLY-TASK',
+                )
+                const pubkey = (m.encPubKey.match(/\d+/g) || []).map(
+                  (n: string) => BigInt(n),
+                ) as [bigint, bigint]
+                messageStore?.appendMessage(msg, pubkey)
+              }
+            }),
+          {
+            context: 'INDEXER-STREAM-MESSAGES',
+            maxRetries: 3,
+          },
+        )
+
+        messageStore.finalize()
+        msgCount = streamResult.count
+        lastMsgId = streamResult.lastId
+      } else {
+        logs = await withRetry(() => fetchAllVotesLogs(id), {
+          context: 'INDEXER-FETCH-VOTES-LOGS',
+          maxRetries: 3,
+        })
+        msgCount = logs.msg.length
+        lastMsgId = logs.msg[logs.msg.length - 1]?.id || ''
+      }
 
       info(
-        `The current round has ${logs.signup.length} signups, ${logs.msg.length} messages, ${logs.dmsg.length} dmessages`,
+        `The current round has ${logs.signup.length} signups, ${msgCount} messages, ${logs.dmsg.length} dmessages`,
         'TALLY-TASK',
       )
 
@@ -333,8 +382,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         maxVoteOptions: Number(maxVoteOptions),
         signupCount: logs.signup.length,
         lastSignupId: logs.signup[logs.signup.length - 1]?.id,
-        msgCount: logs.msg.length,
-        lastMsgId: logs.msg[logs.msg.length - 1]?.id,
+        msgCount,
+        lastMsgId,
         dmsgCount: logs.dmsg.length,
         lastDmsgId: logs.dmsg[logs.dmsg.length - 1]?.id,
         processedDMsgCount: Number(dc),
@@ -367,50 +416,88 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       }
 
       if (!res) {
-        res = genMaciInputs(
-        {
-          ...params,
-          coordPriKey: BigInt(process.env.COORDINATOR_PRI_KEY),
-          maxVoteOptions: Number(maxVoteOptions),
-          isQuadraticCost: !!Number(maciRound.circuitType),
-        },
-        {
-          states: logs.signup.map((s) => ({
-            idx: s.stateIdx,
-            balance: BigInt(s.balance),
-            pubkey: (s.pubKey.match(/\d+/g) || []).map((n: string) =>
-              BigInt(n),
-            ) as [bigint, bigint],
-            c: [BigInt(s.d0), BigInt(s.d1), BigInt(s.d2), BigInt(s.d3)],
-          })),
-          messages: logs.msg.map((m) => ({
-            idx: m.msgChainLength,
-            msg: parseMessageNumbers(
-              m.message,
-              'msg',
-              m.msgChainLength,
-              'TALLY-TASK',
-            ),
-            pubkey: (m.encPubKey.match(/\d+/g) || []).map((n: string) =>
-              BigInt(n),
-            ) as [bigint, bigint],
-          })),
-          dmessages: logs.dmsg.map((m) => ({
-            idx: m.dmsgChainLength,
-            numSignUps: m.numSignUps,
-            msg: parseMessageNumbers(
-              m.message,
-              'dmsg',
-              m.dmsgChainLength,
-              'TALLY-TASK',
-            ),
-            pubkey: (m.encPubKey.match(/\d+/g) || []).map((n: string) =>
-              BigInt(n),
-            ) as [bigint, bigint],
-          })),
-        },
-        Number(dc),
-        )
+        if (useMessageStore && !messageStore) {
+          throw new Error('Message store not initialized')
+        }
+        res = useMessageStore
+          ? genMaciInputsFromStore(
+              {
+                ...params,
+                coordPriKey: BigInt(process.env.COORDINATOR_PRI_KEY),
+                maxVoteOptions: Number(maxVoteOptions),
+                isQuadraticCost: !!Number(maciRound.circuitType),
+              },
+              {
+                states: logs.signup.map((s: any) => ({
+                  idx: s.stateIdx,
+                  balance: BigInt(s.balance),
+                  pubkey: (s.pubKey.match(/\d+/g) || []).map((n: string) =>
+                    BigInt(n),
+                  ) as [bigint, bigint],
+                  c: [BigInt(s.d0), BigInt(s.d1), BigInt(s.d2), BigInt(s.d3)],
+                })),
+                dmessages: logs.dmsg.map((m: any) => ({
+                  idx: m.dmsgChainLength,
+                  numSignUps: m.numSignUps,
+                  msg: parseMessageNumbers(
+                    m.message,
+                    'dmsg',
+                    m.dmsgChainLength,
+                    'TALLY-TASK',
+                  ),
+                  pubkey: (m.encPubKey.match(/\d+/g) || []).map((n: string) =>
+                    BigInt(n),
+                  ) as [bigint, bigint],
+                })),
+              },
+              messageStore as DiskMessageStore,
+              msgCount,
+              Number(dc),
+            )
+          : genMaciInputs(
+              {
+                ...params,
+                coordPriKey: BigInt(process.env.COORDINATOR_PRI_KEY),
+                maxVoteOptions: Number(maxVoteOptions),
+                isQuadraticCost: !!Number(maciRound.circuitType),
+              },
+              {
+                states: logs.signup.map((s: any) => ({
+                  idx: s.stateIdx,
+                  balance: BigInt(s.balance),
+                  pubkey: (s.pubKey.match(/\d+/g) || []).map((n: string) =>
+                    BigInt(n),
+                  ) as [bigint, bigint],
+                  c: [BigInt(s.d0), BigInt(s.d1), BigInt(s.d2), BigInt(s.d3)],
+                })),
+                messages: logs.msg.map((m: any) => ({
+                  idx: m.msgChainLength,
+                  msg: parseMessageNumbers(
+                    m.message,
+                    'msg',
+                    m.msgChainLength,
+                    'TALLY-TASK',
+                  ),
+                  pubkey: (m.encPubKey.match(/\d+/g) || []).map((n: string) =>
+                    BigInt(n),
+                  ) as [bigint, bigint],
+                })),
+                dmessages: logs.dmsg.map((m: any) => ({
+                  idx: m.dmsgChainLength,
+                  numSignUps: m.numSignUps,
+                  msg: parseMessageNumbers(
+                    m.message,
+                    'dmsg',
+                    m.dmsgChainLength,
+                    'TALLY-TASK',
+                  ),
+                  pubkey: (m.encPubKey.match(/\d+/g) || []).map((n: string) =>
+                    BigInt(n),
+                  ) as [bigint, bigint],
+                })),
+              },
+              Number(dc),
+            )
         // Save inputs + signature immediately to speed up restarts
         if (useFileInputs) {
           clearInputsDir(id)
