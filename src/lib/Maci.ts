@@ -13,6 +13,7 @@ import { poseidonDecrypt } from '../js/poseidonCipher.js'
 import { IKeypair } from '../types'
 // import { log } from '../log'
 import { info, error as LogError, debug } from '../logger'
+import type { MessageStoreReader } from '../storage/messageStore'
 
 interface ICmd {
   nonce: bigint
@@ -29,7 +30,7 @@ interface ICmd {
 
 interface IMsg {
   ciphertext: bigint[]
-  encPubKey: bigint[]
+  encPubKey: [bigint, bigint]
   prevHash: bigint
   hash: bigint
 }
@@ -93,6 +94,9 @@ export class MACI {
 
   protected commands: (ICmd | null)[]
   protected messages: IMsg[]
+  protected messageStore?: MessageStoreReader
+  protected messageCount: number
+  protected lastMessageHash: bigint
 
   protected msgEndIdx: number = 0
   protected stateSalt: bigint = 0n
@@ -123,6 +127,12 @@ export class MACI {
 
   get activeStateTreeLeaves() {
     return this.activeStateTree.leaves()
+  }
+
+  setMessageStore(store: MessageStoreReader, messageCount?: number) {
+    this.messageStore = store
+    this.messageCount =
+      typeof messageCount === 'number' ? messageCount : store.getMessageCount()
   }
 
   constructor(
@@ -178,6 +188,9 @@ export class MACI {
     this.stateLeaves = new Map()
     this.commands = []
     this.messages = []
+    this.messageStore = undefined
+    this.messageCount = 0
+    this.lastMessageHash = 0n
     this.states = MACI_STATES.FILLING
     this.logs = []
   }
@@ -309,22 +322,30 @@ export class MACI {
     if (this.states !== MACI_STATES.FILLING)
       throw new Error('vote period ended')
 
-    const msgIdx = this.messages.length
-    const prevHash = msgIdx > 0 ? this.messages[msgIdx - 1].hash : 0n
-
-    const hash = poseidon([
-      poseidon(ciphertext.slice(0, 5)),
-      poseidon([...ciphertext.slice(5), ...encPubKey, prevHash]),
-    ])
-
-    this.messages.push({
-      ciphertext: [...ciphertext],
-      encPubKey: [...encPubKey],
-      prevHash,
-      hash,
-    })
-
-    this.commands.push(this.msgToCmd(ciphertext, encPubKey))
+    const msgIdx = this.messageCount
+    let prevHash = 0n
+    let hash = 0n
+    if (this.messageStore) {
+      const stored = this.messageStore.appendMessage(ciphertext, encPubKey)
+      this.lastMessageHash = stored.hash
+      prevHash = stored.prevHash
+      hash = stored.hash
+    } else {
+      prevHash = msgIdx > 0 ? this.lastMessageHash : 0n
+      hash = poseidon([
+        poseidon(ciphertext.slice(0, 5)),
+        poseidon([...ciphertext.slice(5), ...encPubKey, prevHash]),
+      ])
+      this.messages.push({
+        ciphertext: [...ciphertext],
+        encPubKey: [...encPubKey],
+        prevHash,
+        hash,
+      })
+      this.commands.push(this.msgToCmd(ciphertext, encPubKey))
+      this.lastMessageHash = hash
+    }
+    this.messageCount += 1
 
     debug(
       [
@@ -555,13 +576,13 @@ export class MACI {
       throw new Error('vote period ended')
     this.states = MACI_STATES.PROCESSING
 
-    this.msgEndIdx = this.messages.length
+    this.msgEndIdx = this.messageCount
     this.stateSalt = 0n
     this._stateCommitment = poseidon([this.stateTree.root, 0n])
 
     debug(['Vote End '.padEnd(60, '='), ''].join('\n'), 'TALLY-TASK')
 
-    if (this.messages.length === 0) {
+    if (this.messageCount === 0) {
       this.endProcessingPeriod()
       if (this.numSignUps === 0) {
         this.states = MACI_STATES.ENDED
@@ -654,8 +675,15 @@ export class MACI {
       'TALLY-TASK',
     )
 
-    const messages = this.messages.slice(batchStartIdx, batchEndIdx)
-    const commands = this.commands.slice(batchStartIdx, batchEndIdx)
+    const rawMessages = this.messageStore
+      ? this.messageStore.getBatch(batchStartIdx).slice(0, batchEndIdx - batchStartIdx)
+      : this.messages.slice(batchStartIdx, batchEndIdx)
+    const rawCommands = this.messageStore
+      ? rawMessages.map((msg) => this.msgToCmd(msg.ciphertext, msg.encPubKey))
+      : this.commands.slice(batchStartIdx, batchEndIdx)
+
+    const messages = [...rawMessages]
+    const commands = [...rawCommands]
 
     while (messages.length < batchSize) {
       messages.push(this.emptyMessage())
@@ -736,8 +764,12 @@ export class MACI {
       BigInt(this.maxVoteOptions) +
       (BigInt(this.numSignUps) << 32n) +
       (this.isQuadraticCost ? 1n << 64n : 0n)
-    const batchStartHash = this.messages[batchStartIdx].prevHash
-    const batchEndHash = this.messages[batchEndIdx - 1].hash
+    const batchStartHash =
+      rawMessages.length > 0 ? rawMessages[0].prevHash : 0n
+    const batchEndHash =
+      rawMessages.length > 0
+        ? rawMessages[rawMessages.length - 1].hash
+        : 0n
 
     const activeStateRoot = this.activeStateTree.root
     const deactivateRoot = this.deactivateTree.root

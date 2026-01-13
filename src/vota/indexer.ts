@@ -427,6 +427,104 @@ async function fetchAllPages<T>(query: string, variables: any): Promise<T[]> {
   return allData
 }
 
+async function fetchAllPagesStream<T extends { id?: string }>(
+  query: string,
+  variables: any,
+  onPage: (nodes: T[]) => Promise<void> | void,
+): Promise<{ count: number; lastId: string }> {
+  let hasNextPage = true
+  let offset = 0
+  const limit = 100
+  let count = 0
+  let lastId = ''
+
+  while (hasNextPage) {
+    try {
+      const jsonResponse = await withRetry(
+        async () => {
+          const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Accept: 'application/json',
+            },
+            body: JSON.stringify({
+              query,
+              variables: { ...variables, limit, offset },
+            }),
+          })
+
+          if (!response.ok) {
+            const errorText = await response.text()
+            throw new Error(
+              `HTTP error ${response.status}: ${response.statusText}\nEndpoint: ${endpoint}\nResponse: ${errorText.substring(0, 200)}...`,
+            )
+          }
+
+          const contentType = response.headers.get('content-type') || ''
+          if (!contentType.includes('application/json')) {
+            const text = await response.text()
+            const preview = text.substring(0, 200)
+            throw new Error(
+              `Received non-JSON response (${contentType}, status ${response.status}):\n${preview}...`,
+            )
+          }
+
+          const parsed = await response.json()
+
+          if (parsed.errors) {
+            const errorMsg = parsed.errors
+              .map((e: any) => e.message)
+              .join(', ')
+            throw new Error(`GraphQL API error: ${errorMsg}`)
+          }
+
+          if (!parsed.data) {
+            throw new Error(
+              `Empty response data from GraphQL API. Full response: ${JSON.stringify(parsed).substring(0, 200)}...`,
+            )
+          }
+
+          return parsed
+        },
+        {
+          maxRetries: 3,
+          initialDelay: 1000,
+          context: 'INDEXER',
+        },
+      )
+
+      const key = Object.keys(jsonResponse.data)[0]
+
+      if (
+        !jsonResponse.data[key] ||
+        !jsonResponse.data[key].nodes ||
+        !jsonResponse.data[key].pageInfo
+      ) {
+        throw new Error(
+          `Invalid response format from GraphQL API: missing nodes or pageInfo in ${key}. Response: ${JSON.stringify(jsonResponse.data).substring(0, 200)}...`,
+        )
+      }
+
+      const { nodes, pageInfo } = jsonResponse.data[key]
+      await onPage(nodes)
+      count += nodes.length
+      if (nodes.length > 0 && typeof nodes[nodes.length - 1].id === 'string') {
+        lastId = nodes[nodes.length - 1].id
+      }
+      hasNextPage = pageInfo.hasNextPage
+      offset += limit
+    } catch (error) {
+      const errorMessage = `Failed to fetch page at offset ${offset} (endpoint: ${endpoint}): ${error instanceof Error ? error.message : String(error)}`
+      console.error(`Indexer error: ${errorMessage}`)
+
+      throw new Error(errorMessage)
+    }
+  }
+
+  return { count, lastId }
+}
+
 export const fetchRounds = async (coordinatorPubkey: string[]) => {
   return fetchAllPages<RoundData>(
     ROUNDS_QUERY(coordinatorPubkey[0], coordinatorPubkey[1]),
@@ -465,6 +563,17 @@ export const fetchAllVotesLogs = async (contract: string) => {
     msg,
     dmsg,
   }
+}
+
+export const streamPublishMessageEvents = async (
+  contract: string,
+  onPage: (nodes: PublishMessageEvent[]) => Promise<void> | void,
+) => {
+  return fetchAllPagesStream<PublishMessageEvent>(
+    PUBLISH_MESSAGE_EVENTS_QUERY(contract),
+    {},
+    onPage,
+  )
 }
 
 export const fetchAllDeactivateLogs = async (contract: string) => {
