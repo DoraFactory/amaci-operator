@@ -21,6 +21,8 @@ type Config = {
   mnemonic?: string
   codeIds?: string[]
   prover?: {
+    backend?: string
+    rapidsnarkPath?: string
     pipeline?: number
     concurrency?: number
     concurrencyByCircuit?: Record<string, number>
@@ -48,6 +50,8 @@ function defaultConfig(workPath: string): Config {
     mnemonic: '',
     codeIds: [''],
     prover: {
+      backend: 'snarkjs',
+      rapidsnarkPath: '',
       pipeline: 1,
       concurrency: 2,
       concurrencyByCircuit: {
@@ -133,6 +137,10 @@ function writeConfigToml(cfgPath: string, cfg: Config) {
   lines.push('')
   lines.push('# Prover configuration')
   lines.push('[prover]')
+  lines.push('# Prover backend: snarkjs | rapidsnark')
+  lines.push(`backend = "${cfg.prover?.backend || 'snarkjs'}"`)
+  lines.push('# Path to rapidsnark binary (if not in PATH)')
+  lines.push(`rapidsnarkPath = "${cfg.prover?.rapidsnarkPath || ''}"`)
   lines.push('# Enable pipeline submission (1 to enable)')
   lines.push(`pipeline = ${cfg.prover?.pipeline ?? 1}`)
   lines.push('# Number of concurrent prover workers')
@@ -243,6 +251,9 @@ function applyEnvFromConfig(cfg: Config) {
   if (cfg.codeIds) process.env.CODE_IDS = JSON.stringify(cfg.codeIds)
   if (cfg.prover?.concurrency != null)
     process.env.PROVER_CONCURRENCY = String(cfg.prover.concurrency)
+  if (cfg.prover?.backend) process.env.PROVER_BACKEND = cfg.prover.backend
+  if (cfg.prover?.rapidsnarkPath)
+    process.env.RAPIDSNARK_PATH = cfg.prover.rapidsnarkPath
   if (cfg.prover?.concurrencyByCircuit)
     process.env.PROVER_CONCURRENCY_BY_CIRCUIT = JSON.stringify(
       cfg.prover.concurrencyByCircuit,

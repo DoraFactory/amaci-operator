@@ -1,6 +1,5 @@
 import { parentPort } from 'node:worker_threads'
-import { groth16 } from 'snarkjs'
-import { adaptToUncompressed } from '../vota/adapt'
+import { generateProof } from './prove'
 
 type ProveMessage = {
   type: 'prove'
@@ -30,9 +29,7 @@ parentPort.on('message', async (msg: ProveMessage) => {
   if (!msg || msg.type !== 'prove') return
   const { jobId, input, wasmPath, zkeyPath } = msg
   try {
-    // Generate the proof
-    const { proof } = await groth16.fullProve(input, wasmPath, zkeyPath)
-    const proofHex = await adaptToUncompressed(proof)
+    const proofHex = await generateProof(input, wasmPath, zkeyPath)
 
     // Send back the result to the main thread
     const res: ResultMessage = { type: 'result', jobId, proofHex }
