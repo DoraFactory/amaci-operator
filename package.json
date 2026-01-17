@@ -1,6 +1,6 @@
 {
     "name": "@dorafactory/maci-operator",
-    "version": "1.5.4",
+    "version": "2.0.0",
     "description": "An operator for managing MACI (Minimal Anti-Collusion Infrastructure)/aMACI deployments and interactions.",
     "main": "dist/index.js",
     "bin": {
