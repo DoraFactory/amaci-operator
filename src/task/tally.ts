@@ -161,9 +161,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     }
 
     if (!allData) {
-      const useMessageStore =
-        maciRound.circuitPower === '6-3-3-125' ||
-        Number(process.env['MESSAGE_STORE'] || 0) > 0
+      const useMessageStore = maciRound.circuitPower === '6-3-3-125'
       let logs: any
       let msgCount = 0
       let lastMsgId = ''

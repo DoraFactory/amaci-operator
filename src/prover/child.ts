@@ -1,6 +1,4 @@
-import { groth16 } from 'snarkjs'
-import fs from 'fs'
-import { adaptToUncompressed } from '../vota/adapt'
+import { dropCacheExcept, generateProof } from './prove'
 
 type ProveMessage = {
   type: 'prove'
@@ -32,29 +30,6 @@ type ErrorMessage = {
   error: string
 }
 
-const wasmCache = new Map<string, Uint8Array>()
-const zkeyCache = new Map<string, Uint8Array>()
-const largeFiles = new Set<string>()
-const MAX_IN_MEMORY_BYTES = 2 * 1024 * 1024 * 1024 - 1
-
-async function loadCached(
-  pathname: string,
-  cache: Map<string, Uint8Array>,
-): Promise<Uint8Array | string> {
-  if (cache.has(pathname)) return cache.get(pathname)!
-  if (largeFiles.has(pathname)) return pathname
-  const stat = await fs.promises.stat(pathname)
-  if (stat.size >= MAX_IN_MEMORY_BYTES) {
-    largeFiles.add(pathname)
-    return pathname
-  }
-  const buff = await fs.promises.readFile(pathname)
-  // Convert Buffer view to Uint8Array view without copy
-  const u8 = new Uint8Array(buff.buffer, buff.byteOffset, buff.byteLength)
-  cache.set(pathname, u8)
-  return u8
-}
-
 process.on('message', async (msg: ProveMessage | DropExceptMessage) => {
   if (!msg || msg.type !== 'prove') return
   const { jobId, input, wasmPath, zkeyPath } = msg
@@ -64,15 +39,7 @@ process.on('message', async (msg: ProveMessage | DropExceptMessage) => {
       const started: StartedMessage = { type: 'started', jobId }
       process.send && process.send(started)
     } catch {}
-    // Load wasm/zkey once and reuse to reduce I/O
-    const wasmData = await loadCached(wasmPath, wasmCache)
-    const zkeyData = await loadCached(zkeyPath, zkeyCache)
-    const { proof } = await groth16.fullProve(
-      input as any,
-      wasmData as any,
-      zkeyData as any,
-    )
-    const proofHex = await adaptToUncompressed(proof)
+    const proofHex = await generateProof(input, wasmPath, zkeyPath)
     const res: ResultMessage = { type: 'result', jobId, proofHex }
     process.send && process.send(res)
   } catch (e: any) {
@@ -88,11 +55,5 @@ process.on('message', async (msg: ProveMessage | DropExceptMessage) => {
 // Support dropping caches to control memory footprint
 process.on('message', (msg: ProveMessage | DropExceptMessage) => {
   if (!msg || msg.type !== 'drop_except') return
-  const keep = new Set(msg.keep)
-  for (const key of Array.from(wasmCache.keys())) {
-    if (!keep.has(key)) wasmCache.delete(key)
-  }
-  for (const key of Array.from(zkeyCache.keys())) {
-    if (!keep.has(key)) zkeyCache.delete(key)
-  }
+  dropCacheExcept(msg.keep)
 })
