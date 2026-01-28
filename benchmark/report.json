@@ -1,33 +1,33 @@
 {
-  "timestamp": "2026-01-27T16:26:49.990Z",
-  "doraPrice": 0.0072,
+  "timestamp": "2026-01-28T16:32:47.994Z",
+  "doraPrice": 0.0076,
   "machineTypes": {
     "12c-128G-Bare-metal": {
       "costs": {
         "2-1-1-5": {
           "baseUsd": 0.02,
           "finalUsd": 0.2,
-          "doraAmount": 27.79,
+          "doraAmount": 26.46,
           "multiplier": 10
         },
         "4-2-2-25": {
           "baseUsd": 0.5,
           "finalUsd": 5,
-          "doraAmount": 694.83,
+          "doraAmount": 661.49,
           "multiplier": 10
         },
         "6-3-3-125": {
           "baseUsd": 1,
           "finalUsd": 10,
-          "doraAmount": 1389.65,
+          "doraAmount": 1322.97,
           "multiplier": 10
         }
       }
     }
   },
-  "dora24hrChange": -1.38,
+  "dora24hrChange": 5.1,
   "previousReport": {
-    "timestamp": "2026-01-26T16:30:02.715Z",
-    "doraPrice": 0.0073
+    "timestamp": "2026-01-27T16:26:49.990Z",
+    "doraPrice": 0.0072
   }
 }
