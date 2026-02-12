@@ -7,6 +7,8 @@ import { IKeypair } from '../types'
 
 const SNARK_FIELD_SIZE =
   21888242871839275222246405745257275088548364400416034343698204186575808495617n
+const BABYJUB_SUBORDER =
+  2736030358979909402780800718157159386076813972158567259200215660948447373041n
 
 export const stringizing = (o: any, path: any[] = []): any => {
   if (path.includes(o)) {
@@ -28,7 +30,11 @@ export const stringizing = (o: any, path: any[] = []): any => {
 }
 
 export const bigInt2Buffer = (i: bigint) => {
-  return Buffer.from(i.toString(16), 'hex')
+  let hex = i.toString(16)
+  if (hex.length % 2 === 1) {
+    hex = '0' + hex
+  }
+  return Buffer.from(hex, 'hex')
 }
 
 export const genRandomKey = () => {
@@ -95,20 +101,13 @@ const formatPrivKeyForBabyJub = (privKey: bigint): bigint => {
       .slice(0, 32),
   )
   const s = ff.utils.leBuff2int(sBuff)
-  return ff.Scalar.shr(s, 3)
+  // Match SDK/@zk-kit behavior: clamp then reduce to subgroup order.
+  return ff.Scalar.mod(ff.Scalar.shr(s, 3), BABYJUB_SUBORDER)
 }
 
 export const genEcdhSharedKey = (
   privKey: bigint,
   pubKey: [bigint, bigint],
 ): [bigint, bigint] => {
-  const sharedKey = babyJub.mulPointEscalar(
-    pubKey,
-    formatPrivKeyForBabyJub(privKey),
-  )
-  if (sharedKey[0] === 0n) {
-    return [0n, 1n]
-  } else {
-    return sharedKey
-  }
+  return babyJub.mulPointEscalar(pubKey, formatPrivKeyForBabyJub(privKey))
 }

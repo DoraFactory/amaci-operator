@@ -30,7 +30,8 @@ export interface ProofCache {
   inputsSig?: string
 }
 
-const VERSION = 1
+// Bump cache schema after coordinator private-key formatting fix to avoid reusing invalid proofs.
+const VERSION = 2
 
 function getCachePath(id: string) {
   // New layout: use 'data' directory for caches
@@ -48,6 +49,7 @@ export function loadProofCache(id: string): ProofCache | undefined {
     if (!data || typeof data !== 'object') return undefined
     // basic sanity
     if (!data.version || !data.id) return undefined
+    if (Number(data.version) !== VERSION) return undefined
     return data as ProofCache
   } catch {
     return undefined

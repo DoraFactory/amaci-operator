@@ -12,6 +12,7 @@ export type ProofHex = { a: string; b: string; c: string }
 const execFileAsync = promisify(execFile)
 
 const wasmCache = new Map<string, Uint8Array>()
+const binCache = new Map<string, string>()
 const zkeyCache = new Map<string, Uint8Array>()
 const largeFiles = new Set<string>()
 const MAX_IN_MEMORY_BYTES = 2 * 1024 * 1024 * 1024 - 1
@@ -19,14 +20,27 @@ const MAX_IN_MEMORY_BYTES = 2 * 1024 * 1024 * 1024 - 1
 const getBackend = () => (process.env.PROVER_BACKEND || 'snarkjs').toLowerCase()
 const getRapidsnarkPath = () =>
   (process.env.RAPIDSNARK_PATH || 'rapidsnark').trim() || 'rapidsnark'
+const getWitnesscalcPath = () =>
+  (process.env.WITNESSCALC_PATH || '').trim()
 let loggedBackend = false
 
 function logBackendOnce() {
   if (loggedBackend) return
   loggedBackend = true
   const backend = getBackend()
+  const witnesscalcPath = getWitnesscalcPath()
   if (backend === 'rapidsnark') {
-    info(`Prover backend=rapidsnark path=${getRapidsnarkPath()}`, 'PROVER')
+    if (witnesscalcPath) {
+      info(
+        `Prover backend=rapidsnark+witnesscalc rapidsnark=${getRapidsnarkPath()} witnesscalc=${witnesscalcPath}`,
+        'PROVER',
+      )
+    } else {
+      info(
+        `Prover backend=rapidsnark+snarkjs-wtns rapidsnark=${getRapidsnarkPath()}`,
+        'PROVER',
+      )
+    }
   } else {
     info('Prover backend=snarkjs', 'PROVER')
   }
@@ -55,6 +69,9 @@ export function dropCacheExcept(keep: string[]) {
   for (const key of Array.from(wasmCache.keys())) {
     if (!keepSet.has(key)) wasmCache.delete(key)
   }
+  for (const key of Array.from(binCache.keys())) {
+    if (!keepSet.has(key)) binCache.delete(key)
+  }
   for (const key of Array.from(zkeyCache.keys())) {
     if (!keepSet.has(key)) zkeyCache.delete(key)
   }
@@ -73,11 +90,15 @@ function sanitizeForJson(value: any): any {
 
 function normalizeProof(proof: any) {
   const p = proof?.proof ? proof.proof : proof
-  if (p?.pi_a && p?.pi_b && p?.pi_c) return p
-  if (p?.a && p?.b && p?.c) {
-    return { pi_a: p.a, pi_b: p.b, pi_c: p.c }
+  // Ensure we have pi_a, pi_b, pi_c format with protocol and curve
+  const normalized = {
+    pi_a: p?.pi_a || p?.a,
+    pi_b: p?.pi_b || p?.b,
+    pi_c: p?.pi_c || p?.c,
+    protocol: p?.protocol || 'groth16',
+    curve: p?.curve || 'bn128',
   }
-  return p
+  return normalized
 }
 
 async function proveWithSnarkjs(
@@ -97,7 +118,7 @@ async function proveWithSnarkjs(
 
 async function proveWithRapidsnark(
   input: any,
-  wasmPath: string,
+  wasmOrBinPath: string,
   zkeyPath: string,
 ): Promise<ProofHex> {
   const tmpDir = await fs.promises.mkdtemp(
@@ -108,15 +129,33 @@ async function proveWithRapidsnark(
   const publicPath = path.join(tmpDir, 'public.json')
   const sanitized = sanitizeForJson(input)
   const rapidsnarkPath = getRapidsnarkPath()
+  const witnesscalcPath = getWitnesscalcPath()
 
   try {
-    await wtns.calculate(sanitized, wasmPath, wtnsPath)
+    // Determine if we're using .bin (circom-witnesscalc) or .wasm (snarkjs)
+    const isBinFile = wasmOrBinPath.endsWith('.bin')
+
+    if (isBinFile && witnesscalcPath) {
+      // Use circom-witnesscalc for witness generation
+      const inputPath = path.join(tmpDir, 'input.json')
+      await fs.promises.writeFile(inputPath, JSON.stringify(sanitized))
+
+      await execFileAsync(
+        witnesscalcPath,
+        [wasmOrBinPath, inputPath, wtnsPath],
+        { maxBuffer: 10 * 1024 * 1024 },
+      )
+    } else {
+      // Use snarkjs for witness generation (fallback for .wasm or when witnesscalc not specified)
+      await wtns.calculate(sanitized, wasmOrBinPath, wtnsPath)
+    }
+
+    // Use rapidsnark to generate proof
     await execFileAsync(rapidsnarkPath, [zkeyPath, wtnsPath, proofPath, publicPath], {
       maxBuffer: 10 * 1024 * 1024,
     })
-    const proofJson = JSON.parse(
-      await fs.promises.readFile(proofPath, 'utf8'),
-    )
+
+    const proofJson = JSON.parse(await fs.promises.readFile(proofPath, 'utf8'))
     const normalized = normalizeProof(proofJson)
     return adaptToUncompressed(normalized as any)
   } catch (err: any) {

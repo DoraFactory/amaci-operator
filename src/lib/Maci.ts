@@ -262,6 +262,11 @@ export class MACI {
 
     this.stateLeaves.set(leafIdx, s)
 
+    // Keep numSignUps aligned with the highest observed leaf index.
+    if (leafIdx >= this.numSignUps) {
+      this.numSignUps = leafIdx + 1
+    }
+
     const hash = poseidon([
       poseidon([...s.pubKey, s.balance, s.voted ? s.voTree.root : 0n, s.nonce]),
       c ? poseidon([...c.map((ci) => BigInt(ci)), 0n]) : zeroHash5,
@@ -597,7 +602,7 @@ export class MACI {
     if (cmd.stateIdx > BigInt(this.numSignUps)) {
       return 'state leaf index overflow'
     }
-    if (cmd.voIdx >= BigInt(this.maxVoteOptions)) {
+    if (cmd.voIdx > BigInt(this.maxVoteOptions)) {
       return 'vote option index overflow'
     }
     const stateIdx = Number(cmd.stateIdx)
