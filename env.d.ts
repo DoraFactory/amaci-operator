@@ -12,6 +12,7 @@ declare global {
       PROVER_CONCURRENCY_BY_CIRCUIT?: string
       PROVER_BACKEND?: string
       RAPIDSNARK_PATH?: string
+      WITNESSCALC_PATH?: string
       PROVER_SAVE_CHUNK: string
       SUBMIT_BATCH_MSG: string
       SUBMIT_BATCH_TALLY: string

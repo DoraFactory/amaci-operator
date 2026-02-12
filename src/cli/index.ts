@@ -23,6 +23,7 @@ type Config = {
   prover?: {
     backend?: string
     rapidsnarkPath?: string
+    witnesscalcPath?: string
     pipeline?: number
     concurrency?: number
     concurrencyByCircuit?: Record<string, number>
@@ -254,6 +255,8 @@ function applyEnvFromConfig(cfg: Config) {
   if (cfg.prover?.backend) process.env.PROVER_BACKEND = cfg.prover.backend
   if (cfg.prover?.rapidsnarkPath)
     process.env.RAPIDSNARK_PATH = cfg.prover.rapidsnarkPath
+  if (cfg.prover?.witnesscalcPath)
+    process.env.WITNESSCALC_PATH = cfg.prover.witnesscalcPath
   if (cfg.prover?.concurrencyByCircuit)
     process.env.PROVER_CONCURRENCY_BY_CIRCUIT = JSON.stringify(
       cfg.prover.concurrencyByCircuit,

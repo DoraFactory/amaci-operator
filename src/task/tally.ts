@@ -538,7 +538,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         period: maciRound.period,
         circuitPower: maciRound.circuitPower,
       })
-      const msgWasm = path.join(zkeyRoot, `${maciRound.circuitPower}_v3`, 'msg.wasm')
+      const msgBin = path.join(zkeyRoot, `${maciRound.circuitPower}_v3`, 'msg.bin')
       const msgZkey = path.join(zkeyRoot, `${maciRound.circuitPower}_v3`, 'msg.zkey')
       const cachedMsg = cache?.msg?.proofs || []
       let startMsg = 0
@@ -600,7 +600,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         const end = Math.min(startMsg + chunk, res.msgInputs.length)
         const sliceInputs = res.msgInputs.slice(startMsg, end)
         const _p0 = Date.now()
-        const proofs = await proveMany(sliceInputs, msgWasm, msgZkey, {
+        const proofs = await proveMany(sliceInputs, msgBin, msgZkey, {
           phase: 'msg',
           baseIndex: startMsg,
           concurrency: circuitConcurrency,
@@ -692,7 +692,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
           return { error: { msg: 'period_not_tallying' } }
         }
       }
-      const tallyWasm = path.join(zkeyRoot, `${maciRound.circuitPower}_v3`, 'tally.wasm')
+      const tallyBin = path.join(zkeyRoot, `${maciRound.circuitPower}_v3`, 'tally.bin')
       const tallyZkey = path.join(zkeyRoot, `${maciRound.circuitPower}_v3`, 'tally.zkey')
       const cachedTally = cache?.tally?.proofs || []
       let startTally = 0
@@ -744,7 +744,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         const end = Math.min(startTally + chunk, res.tallyInputs.length)
         const slice = res.tallyInputs.slice(startTally, end)
         const _p0 = Date.now()
-      const proofs = await proveMany(slice, tallyWasm, tallyZkey, {
+      const proofs = await proveMany(slice, tallyBin, tallyZkey, {
         phase: 'tally',
         baseIndex: startTally,
         concurrency: circuitConcurrency,

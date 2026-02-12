@@ -241,7 +241,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
         }
       }
       const phaseStart = Date.now()
-      const wasm = path.join(zkeyRoot, `${maciRound.circuitPower}_v3`, 'deactivate.wasm')
+      const bin = path.join(zkeyRoot, `${maciRound.circuitPower}_v3`, 'deactivate.bin')
       const zkey = path.join(zkeyRoot, `${maciRound.circuitPower}_v3`, 'deactivate.zkey')
     const chunk = Math.max(
       1,
@@ -296,7 +296,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
         const _p0 = Date.now()
         const proofs = await proveMany(
           slice.map((s: any) => s.input),
-          wasm,
+          bin,
           zkey,
           {
             phase: 'deactivate',
