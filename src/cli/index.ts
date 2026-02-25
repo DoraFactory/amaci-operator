@@ -20,9 +20,14 @@ type Config = {
   coordinatorPrivKey?: string
   mnemonic?: string
   codeIds?: string[]
+  witnessCalc?: {
+    backend?: string
+    witnesscalcPath?: string
+  }
   prover?: {
     backend?: string
     rapidsnarkPath?: string
+    // legacy location; prefer [witnessCalc].witnesscalcPath
     witnesscalcPath?: string
     pipeline?: number
     concurrency?: number
@@ -67,6 +72,10 @@ function defaultConfig(workPath: string): Config {
     logLevel: 'info',
     metricsPort: 3001,
     zkeyPath: path.join(workPath, 'zkey'),
+    witnessCalc: {
+      backend: 'snarkjs',
+      witnesscalcPath: '',
+    },
   }
 }
 
@@ -136,6 +145,14 @@ function writeConfigToml(cfgPath: string, cfg: Config) {
   )
   lines.push(`zkeyPath = "${cfg.zkeyPath || path.join(cfg.workPath, 'zkey')}"`)
   lines.push('')
+  lines.push('[witnessCalc]')
+  lines.push('# witness backend: snarkjs | witnesscalc')
+  lines.push(`backend = "${cfg.witnessCalc?.backend || 'snarkjs'}"`)
+  lines.push('# Path to witnesscalc binary (if not in PATH)')
+  lines.push(
+    `witnesscalcPath = "${cfg.witnessCalc?.witnesscalcPath || cfg.prover?.witnesscalcPath || ''}"`,
+  )
+  lines.push('')
   lines.push('# Prover configuration')
   lines.push('[prover]')
   lines.push('# Prover backend: snarkjs | rapidsnark')
@@ -174,7 +191,10 @@ function writeConfigToml(cfgPath: string, cfg: Config) {
 function readConfigToml(cfgPath: string): Config {
   const text = fs.readFileSync(cfgPath, 'utf8')
   const lines = text.split(/\r?\n/)
-  const cfg: any = { prover: { submitBatch: {}, concurrencyByCircuit: {} } }
+  const cfg: any = {
+    witnessCalc: {},
+    prover: { submitBatch: {}, concurrencyByCircuit: {} },
+  }
   let section = ''
   const topKeys = new Set([
     'workPath',
@@ -226,6 +246,8 @@ function readConfigToml(cfgPath: string): Config {
       cfg[key] = value
     } else if (section === 'prover') {
       cfg.prover[key] = value
+    } else if (section === 'witnessCalc') {
+      cfg.witnessCalc[key] = value
     } else if (section === 'prover.concurrencyByCircuit') {
       const map = cfg.prover.concurrencyByCircuit || {}
       const normalizedKey = key.replace(/^['"]|['"]$/g, '')
@@ -255,8 +277,11 @@ function applyEnvFromConfig(cfg: Config) {
   if (cfg.prover?.backend) process.env.PROVER_BACKEND = cfg.prover.backend
   if (cfg.prover?.rapidsnarkPath)
     process.env.RAPIDSNARK_PATH = cfg.prover.rapidsnarkPath
-  if (cfg.prover?.witnesscalcPath)
-    process.env.WITNESSCALC_PATH = cfg.prover.witnesscalcPath
+  if (cfg.witnessCalc?.backend)
+    process.env.WITNESS_BACKEND = cfg.witnessCalc.backend
+  if (cfg.witnessCalc?.witnesscalcPath || cfg.prover?.witnesscalcPath)
+    process.env.WITNESSCALC_PATH =
+      cfg.witnessCalc?.witnesscalcPath || cfg.prover?.witnesscalcPath || ''
   if (cfg.prover?.concurrencyByCircuit)
     process.env.PROVER_CONCURRENCY_BY_CIRCUIT = JSON.stringify(
       cfg.prover.concurrencyByCircuit,

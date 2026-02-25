@@ -17,33 +17,113 @@ const zkeyCache = new Map<string, Uint8Array>()
 const largeFiles = new Set<string>()
 const MAX_IN_MEMORY_BYTES = 2 * 1024 * 1024 * 1024 - 1
 
+type WitnessBackend = 'snarkjs' | 'witnesscalc'
+
 const getBackend = () => (process.env.PROVER_BACKEND || 'snarkjs').toLowerCase()
 const getRapidsnarkPath = () =>
   (process.env.RAPIDSNARK_PATH || 'rapidsnark').trim() || 'rapidsnark'
 const getWitnesscalcPath = () =>
   (process.env.WITNESSCALC_PATH || '').trim()
+const getWitnessBackend = (): WitnessBackend => {
+  const backend = (process.env.WITNESS_BACKEND || '').trim().toLowerCase()
+  if (backend === 'witnesscalc') return 'witnesscalc'
+  if (backend === 'snarkjs') return 'snarkjs'
+  // Backward compatibility: old config only set WITNESSCALC_PATH
+  return getWitnesscalcPath() ? 'witnesscalc' : 'snarkjs'
+}
 let loggedBackend = false
 
 function logBackendOnce() {
   if (loggedBackend) return
   loggedBackend = true
-  const backend = getBackend()
+  const proverBackend = getBackend()
+  const witnessBackend = getWitnessBackend()
   const witnesscalcPath = getWitnesscalcPath()
-  if (backend === 'rapidsnark') {
-    if (witnesscalcPath) {
+  if (proverBackend === 'rapidsnark') {
+    if (witnessBackend === 'witnesscalc') {
       info(
-        `Prover backend=rapidsnark+witnesscalc rapidsnark=${getRapidsnarkPath()} witnesscalc=${witnesscalcPath}`,
+        `Prover backend=rapidsnark witnessBackend=witnesscalc rapidsnark=${getRapidsnarkPath()} witnesscalc=${witnesscalcPath || '(unset)'}`,
         'PROVER',
       )
     } else {
       info(
-        `Prover backend=rapidsnark+snarkjs-wtns rapidsnark=${getRapidsnarkPath()}`,
+        `Prover backend=rapidsnark witnessBackend=snarkjs rapidsnark=${getRapidsnarkPath()}`,
         'PROVER',
       )
     }
   } else {
-    info('Prover backend=snarkjs', 'PROVER')
+    if (witnessBackend === 'witnesscalc') {
+      info(
+        `Prover backend=snarkjs witnessBackend=witnesscalc witnesscalc=${witnesscalcPath || '(unset)'}`,
+        'PROVER',
+      )
+    } else {
+      info('Prover backend=snarkjs witnessBackend=snarkjs', 'PROVER')
+    }
   }
+}
+
+async function pathExists(pathname: string): Promise<boolean> {
+  try {
+    await fs.promises.access(pathname, fs.constants.R_OK)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function resolveWitnessInputPath(
+  wasmOrBinPath: string,
+  witnessBackend: WitnessBackend,
+): Promise<string> {
+  if (witnessBackend === 'snarkjs' && wasmOrBinPath.endsWith('.bin')) {
+    const wasmPath = wasmOrBinPath.slice(0, -4) + '.wasm'
+    if (await pathExists(wasmPath)) return wasmPath
+    throw new Error(
+      `witness backend=snarkjs requires a .wasm file; missing ${wasmPath}`,
+    )
+  }
+
+  if (witnessBackend === 'witnesscalc' && wasmOrBinPath.endsWith('.wasm')) {
+    const binPath = wasmOrBinPath.slice(0, -5) + '.bin'
+    if (await pathExists(binPath)) return binPath
+    throw new Error(
+      `witness backend=witnesscalc requires a .bin file; missing ${binPath}`,
+    )
+  }
+
+  return wasmOrBinPath
+}
+
+async function generateWitness(
+  input: any,
+  wasmOrBinPath: string,
+  wtnsPath: string,
+) {
+  const witnessBackend = getWitnessBackend()
+  const witnessInputPath = await resolveWitnessInputPath(
+    wasmOrBinPath,
+    witnessBackend,
+  )
+  const sanitized = sanitizeForJson(input)
+
+  if (witnessBackend === 'witnesscalc') {
+    const witnesscalcPath = getWitnesscalcPath()
+    if (!witnesscalcPath) {
+      throw new Error(
+        'witness backend is witnesscalc but witnesscalcPath is not configured',
+      )
+    }
+
+    const inputPath = path.join(path.dirname(wtnsPath), 'input.json')
+    await fs.promises.writeFile(inputPath, JSON.stringify(sanitized))
+    await execFileAsync(witnesscalcPath, [witnessInputPath, inputPath, wtnsPath], {
+      maxBuffer: 10 * 1024 * 1024,
+    })
+    return
+  }
+
+  await wtns.calculate(sanitized, witnessInputPath, wtnsPath)
 }
 
 async function loadCached(
@@ -106,14 +186,36 @@ async function proveWithSnarkjs(
   wasmPath: string,
   zkeyPath: string,
 ): Promise<ProofHex> {
-  const wasmData = await loadCached(wasmPath, wasmCache)
-  const zkeyData = await loadCached(zkeyPath, zkeyCache)
-  const { proof } = await groth16.fullProve(
-    input as any,
-    wasmData as any,
-    zkeyData as any,
+  const witnessBackend = getWitnessBackend()
+  if (witnessBackend === 'snarkjs') {
+    const snarkjsWasmPath = await resolveWitnessInputPath(wasmPath, 'snarkjs')
+    const wasmData = await loadCached(snarkjsWasmPath, wasmCache)
+    const zkeyData = await loadCached(zkeyPath, zkeyCache)
+    const { proof } = await groth16.fullProve(
+      input as any,
+      wasmData as any,
+      zkeyData as any,
+    )
+    return adaptToUncompressed(proof)
+  }
+
+  const tmpDir = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'amaci-snarkjs-'),
   )
-  return adaptToUncompressed(proof)
+  const wtnsPath = path.join(tmpDir, 'witness.wtns')
+  try {
+    await generateWitness(input, wasmPath, wtnsPath)
+    const zkeyData = await loadCached(zkeyPath, zkeyCache)
+    const { proof } = await groth16.prove(zkeyData as any, wtnsPath as any)
+    return adaptToUncompressed(proof)
+  } catch (err: any) {
+    const stderr = err?.stderr ? String(err.stderr) : ''
+    const message = err?.message ? String(err.message) : ''
+    const detail = stderr || message
+    throw new Error(`snarkjs prove failed${detail ? `: ${detail}` : ''}`)
+  } finally {
+    await fs.promises.rm(tmpDir, { recursive: true, force: true })
+  }
 }
 
 async function proveWithRapidsnark(
@@ -127,28 +229,10 @@ async function proveWithRapidsnark(
   const wtnsPath = path.join(tmpDir, 'witness.wtns')
   const proofPath = path.join(tmpDir, 'proof.json')
   const publicPath = path.join(tmpDir, 'public.json')
-  const sanitized = sanitizeForJson(input)
   const rapidsnarkPath = getRapidsnarkPath()
-  const witnesscalcPath = getWitnesscalcPath()
 
   try {
-    // Determine if we're using .bin (circom-witnesscalc) or .wasm (snarkjs)
-    const isBinFile = wasmOrBinPath.endsWith('.bin')
-
-    if (isBinFile && witnesscalcPath) {
-      // Use circom-witnesscalc for witness generation
-      const inputPath = path.join(tmpDir, 'input.json')
-      await fs.promises.writeFile(inputPath, JSON.stringify(sanitized))
-
-      await execFileAsync(
-        witnesscalcPath,
-        [wasmOrBinPath, inputPath, wtnsPath],
-        { maxBuffer: 10 * 1024 * 1024 },
-      )
-    } else {
-      // Use snarkjs for witness generation (fallback for .wasm or when witnesscalc not specified)
-      await wtns.calculate(sanitized, wasmOrBinPath, wtnsPath)
-    }
+    await generateWitness(input, wasmOrBinPath, wtnsPath)
 
     // Use rapidsnark to generate proof
     await execFileAsync(rapidsnarkPath, [zkeyPath, wtnsPath, proofPath, publicPath], {
