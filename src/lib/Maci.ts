@@ -21,6 +21,7 @@ interface ICmd {
   voIdx: bigint
   newVotes: bigint
   newPubKey: [bigint, bigint]
+  pollId: bigint
   signature: {
     R8: [bigint, bigint]
     S: bigint
@@ -108,6 +109,7 @@ export class MACI {
   protected tallyResults: Tree
 
   protected logs: any[]
+  protected pollId?: bigint
 
   get stateCommitment() {
     return this._stateCommitment
@@ -144,6 +146,7 @@ export class MACI {
     maxVoteOptions: number,
     numSignUps: number,
     isQuadraticCost: boolean,
+    pollId?: bigint,
   ) {
     const deactivateTreeDepth = stateTreeDepth + 2
     this.stateTreeDepth = stateTreeDepth
@@ -157,6 +160,7 @@ export class MACI {
     this.isQuadraticCost = isQuadraticCost
 
     this.coordinator = genKeypair(coordPriKey)
+    this.pollId = pollId
     this.pubKeyHasher = poseidon(this.coordinator.pubKey)
 
     const emptyVOTree = new Tree(5, voteOptionTreeDepth, 0n)
@@ -197,11 +201,34 @@ export class MACI {
 
   emptyMessage(): IMsg {
     return {
-      ciphertext: [0n, 0n, 0n, 0n, 0n, 0n, 0n],
+      ciphertext: [0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n],
       encPubKey: [0n, 0n],
       prevHash: 0n,
       hash: 0n,
     }
+  }
+
+  private hashMessageAndEncPubKey(
+    ciphertext: bigint[],
+    encPubKey: [bigint, bigint],
+    prevHash: bigint,
+  ): bigint {
+    // feature/add-poll-id layout: hash5([hash5(m[0..4]), hash5(m[5..9]), pk.x, pk.y, prevHash])
+    if (ciphertext.length >= 10) {
+      return poseidon([
+        poseidon(ciphertext.slice(0, 5)),
+        poseidon(ciphertext.slice(5, 10)),
+        encPubKey[0],
+        encPubKey[1],
+        prevHash,
+      ])
+    }
+
+    // Backward-compatible fallback
+    return poseidon([
+      poseidon(ciphertext.slice(0, 5)),
+      poseidon([...ciphertext.slice(5), ...encPubKey, prevHash]),
+    ])
   }
 
   emptyState(): IState {
@@ -219,13 +246,14 @@ export class MACI {
   msgToCmd(ciphertext: bigint[], encPubKey: [bigint, bigint]): ICmd | null {
     const sharedKey = genEcdhSharedKey(this.coordinator.privKey, encPubKey)
     try {
-      const plaintext = poseidonDecrypt(ciphertext, sharedKey, 0n, 6)
+      const plaintext = poseidonDecrypt(ciphertext, sharedKey, 0n, 7)
       const packaged = plaintext[0]
 
       const nonce = packaged % UINT32
       const stateIdx = (packaged >> 32n) % UINT32
       const voIdx = (packaged >> 64n) % UINT32
       const newVotes = (packaged >> 96n) % UINT96
+      const pollId = (packaged >> 192n) % UINT32
 
       const cmd: ICmd = {
         nonce,
@@ -233,11 +261,12 @@ export class MACI {
         voIdx,
         newVotes,
         newPubKey: [plaintext[1], plaintext[2]],
+        pollId,
         signature: {
-          R8: [plaintext[3], plaintext[4]],
-          S: plaintext[5],
+          R8: [plaintext[4], plaintext[5]],
+          S: plaintext[6],
         },
-        msgHash: poseidon(plaintext.slice(0, 3)),
+        msgHash: poseidon([packaged, plaintext[1], plaintext[2]]),
       }
       return cmd
     } catch (e: any) {
@@ -298,10 +327,7 @@ export class MACI {
     const msgIdx = this.dMessages.length
     const prevHash = msgIdx > 0 ? this.dMessages[msgIdx - 1].hash : 0n
 
-    const hash = poseidon([
-      poseidon(ciphertext.slice(0, 5)),
-      poseidon([...ciphertext.slice(5), ...encPubKey, prevHash]),
-    ])
+    const hash = this.hashMessageAndEncPubKey(ciphertext, encPubKey, prevHash)
 
     this.dMessages.push({
       ciphertext: [...ciphertext],
@@ -337,10 +363,7 @@ export class MACI {
       hash = stored.hash
     } else {
       prevHash = msgIdx > 0 ? this.lastMessageHash : 0n
-      hash = poseidon([
-        poseidon(ciphertext.slice(0, 5)),
-        poseidon([...ciphertext.slice(5), ...encPubKey, prevHash]),
-      ])
+      hash = this.hashMessageAndEncPubKey(ciphertext, encPubKey, prevHash)
       this.messages.push({
         ciphertext: [...ciphertext],
         encPubKey: [...encPubKey],
@@ -527,19 +550,21 @@ export class MACI {
     const batchStartHash = this.dMessages[batchStartIdx].prevHash
     const batchEndHash = this.dMessages[batchEndIdx - 1].hash
 
+    const deactivateInputValues = [
+      newDeactivateRoot,
+      this.pubKeyHasher,
+      batchStartHash,
+      batchEndHash,
+      currentDeactivateCommitment,
+      newDeactivateCommitment,
+      subStateTree.root,
+      ...(this.pollId !== undefined ? [this.pollId] : []),
+    ]
     const inputHash =
       BigInt(
         solidityPackedSha256(
-          new Array(7).fill('uint256'),
-          stringizing([
-            newDeactivateRoot,
-            this.pubKeyHasher,
-            batchStartHash,
-            batchEndHash,
-            currentDeactivateCommitment,
-            newDeactivateCommitment,
-            subStateTree.root,
-          ]),
+          new Array(deactivateInputValues.length).fill('uint256'),
+          stringizing(deactivateInputValues),
         ),
       ) % SNARK_FIELD_SIZE
 
@@ -569,6 +594,7 @@ export class MACI {
       currentDeactivateCommitment,
       newDeactivateRoot,
       newDeactivateCommitment,
+      ...(this.pollId !== undefined ? { expectedPollId: this.pollId } : {}),
     }
 
     this._processedDMsgCount = batchEndIdx
@@ -604,6 +630,9 @@ export class MACI {
     }
     if (cmd.voIdx > BigInt(this.maxVoteOptions)) {
       return 'vote option index overflow'
+    }
+    if (this.pollId !== undefined && cmd.pollId !== this.pollId) {
+      return 'poll id mismatch'
     }
     const stateIdx = Number(cmd.stateIdx)
     const voIdx = Number(cmd.voIdx)
@@ -648,6 +677,9 @@ export class MACI {
     }
     if (cmd.stateIdx >= BigInt(subStateTreeLength)) {
       return 'state leaf index overflow'
+    }
+    if (this.pollId !== undefined && cmd.pollId !== this.pollId) {
+      return 'poll id mismatch'
     }
     const stateIdx = Number(cmd.stateIdx)
     const s = this.stateLeaves.get(stateIdx) || this.emptyState()
@@ -780,19 +812,21 @@ export class MACI {
     const deactivateRoot = this.deactivateTree.root
     const deactivateCommitment = poseidon([activeStateRoot, deactivateRoot])
 
+    const messageInputValues = [
+      packedVals,
+      this.pubKeyHasher,
+      batchStartHash,
+      batchEndHash,
+      this.stateCommitment,
+      newStateCommitment,
+      deactivateCommitment,
+      ...(this.pollId !== undefined ? [this.pollId] : []),
+    ]
     const inputHash =
       BigInt(
         solidityPackedSha256(
-          new Array(7).fill('uint256'),
-          stringizing([
-            packedVals,
-            this.pubKeyHasher,
-            batchStartHash,
-            batchEndHash,
-            this.stateCommitment,
-            newStateCommitment,
-            deactivateCommitment,
-          ]),
+          new Array(messageInputValues.length).fill('uint256'),
+          stringizing(messageInputValues),
         ),
       ) % SNARK_FIELD_SIZE
 
@@ -801,6 +835,7 @@ export class MACI {
     const input = {
       inputHash,
       packedVals,
+      ...(this.pollId !== undefined ? { expectedPollId: this.pollId } : {}),
       batchStartHash,
       batchEndHash,
       msgs,

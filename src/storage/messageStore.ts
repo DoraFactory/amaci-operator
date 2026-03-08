@@ -48,10 +48,19 @@ export class DiskMessageStore implements MessageStoreReader {
 
   appendMessage(ciphertext: bigint[], encPubKey: [bigint, bigint]) {
     const prevHash = this.messageCount > 0 ? this.lastHash : 0n
-    const hash = poseidon([
-      poseidon(ciphertext.slice(0, 5)),
-      poseidon([...ciphertext.slice(5), ...encPubKey, prevHash]),
-    ])
+    const hash =
+      ciphertext.length >= 10
+        ? poseidon([
+            poseidon(ciphertext.slice(0, 5)),
+            poseidon(ciphertext.slice(5, 10)),
+            encPubKey[0],
+            encPubKey[1],
+            prevHash,
+          ])
+        : poseidon([
+            poseidon(ciphertext.slice(0, 5)),
+            poseidon([...ciphertext.slice(5), ...encPubKey, prevHash]),
+          ])
     const msg: StoredMessage = {
       ciphertext: [...ciphertext],
       encPubKey: [...encPubKey],

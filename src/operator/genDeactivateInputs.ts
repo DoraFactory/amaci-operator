@@ -9,6 +9,7 @@ interface IGenMaciInputsParams {
   batchSize: number
   coordPriKey: bigint
   maxVoteOptions: number
+  pollId?: number | bigint
 }
 
 export const genDeacitveMaciInputs = (
@@ -19,6 +20,7 @@ export const genDeacitveMaciInputs = (
     batchSize,
     coordPriKey,
     maxVoteOptions,
+    pollId,
   }: IGenMaciInputsParams,
   contractLogs: IContractLogs,
   // deactivates: bigint[][],
@@ -34,6 +36,7 @@ export const genDeacitveMaciInputs = (
     maxVoteOptions,
     contractLogs.states.length,
     false, // 处理 deacitvate 的时候不需要关心 isQuadraticCost 的状态
+    pollId !== undefined ? BigInt(pollId) : undefined,
   )
 
   for (const state of contractLogs.states) {

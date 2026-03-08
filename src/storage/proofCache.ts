@@ -130,6 +130,7 @@ function sanitizeInputs(inputs: ProofCache['inputs']): ProofCache['inputs'] {
 export function buildInputsSignature(args: {
   circuitPower: string
   circuitType: string | number
+  pollId?: string | number
   maxVoteOptions: number
   signupCount: number
   lastSignupId?: string
@@ -142,6 +143,7 @@ export function buildInputsSignature(args: {
   const parts = [
     String(args.circuitPower),
     String(args.circuitType),
+    String(args.pollId ?? ''),
     String(args.maxVoteOptions),
     `su:${args.signupCount}:${args.lastSignupId || ''}`,
     `m:${args.msgCount}:${args.lastMsgId || ''}`,

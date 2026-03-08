@@ -12,6 +12,7 @@ interface IGenMaciInputsParams {
   coordPriKey: bigint
   maxVoteOptions: number
   isQuadraticCost: boolean
+  pollId?: number | bigint
 }
 
 export const genMaciInputs = (
@@ -23,6 +24,7 @@ export const genMaciInputs = (
     coordPriKey,
     maxVoteOptions,
     isQuadraticCost,
+    pollId,
   }: IGenMaciInputsParams,
   contractLogs: IContractLogs,
   // deactivates: bigint[][],
@@ -37,6 +39,7 @@ export const genMaciInputs = (
     maxVoteOptions,
     contractLogs.states.length,
     isQuadraticCost,
+    pollId !== undefined ? BigInt(pollId) : undefined,
   )
 
   for (const state of contractLogs.states) {
@@ -116,6 +119,7 @@ export const genMaciInputsFromStore = (
     coordPriKey,
     maxVoteOptions,
     isQuadraticCost,
+    pollId,
   }: IGenMaciInputsParams,
   contractLogs: Omit<IContractLogs, 'messages'>,
   messageStore: MessageStoreReader,
@@ -131,6 +135,7 @@ export const genMaciInputsFromStore = (
     maxVoteOptions,
     contractLogs.states.length,
     isQuadraticCost,
+    pollId !== undefined ? BigInt(pollId) : undefined,
   )
 
   maci.setMessageStore(messageStore, messageCount)
