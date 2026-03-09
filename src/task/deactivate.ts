@@ -263,8 +263,8 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
         }
       }
       const phaseStart = Date.now()
-      const bin = path.join(zkeyRoot, `${maciRound.circuitPower}_v3`, 'deactivate.bin')
-      const zkey = path.join(zkeyRoot, `${maciRound.circuitPower}_v3`, 'deactivate.zkey')
+      const bin = path.join(zkeyRoot, `${maciRound.circuitPower}_v4`, 'deactivate.bin')
+      const zkey = path.join(zkeyRoot, `${maciRound.circuitPower}_v4`, 'deactivate.zkey')
     const chunk = Math.max(
       1,
       Number(process.env.PROVER_SAVE_CHUNK || 0) || circuitConcurrency,
