@@ -36,6 +36,7 @@ import { createSubmitter } from './submitter'
 import { parseMessageNumbers } from './messageParsing'
 
 const zkeyRoot = process.env.ZKEY_PATH || path.join(process.env.WORK_PATH || './work', 'zkey')
+const highScaleCircuitPowers = new Set(['6-3-3-125', '9-4-3-125'])
 
 // New layout: inputs/proof cache under 'data'
 const inputsPath = path.join(process.env.WORK_PATH || './work', 'data')
@@ -68,6 +69,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
   // Track submitters for cleanup on error
   let globalMsgSubmitter: any = null
   let globalTallySubmitter: any = null
+  let finalized = false
+  let finalizeTxHash: string | undefined
 
   // Metrics: Record the task start
   recordTaskStart('tally', id)
@@ -217,7 +220,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     }
 
     if (!allData) {
-      const useMessageStore = maciRound.circuitPower === '6-3-3-125'
+      const useMessageStore = highScaleCircuitPowers.has(maciRound.circuitPower)
       const env = process.env as Record<string, string | undefined>
       const indexerSyncRetries = Math.max(
         0,
@@ -378,6 +381,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         }
 
         // Finalize: stop tallying and claim with zeroed results
+        let noSignupFinalizeTxHash: string | undefined
         try {
           info(
             'Executing stopTallying and claim as batch operation (no-signup fast-path)...',
@@ -401,6 +405,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
             `Batch operation completed successfully✅, tx hash: ${batchResult.transactionHash}`,
             'TALLY-TASK',
           )
+          noSignupFinalizeTxHash = batchResult.transactionHash
         } catch (error) {
           warn(`Error during batch operation (no-signup fast-path): ${error}`, 'TALLY-TASK')
 
@@ -430,6 +435,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
               `Claim operation completed successfully✅, tx hash: ${claimResult.transactionHash}`,
               'TALLY-TASK',
             )
+            noSignupFinalizeTxHash = claimResult.transactionHash
           } catch (fallbackError) {
             logError(
               new TallyError(
@@ -463,7 +469,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         recordTaskSuccess('tally')
         // Metrics: record the round completion
         recordRoundCompletion(id)
-        markRoundTallyCompleted(id)
+        markRoundTallyCompleted(id, { txHash: noSignupFinalizeTxHash })
         // Metrics: record the task end
         recordTaskEnd('tally', id)
         return {}
@@ -484,7 +490,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         processedDMsgCount: Number(dc),
       })
       let res: any
-      const useFileInputs = maciRound.circuitPower === '6-3-3-125'
+      const useFileInputs = highScaleCircuitPowers.has(maciRound.circuitPower)
       if (cache && cache.inputsSig === inputsSig && cache.result && cache.salt) {
         if (
           useFileInputs &&
@@ -637,8 +643,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         period: maciRound.period,
         circuitPower: maciRound.circuitPower,
       })
-      const msgBin = path.join(zkeyRoot, `${maciRound.circuitPower}_v3`, 'msg.bin')
-      const msgZkey = path.join(zkeyRoot, `${maciRound.circuitPower}_v3`, 'msg.zkey')
+      const msgBin = path.join(zkeyRoot, `${maciRound.circuitPower}_v4`, 'msg.bin')
+      const msgZkey = path.join(zkeyRoot, `${maciRound.circuitPower}_v4`, 'msg.zkey')
       const cachedMsg = cache?.msg?.proofs || []
       let startMsg = 0
       for (let i = 0; i < Math.min(cachedMsg.length, res.msgInputs.length); i++) {
@@ -798,8 +804,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         period: maciRound.period,
         circuitPower: maciRound.circuitPower,
       })
-      const tallyBin = path.join(zkeyRoot, `${maciRound.circuitPower}_v3`, 'tally.bin')
-      const tallyZkey = path.join(zkeyRoot, `${maciRound.circuitPower}_v3`, 'tally.zkey')
+      const tallyBin = path.join(zkeyRoot, `${maciRound.circuitPower}_v4`, 'tally.bin')
+      const tallyZkey = path.join(zkeyRoot, `${maciRound.circuitPower}_v4`, 'tally.zkey')
       const cachedTally = cache?.tally?.proofs || []
       let startTally = 0
       for (let i = 0; i < Math.min(cachedTally.length, res.tallyInputs.length); i++) {
@@ -1107,6 +1113,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
           `Batch operation completed successfully✅, tx hash: ${batchResult.transactionHash}`,
           'TALLY-TASK',
         )
+        finalized = true
+        finalizeTxHash = batchResult.transactionHash
       } catch (error) {
         warn(`Error during batch operation: ${error}`, 'TALLY-TASK')
 
@@ -1136,6 +1144,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
             `Claim operation completed successfully✅, tx hash: ${claimResult.transactionHash}`,
             'TALLY-TASK',
           )
+          finalized = true
+          finalizeTxHash = claimResult.transactionHash
         } catch (fallbackError) {
           logError(
             new TallyError(
@@ -1189,6 +1199,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
             `Batch operation completed successfully✅, tx hash: ${batchResult.transactionHash}`,
             'TALLY-TASK',
           )
+          finalized = true
+          finalizeTxHash = batchResult.transactionHash
         } catch (error) {
           warn(`Error during batch operation: ${error}`, 'TALLY-TASK')
 
@@ -1218,6 +1230,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
               `Claim operation completed successfully✅, tx hash: ${claimResult.transactionHash}`,
               'TALLY-TASK',
             )
+            finalized = true
+            finalizeTxHash = claimResult.transactionHash
           } catch (fallbackError) {
             logError(
               new TallyError(
@@ -1242,6 +1256,45 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
             }
           }
         }
+      } else if (period.status === 'ended') {
+        info(`Round ${id} already ended on-chain, skipping finalize broadcast`, 'TALLY-TASK')
+        finalized = true
+      } else {
+        logError(
+          new TallyError('Round is not ready for finalize', 'CONTRACT_ERROR', {
+            roundId: id,
+            operation: 'tally',
+            timestamp: Date.now(),
+            details: `period=${period.status}`,
+          }),
+          'TALLY-TASK',
+        )
+        recordTaskFailure('tally')
+        endOperation('tally', false, operationContext)
+        return {
+          error: {
+            msg: 'period_not_ready_for_finalize',
+            details: `period=${period.status}`,
+          },
+        }
+      }
+    }
+
+    if (!finalized) {
+      logError(
+        new TallyError('Tally finalize did not complete', 'CONTRACT_ERROR', {
+          roundId: id,
+          operation: 'tally',
+          timestamp: Date.now(),
+        }),
+        'TALLY-TASK',
+      )
+      recordTaskFailure('tally')
+      endOperation('tally', false, operationContext)
+      return {
+        error: {
+          msg: 'tally_finalize_incomplete',
+        },
       }
     }
 
@@ -1253,7 +1306,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     recordTaskSuccess('tally')
     // Metrics: record the round completion
     recordRoundCompletion(id)
-    markRoundTallyCompleted(id)
+    markRoundTallyCompleted(id, { txHash: finalizeTxHash })
     // Metrics: record the task end
     recordTaskEnd('tally', id)
     return {}

@@ -2,7 +2,7 @@ import { fetchRounds } from '../vota/indexer'
 import { Task, TaskAct } from '../types'
 import { Timer } from '../storage/timer'
 import { genKeypair } from '../lib/keypair'
-import { loadRoundStatus } from '../storage/roundStatus'
+import { clearRoundStatus, loadRoundStatus } from '../storage/roundStatus'
 import {
   info,
   debug,
@@ -65,8 +65,18 @@ export const inspect: TaskAct = async () => {
     for (const maciRound of rounds) {
       const status = roundStatus[maciRound.id]
       if (status?.status === 'tally_completed') {
+        if (
+          ['Pending', 'Voting', 'Processing', 'Tallying'].includes(maciRound.period)
+        ) {
+          warn(
+            `Clearing stale completed marker for active round ${maciRound.id} (period=${maciRound.period})`,
+            'INSPECT',
+          )
+          clearRoundStatus(maciRound.id)
+        } else {
         debug(`Skipping completed round ${maciRound.id}`, 'INSPECT')
         continue
+        }
       }
       // deactivate task
       if (
