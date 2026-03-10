@@ -147,8 +147,10 @@ my-operator/
 ├── data/                 # Daily rotated logs
 ├── round/                # Per-round logs
 └── zkey/                 # Circuit files (or custom path from config.toml)
-    ├── 2-1-1-5_v3/
-    └── 4-2-2-25_v3/
+    ├── 2-1-1-5_v4/
+    ├── 4-2-2-25_v4/
+    ├── 6-3-3-125_v4/
+    └── 9-4-3-125_v4/
 ```
 
 ## Volume Mounts
