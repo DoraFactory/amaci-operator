@@ -472,42 +472,14 @@ async function main(argv: string[]) {
       '6-3-3-125_v4',
       '9-4-3-125_v4',
     ]
-    let missing = required.filter((r) => !fs.existsSync(path.join(zk, r)))
+    const missing = required.filter((r) => !fs.existsSync(path.join(zk, r)))
     if (missing.length) {
-      const choice = readlineSync.question(
-        `ZKey path ${zk} is missing: ${missing.join(', ')}.\n` +
-          `Please verify the zkey directory exists and the path is correct.\n` +
-          `Would you like to download the missing zkeys now? (y/n): `,
+      console.error(
+        `Missing required zkeys in ${zk}: ${missing.join(', ')}.\n` +
+          `Please verify that zkeyPath is correct and the required circuit packs exist.\n` +
+          `Download them first with: amaci zkey download ${workDir} --zkey ${zk} --force`,
       )
-      if (choice.toLowerCase() === 'y') {
-        try {
-          const destRoot = path.dirname(zk)
-          const { downloadAndExtractZKeys } = await import(
-            '../lib/downloadZkeys.js'
-          )
-          // download required packs (force to ensure presence)
-          await downloadAndExtractZKeys('2-1-1-5_v4', destRoot, { force: true })
-          await downloadAndExtractZKeys('4-2-2-25_v4', destRoot, {
-            force: true,
-          })
-          await downloadAndExtractZKeys('6-3-3-125_v4', destRoot, {
-            force: true,
-          })
-          await downloadAndExtractZKeys('9-4-3-125_v4', destRoot, {
-            force: true,
-          })
-          moveExtractedZkeys(path.join(destRoot, 'zkey'), zk)
-          missing = required.filter((r) => !fs.existsSync(path.join(zk, r)))
-        } catch (e) {
-          console.error(`Failed to download zkeys: ${e}`)
-        }
-      }
-      if (missing.length) {
-        console.error(
-          `ZKey path ${zk} is missing: ${missing.join(', ')}. You can run: amaci zkey download ${workDir} --zkey ${zk} --force`,
-        )
-        process.exit(1)
-      }
+      process.exit(1)
     }
     applyEnvFromConfig(cfg)
     require('..')
