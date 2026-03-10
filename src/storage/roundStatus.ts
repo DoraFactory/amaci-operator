@@ -64,3 +64,10 @@ export function markRoundTallyCompleted(
   }
   saveRoundStatus(map)
 }
+
+export function clearRoundStatus(roundId: string) {
+  const map = loadRoundStatus()
+  if (!(roundId in map)) return
+  delete map[roundId]
+  saveRoundStatus(map)
+}

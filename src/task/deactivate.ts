@@ -88,8 +88,27 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
     }
 
     const params = maciParamsFromCircuitPower(maciRound.circuitPower)
-
     const maciClient = await getContractSignerClient(id)
+    let pollId: number | undefined
+    try {
+      const rawPollId = await withRetry(
+        () =>
+          (maciClient as any).client.queryContractSmart(
+            (maciClient as any).contractAddress,
+            { get_poll_id: {} },
+          ),
+        {
+          context: 'RPC-GET-POLL-ID',
+          maxRetries: 3,
+        },
+      )
+      const parsed = Number(rawPollId)
+      if (Number.isFinite(parsed)) {
+        pollId = parsed
+      }
+    } catch {
+      pollId = undefined
+    }
 
     const dc = await withRetry(() => maciClient.getProcessedDMsgCount(), {
       context: 'RPC-GET-DMSG-COUNT',
@@ -120,6 +139,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
       const inputsSig = buildInputsSignature({
         circuitPower: maciRound.circuitPower,
         circuitType: maciRound.circuitType,
+        pollId,
         maxVoteOptions: Number(maxVoteOptions),
         signupCount: logs.signup.length,
         lastSignupId: logs.signup[logs.signup.length - 1]?.id,
@@ -143,6 +163,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
               ...params,
               coordPriKey: BigInt(process.env.COORDINATOR_PRI_KEY),
               maxVoteOptions: Number(maxVoteOptions),
+              pollId,
             },
             {
               states: logs.signup.map((s) => ({
@@ -186,6 +207,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
           ...params,
           coordPriKey: BigInt(process.env.COORDINATOR_PRI_KEY),
           maxVoteOptions: Number(maxVoteOptions),
+          pollId,
         },
         {
           states: logs.signup.map((s) => ({
@@ -241,8 +263,8 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
         }
       }
       const phaseStart = Date.now()
-      const wasm = path.join(zkeyRoot, `${maciRound.circuitPower}_v3`, 'deactivate.wasm')
-      const zkey = path.join(zkeyRoot, `${maciRound.circuitPower}_v3`, 'deactivate.zkey')
+      const bin = path.join(zkeyRoot, `${maciRound.circuitPower}_v4`, 'deactivate.bin')
+      const zkey = path.join(zkeyRoot, `${maciRound.circuitPower}_v4`, 'deactivate.zkey')
     const chunk = Math.max(
       1,
       Number(process.env.PROVER_SAVE_CHUNK || 0) || circuitConcurrency,
@@ -296,7 +318,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
         const _p0 = Date.now()
         const proofs = await proveMany(
           slice.map((s: any) => s.input),
-          wasm,
+          bin,
           zkey,
           {
             phase: 'deactivate',

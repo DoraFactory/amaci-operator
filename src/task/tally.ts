@@ -36,6 +36,7 @@ import { createSubmitter } from './submitter'
 import { parseMessageNumbers } from './messageParsing'
 
 const zkeyRoot = process.env.ZKEY_PATH || path.join(process.env.WORK_PATH || './work', 'zkey')
+const highScaleCircuitPowers = new Set(['6-3-3-125', '9-4-3-125'])
 
 // New layout: inputs/proof cache under 'data'
 const inputsPath = path.join(process.env.WORK_PATH || './work', 'data')
@@ -68,6 +69,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
   // Track submitters for cleanup on error
   let globalMsgSubmitter: any = null
   let globalTallySubmitter: any = null
+  let finalized = false
+  let finalizeTxHash: string | undefined
 
   // Metrics: Record the task start
   recordTaskStart('tally', id)
@@ -126,6 +129,27 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     }
 
     const params = maciParamsFromCircuitPower(maciRound.circuitPower)
+    let pollId: number | undefined
+    try {
+      const rawPollId = await withRetry(
+        () =>
+          (maciClient as any).client.queryContractSmart(
+            (maciClient as any).contractAddress,
+            { get_poll_id: {} },
+          ),
+        {
+          context: 'RPC-GET-POLL-ID',
+          maxRetries: 3,
+        },
+      )
+      const parsed = Number(rawPollId)
+      if (Number.isFinite(parsed)) {
+        pollId = parsed
+      }
+    } catch {
+      // keep backward compatibility for contracts that do not expose get_poll_id
+      pollId = undefined
+    }
 
     /**
      * 尝试查看本地是否已经生成了所有证明信息
@@ -150,6 +174,41 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       maxRetries: 3,
     })
 
+    const waitForProcessedMessages = async (
+      contextSuffix: string,
+      waitRounds: number,
+      intervalMs: number,
+    ) => {
+      const expected = Number(
+        await withRetry(() => maciClient.getMsgChainLength(), {
+          context: `RPC-GET-MSG-CHAIN-LENGTH-${contextSuffix}`,
+          maxRetries: 3,
+        }),
+      )
+      let processed = Number(
+        await withRetry(() => maciClient.getProcessedMsgCount(), {
+          context: `RPC-GET-MSG-COUNT-CONFIRM-${contextSuffix}`,
+          maxRetries: 3,
+        }),
+      )
+
+      for (let i = 0; i < waitRounds && processed < expected; i++) {
+        await sleep(intervalMs)
+        processed = Number(
+          await withRetry(() => maciClient.getProcessedMsgCount(), {
+            context: `RPC-GET-MSG-COUNT-CONFIRM-${contextSuffix}`,
+            maxRetries: 3,
+          }),
+        )
+      }
+
+      return {
+        expected,
+        processed,
+        ready: processed >= expected,
+      }
+    }
+
     /**
      * 如果线上还没有开始处理交易，则总是重新生成证明
      */
@@ -161,55 +220,95 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     }
 
     if (!allData) {
-      const useMessageStore = maciRound.circuitPower === '6-3-3-125'
+      const useMessageStore = highScaleCircuitPowers.has(maciRound.circuitPower)
+      const env = process.env as Record<string, string | undefined>
+      const indexerSyncRetries = Math.max(
+        0,
+        Number(env.INDEXER_SYNC_MAX_RETRIES || 10),
+      )
+      const indexerSyncIntervalMs = Math.max(
+        500,
+        Number(env.INDEXER_SYNC_INTERVAL_MS || 3000),
+      )
       let logs: any
       let msgCount = 0
       let lastMsgId = ''
       let messageStore: DiskMessageStore | null = null
 
-      if (useMessageStore) {
-        const baseLogs = await withRetry(() => fetchAllDeactivateLogs(id), {
-          context: 'INDEXER-FETCH-VOTES-LOGS',
-          maxRetries: 3,
-        })
-        logs = baseLogs
-
-        const messagesDir = path.join(inputsPath, 'messages', id)
-        messageStore = new DiskMessageStore(messagesDir, params.batchSize)
-        messageStore.reset()
-
-        const streamResult = await withRetry(
-          () =>
-            streamPublishMessageEvents(id, async (nodes) => {
-              for (const m of nodes) {
-                const msg = parseMessageNumbers(
-                  m.message,
-                  'msg',
-                  m.msgChainLength,
-                  'TALLY-TASK',
-                )
-                const pubkey = (m.encPubKey.match(/\d+/g) || []).map(
-                  (n: string) => BigInt(n),
-                ) as [bigint, bigint]
-                messageStore?.appendMessage(msg, pubkey)
-              }
-            }),
-          {
-            context: 'INDEXER-STREAM-MESSAGES',
+      const loadLogsFromIndexer = async () => {
+        if (useMessageStore) {
+          const baseLogs = await withRetry(() => fetchAllDeactivateLogs(id), {
+            context: 'INDEXER-FETCH-VOTES-LOGS',
             maxRetries: 3,
-          },
-        )
+          })
+          logs = baseLogs
 
-        messageStore.finalize()
-        msgCount = streamResult.count
-        lastMsgId = streamResult.lastId
-      } else {
+          const messagesDir = path.join(inputsPath, 'messages', id)
+          messageStore = new DiskMessageStore(messagesDir, params.batchSize)
+          messageStore.reset()
+
+          const streamResult = await withRetry(
+            () =>
+              streamPublishMessageEvents(id, async (nodes) => {
+                for (const m of nodes) {
+                  const msg = parseMessageNumbers(
+                    m.message,
+                    'msg',
+                    m.msgChainLength,
+                    'TALLY-TASK',
+                  )
+                  const pubkey = (m.encPubKey.match(/\d+/g) || []).map(
+                    (n: string) => BigInt(n),
+                  ) as [bigint, bigint]
+                  messageStore?.appendMessage(msg, pubkey)
+                }
+              }),
+            {
+              context: 'INDEXER-STREAM-MESSAGES',
+              maxRetries: 3,
+            },
+          )
+
+          messageStore.finalize()
+          msgCount = streamResult.count
+          lastMsgId = streamResult.lastId
+          return
+        }
+
         logs = await withRetry(() => fetchAllVotesLogs(id), {
           context: 'INDEXER-FETCH-VOTES-LOGS',
           maxRetries: 3,
         })
         msgCount = logs.msg.length
         lastMsgId = logs.msg[logs.msg.length - 1]?.id || ''
+      }
+
+      const chainMsgLength = Number(
+        await withRetry(() => maciClient.getMsgChainLength(), {
+          context: 'RPC-GET-MSG-CHAIN-LENGTH-INDEXER-SYNC',
+          maxRetries: 3,
+        }),
+      )
+      await loadLogsFromIndexer()
+
+      let syncAttempt = 0
+      while (msgCount < chainMsgLength && syncAttempt < indexerSyncRetries) {
+        syncAttempt += 1
+        warn(
+          `Indexer lagging behind chain messages: indexer=${msgCount}, chain=${chainMsgLength}, retry=${syncAttempt}/${indexerSyncRetries}`,
+          'TALLY-TASK',
+        )
+        await sleep(indexerSyncIntervalMs)
+        await loadLogsFromIndexer()
+      }
+
+      if (msgCount < chainMsgLength) {
+        throw new TallyError('Indexer not synced with message chain', 'CONTRACT_ERROR', {
+          roundId: id,
+          operation: 'tally',
+          timestamp: Date.now(),
+          details: `indexer_msg_count=${msgCount}, chain_msg_chain_length=${chainMsgLength}`,
+        })
       }
 
       info(
@@ -282,6 +381,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         }
 
         // Finalize: stop tallying and claim with zeroed results
+        let noSignupFinalizeTxHash: string | undefined
         try {
           info(
             'Executing stopTallying and claim as batch operation (no-signup fast-path)...',
@@ -305,6 +405,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
             `Batch operation completed successfully✅, tx hash: ${batchResult.transactionHash}`,
             'TALLY-TASK',
           )
+          noSignupFinalizeTxHash = batchResult.transactionHash
         } catch (error) {
           warn(`Error during batch operation (no-signup fast-path): ${error}`, 'TALLY-TASK')
 
@@ -334,6 +435,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
               `Claim operation completed successfully✅, tx hash: ${claimResult.transactionHash}`,
               'TALLY-TASK',
             )
+            noSignupFinalizeTxHash = claimResult.transactionHash
           } catch (fallbackError) {
             logError(
               new TallyError(
@@ -367,7 +469,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         recordTaskSuccess('tally')
         // Metrics: record the round completion
         recordRoundCompletion(id)
-        markRoundTallyCompleted(id)
+        markRoundTallyCompleted(id, { txHash: noSignupFinalizeTxHash })
         // Metrics: record the task end
         recordTaskEnd('tally', id)
         return {}
@@ -377,6 +479,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       const inputsSig = buildInputsSignature({
         circuitPower: maciRound.circuitPower,
         circuitType: maciRound.circuitType,
+        pollId,
         maxVoteOptions: Number(maxVoteOptions),
         signupCount: logs.signup.length,
         lastSignupId: logs.signup[logs.signup.length - 1]?.id,
@@ -387,7 +490,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         processedDMsgCount: Number(dc),
       })
       let res: any
-      const useFileInputs = maciRound.circuitPower === '6-3-3-125'
+      const useFileInputs = highScaleCircuitPowers.has(maciRound.circuitPower)
       if (cache && cache.inputsSig === inputsSig && cache.result && cache.salt) {
         if (
           useFileInputs &&
@@ -424,6 +527,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
                 coordPriKey: BigInt(process.env.COORDINATOR_PRI_KEY),
                 maxVoteOptions: Number(maxVoteOptions),
                 isQuadraticCost: !!Number(maciRound.circuitType),
+                pollId,
               },
               {
                 states: logs.signup.map((s: any) => ({
@@ -448,7 +552,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
                   ) as [bigint, bigint],
                 })),
               },
-              messageStore as DiskMessageStore,
+              messageStore!,
               msgCount,
               Number(dc),
             )
@@ -458,6 +562,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
                 coordPriKey: BigInt(process.env.COORDINATOR_PRI_KEY),
                 maxVoteOptions: Number(maxVoteOptions),
                 isQuadraticCost: !!Number(maciRound.circuitType),
+                pollId,
               },
               {
                 states: logs.signup.map((s: any) => ({
@@ -538,8 +643,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         period: maciRound.period,
         circuitPower: maciRound.circuitPower,
       })
-      const msgWasm = path.join(zkeyRoot, `${maciRound.circuitPower}_v3`, 'msg.wasm')
-      const msgZkey = path.join(zkeyRoot, `${maciRound.circuitPower}_v3`, 'msg.zkey')
+      const msgBin = path.join(zkeyRoot, `${maciRound.circuitPower}_v4`, 'msg.bin')
+      const msgZkey = path.join(zkeyRoot, `${maciRound.circuitPower}_v4`, 'msg.zkey')
       const cachedMsg = cache?.msg?.proofs || []
       let startMsg = 0
       for (let i = 0; i < Math.min(cachedMsg.length, res.msgInputs.length); i++) {
@@ -600,7 +705,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         const end = Math.min(startMsg + chunk, res.msgInputs.length)
         const sliceInputs = res.msgInputs.slice(startMsg, end)
         const _p0 = Date.now()
-        const proofs = await proveMany(sliceInputs, msgWasm, msgZkey, {
+        const proofs = await proveMany(sliceInputs, msgBin, msgZkey, {
           phase: 'msg',
           baseIndex: startMsg,
           concurrency: circuitConcurrency,
@@ -636,48 +741,50 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         await msgSubmitter.close()
       }
 
-      info('Start to generate proof for tally', 'TALLY-TASK', {
-        period: maciRound.period,
-        circuitPower: maciRound.circuitPower,
-      })
-      // Gate: ensure contract period is tallying BEFORE any tally submission (including cached region)
-      const ensureTallying = async () => {
+      const ensureTallying = async (contextSuffix: string) => {
         try {
-          // Wait a bit for processed messages to reflect on-chain
-          for (let i = 0; i < 10; i++) {
-            const pmc = await withRetry(() => maciClient.getProcessedMsgCount(), {
-              context: 'RPC-GET-MSG-COUNT-CONFIRM',
-              maxRetries: 3,
-            })
-            if (Number(pmc) >= (allData?.msg?.length || 0)) break
-            await sleep(3000)
+          const sync = await waitForProcessedMessages(
+            contextSuffix,
+            20,
+            3000,
+          )
+          if (!sync.ready) {
+            warn(
+              `Skip stopProcessingPeriod because processed messages are incomplete: processed=${sync.processed}, expected=${sync.expected}`,
+              'TALLY-TASK',
+            )
+            return false
           }
-          // Try stopping processing (idempotent) then wait for tallying
-          await withBroadcastRetry(() => maciClient.stopProcessingPeriod('auto'), {
-            context: 'RPC-STOP-PROCESSING-PERIOD-GATE',
+
+          const beforeStop = await withRetry(() => maciClient.getPeriod(), {
+            context: `RPC-GET-PERIOD-BEFORE-TALLY-${contextSuffix}`,
             maxRetries: 3,
           })
-          const pollMax = 20
-          const pollInterval = 1000
-          for (let i = 0; i < pollMax; i++) {
+          if (beforeStop.status === 'processing') {
+            await withBroadcastRetry(() => maciClient.stopProcessingPeriod('auto'), {
+              context: `RPC-STOP-PROCESSING-PERIOD-GATE-${contextSuffix}`,
+              maxRetries: 3,
+            })
+          }
+
+          for (let i = 0; i < 20; i++) {
             const p = await withRetry(() => maciClient.getPeriod(), {
-              context: 'RPC-GET-PERIOD-TALLYING',
+              context: `RPC-GET-PERIOD-TALLYING-${contextSuffix}`,
               maxRetries: 3,
             })
             if (p.status === 'tallying') return true
-            await sleep(pollInterval)
+            await sleep(1000)
           }
-          return false
         } catch {
-          return false
+          // fallback below
         }
+        return false
       }
-      const pBefore = await withRetry(() => maciClient.getPeriod(), {
-        context: 'RPC-GET-PERIOD-BEFORE-TALLY',
-        maxRetries: 3,
-      })
-      if (pBefore.status !== 'tallying') {
-        const ok = await ensureTallying()
+
+      // Pipeline mode submits message proofs while generating them,
+      // so we must gate on-chain period transition here.
+      if (usePipeline) {
+        const ok = await ensureTallying('PIPELINE')
         if (!ok) {
           logError(
             new TallyError('Contract not in tallying period', 'CONTRACT_ERROR', {
@@ -692,8 +799,13 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
           return { error: { msg: 'period_not_tallying' } }
         }
       }
-      const tallyWasm = path.join(zkeyRoot, `${maciRound.circuitPower}_v3`, 'tally.wasm')
-      const tallyZkey = path.join(zkeyRoot, `${maciRound.circuitPower}_v3`, 'tally.zkey')
+
+      info('Start to generate proof for tally', 'TALLY-TASK', {
+        period: maciRound.period,
+        circuitPower: maciRound.circuitPower,
+      })
+      const tallyBin = path.join(zkeyRoot, `${maciRound.circuitPower}_v4`, 'tally.bin')
+      const tallyZkey = path.join(zkeyRoot, `${maciRound.circuitPower}_v4`, 'tally.zkey')
       const cachedTally = cache?.tally?.proofs || []
       let startTally = 0
       for (let i = 0; i < Math.min(cachedTally.length, res.tallyInputs.length); i++) {
@@ -744,7 +856,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         const end = Math.min(startTally + chunk, res.tallyInputs.length)
         const slice = res.tallyInputs.slice(startTally, end)
         const _p0 = Date.now()
-      const proofs = await proveMany(slice, tallyWasm, tallyZkey, {
+      const proofs = await proveMany(slice, tallyBin, tallyZkey, {
         phase: 'tally',
         baseIndex: startTally,
         concurrency: circuitConcurrency,
@@ -858,6 +970,16 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         mi = end
       }
 
+      const sync = await waitForProcessedMessages('NON-PIPELINE', 20, 1000)
+      if (!sync.ready) {
+        throw new TallyError('Messages are not fully processed yet', 'CONTRACT_ERROR', {
+          roundId: id,
+          operation: 'tally',
+          timestamp: Date.now(),
+          details: `processed_msg_count=${sync.processed}, msg_chain_length=${sync.expected}`,
+        })
+      }
+
       await withRetry(() => maciClient.stopProcessingPeriod('auto'), {
         context: 'RPC-STOP-PROCESSING-PERIOD',
         maxRetries: 3,
@@ -868,12 +990,52 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         maxRetries: 3,
       })
       if (period.status === 'processing') {
+        const sync = await waitForProcessedMessages('NON-PIPELINE', 20, 1000)
+        if (!sync.ready) {
+          throw new TallyError('Messages are not fully processed yet', 'CONTRACT_ERROR', {
+            roundId: id,
+            operation: 'tally',
+            timestamp: Date.now(),
+            details: `processed_msg_count=${sync.processed}, msg_chain_length=${sync.expected}`,
+          })
+        }
+
         await withRetry(() => maciClient.stopProcessingPeriod('auto'), {
           context: 'RPC-STOP-PROCESSING-PERIOD',
           maxRetries: 3,
         })
 
         await sleep(6000)
+      }
+    }
+
+    // Non-pipeline mode submits message proofs only after all proofs are generated.
+    // Ensure period has moved to tallying before submitting tally proofs.
+    if (!usePipeline) {
+      let tallying = false
+      for (let i = 0; i < 20; i++) {
+        const period = await withRetry(() => maciClient.getPeriod(), {
+          context: 'RPC-GET-PERIOD-TALLYING-POST-MSG',
+          maxRetries: 3,
+        })
+        if (period.status === 'tallying') {
+          tallying = true
+          break
+        }
+        await sleep(1000)
+      }
+      if (!tallying) {
+        logError(
+          new TallyError('Contract not in tallying period', 'CONTRACT_ERROR', {
+            roundId: id,
+            operation: 'tally',
+            timestamp: Date.now(),
+          }),
+          'TALLY-TASK',
+        )
+        recordTaskFailure('tally')
+        endOperation('tally', false, operationContext)
+        return { error: { msg: 'period_not_tallying' } }
       }
     }
 
@@ -951,6 +1113,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
           `Batch operation completed successfully✅, tx hash: ${batchResult.transactionHash}`,
           'TALLY-TASK',
         )
+        finalized = true
+        finalizeTxHash = batchResult.transactionHash
       } catch (error) {
         warn(`Error during batch operation: ${error}`, 'TALLY-TASK')
 
@@ -980,6 +1144,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
             `Claim operation completed successfully✅, tx hash: ${claimResult.transactionHash}`,
             'TALLY-TASK',
           )
+          finalized = true
+          finalizeTxHash = claimResult.transactionHash
         } catch (fallbackError) {
           logError(
             new TallyError(
@@ -1033,6 +1199,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
             `Batch operation completed successfully✅, tx hash: ${batchResult.transactionHash}`,
             'TALLY-TASK',
           )
+          finalized = true
+          finalizeTxHash = batchResult.transactionHash
         } catch (error) {
           warn(`Error during batch operation: ${error}`, 'TALLY-TASK')
 
@@ -1062,6 +1230,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
               `Claim operation completed successfully✅, tx hash: ${claimResult.transactionHash}`,
               'TALLY-TASK',
             )
+            finalized = true
+            finalizeTxHash = claimResult.transactionHash
           } catch (fallbackError) {
             logError(
               new TallyError(
@@ -1086,6 +1256,45 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
             }
           }
         }
+      } else if (period.status === 'ended') {
+        info(`Round ${id} already ended on-chain, skipping finalize broadcast`, 'TALLY-TASK')
+        finalized = true
+      } else {
+        logError(
+          new TallyError('Round is not ready for finalize', 'CONTRACT_ERROR', {
+            roundId: id,
+            operation: 'tally',
+            timestamp: Date.now(),
+            details: `period=${period.status}`,
+          }),
+          'TALLY-TASK',
+        )
+        recordTaskFailure('tally')
+        endOperation('tally', false, operationContext)
+        return {
+          error: {
+            msg: 'period_not_ready_for_finalize',
+            details: `period=${period.status}`,
+          },
+        }
+      }
+    }
+
+    if (!finalized) {
+      logError(
+        new TallyError('Tally finalize did not complete', 'CONTRACT_ERROR', {
+          roundId: id,
+          operation: 'tally',
+          timestamp: Date.now(),
+        }),
+        'TALLY-TASK',
+      )
+      recordTaskFailure('tally')
+      endOperation('tally', false, operationContext)
+      return {
+        error: {
+          msg: 'tally_finalize_incomplete',
+        },
       }
     }
 
@@ -1097,7 +1306,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     recordTaskSuccess('tally')
     // Metrics: record the round completion
     recordRoundCompletion(id)
-    markRoundTallyCompleted(id)
+    markRoundTallyCompleted(id, { txHash: finalizeTxHash })
     // Metrics: record the task end
     recordTaskEnd('tally', id)
     return {}

@@ -55,7 +55,7 @@ class ProverPool {
     this.schedule()
   }
 
-  // Hint children to keep only specified wasm/zkey in caches
+  // Hint children to keep only specified wasm/bin/zkey in caches
   prepareForPhase(wasmPath: string, zkeyPath: string) {
     const keep = [wasmPath, zkeyPath]
     for (const child of this.children) {

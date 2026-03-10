@@ -1,8 +1,12 @@
 type CircuitConcurrencyMap = Record<string, number>
 
 let cachedMap: CircuitConcurrencyMap | null = null
+const builtinCircuitConcurrency: CircuitConcurrencyMap = {
+  '9-4-3-125': 1,
+}
 
 const normalizeCircuitKey = (value: string) => {
+  if (value.endsWith('_v4')) return value.slice(0, -3)
   if (value.endsWith('_v3')) return value.slice(0, -3)
   return value
 }
@@ -31,6 +35,8 @@ export const getProverConcurrency = (circuitPower: string) => {
   const key = normalizeCircuitKey(circuitPower)
   const mapped = cachedMap[key] ?? cachedMap[circuitPower]
   if (mapped && mapped > 0) return mapped
+  const builtin = builtinCircuitConcurrency[key] ?? builtinCircuitConcurrency[circuitPower]
+  if (builtin && builtin > 0) return builtin
   const fallback = Number(process.env.PROVER_CONCURRENCY || 2)
   return Number.isFinite(fallback) && fallback > 0 ? fallback : 1
 }

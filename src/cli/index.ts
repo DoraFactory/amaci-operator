@@ -20,9 +20,15 @@ type Config = {
   coordinatorPrivKey?: string
   mnemonic?: string
   codeIds?: string[]
+  witnessCalc?: {
+    backend?: string
+    witnesscalcPath?: string
+  }
   prover?: {
     backend?: string
     rapidsnarkPath?: string
+    // legacy location; prefer [witnessCalc].witnesscalcPath
+    witnesscalcPath?: string
     pipeline?: number
     concurrency?: number
     concurrencyByCircuit?: Record<string, number>
@@ -58,6 +64,7 @@ function defaultConfig(workPath: string): Config {
         '2-1-1-5': 3,
         '4-2-2-25': 2,
         '6-3-3-125': 1,
+        '9-4-3-125': 1,
       },
       saveChunk: 0,
       submitBatch: { msg: 0, tally: 0, deactivate: 0 },
@@ -66,6 +73,10 @@ function defaultConfig(workPath: string): Config {
     logLevel: 'info',
     metricsPort: 3001,
     zkeyPath: path.join(workPath, 'zkey'),
+    witnessCalc: {
+      backend: 'snarkjs',
+      witnesscalcPath: '',
+    },
   }
 }
 
@@ -131,9 +142,17 @@ function writeConfigToml(cfgPath: string, cfg: Config) {
   lines.push(`metricsPort = ${cfg.metricsPort ?? 3001}`)
   lines.push('')
   lines.push(
-    '# Path to zkey folder containing circuit packs (2-1-1-5_v3, 4-2-2-25_v3, 6-3-3-125_v3)',
+    '# Path to zkey folder containing circuit packs (2-1-1-5_v4, 4-2-2-25_v4, 6-3-3-125_v4, 9-4-3-125_v4)',
   )
   lines.push(`zkeyPath = "${cfg.zkeyPath || path.join(cfg.workPath, 'zkey')}"`)
+  lines.push('')
+  lines.push('[witnessCalc]')
+  lines.push('# witness backend: snarkjs | witnesscalc')
+  lines.push(`backend = "${cfg.witnessCalc?.backend || 'snarkjs'}"`)
+  lines.push('# Path to witnesscalc binary (if not in PATH)')
+  lines.push(
+    `witnesscalcPath = "${cfg.witnessCalc?.witnesscalcPath || cfg.prover?.witnesscalcPath || ''}"`,
+  )
   lines.push('')
   lines.push('# Prover configuration')
   lines.push('[prover]')
@@ -148,7 +167,7 @@ function writeConfigToml(cfgPath: string, cfg: Config) {
   lines.push('# Persist proofs/inputs in chunks (0 = use the number of concurrency)')
   lines.push(`saveChunk = ${cfg.prover?.saveChunk ?? 0}`)
   lines.push('')
-  lines.push('# Per-circuit concurrency overrides (keys are circuit power without _v3)')
+  lines.push('# Per-circuit concurrency overrides (keys are circuit power without _v4)')
   lines.push('[prover.concurrencyByCircuit]')
   const concurrencyByCircuit = cfg.prover?.concurrencyByCircuit || {}
   const entries = Object.entries(concurrencyByCircuit)
@@ -156,6 +175,7 @@ function writeConfigToml(cfgPath: string, cfg: Config) {
     lines.push('# "2-1-1-5" = 3')
     lines.push('# "4-2-2-25" = 2')
     lines.push('# "6-3-3-125" = 1')
+    lines.push('# "9-4-3-125" = 1')
   } else {
     for (const [key, value] of entries) {
       lines.push(`"${key}" = ${value}`)
@@ -173,7 +193,10 @@ function writeConfigToml(cfgPath: string, cfg: Config) {
 function readConfigToml(cfgPath: string): Config {
   const text = fs.readFileSync(cfgPath, 'utf8')
   const lines = text.split(/\r?\n/)
-  const cfg: any = { prover: { submitBatch: {}, concurrencyByCircuit: {} } }
+  const cfg: any = {
+    witnessCalc: {},
+    prover: { submitBatch: {}, concurrencyByCircuit: {} },
+  }
   let section = ''
   const topKeys = new Set([
     'workPath',
@@ -225,6 +248,8 @@ function readConfigToml(cfgPath: string): Config {
       cfg[key] = value
     } else if (section === 'prover') {
       cfg.prover[key] = value
+    } else if (section === 'witnessCalc') {
+      cfg.witnessCalc[key] = value
     } else if (section === 'prover.concurrencyByCircuit') {
       const map = cfg.prover.concurrencyByCircuit || {}
       const normalizedKey = key.replace(/^['"]|['"]$/g, '')
@@ -254,6 +279,11 @@ function applyEnvFromConfig(cfg: Config) {
   if (cfg.prover?.backend) process.env.PROVER_BACKEND = cfg.prover.backend
   if (cfg.prover?.rapidsnarkPath)
     process.env.RAPIDSNARK_PATH = cfg.prover.rapidsnarkPath
+  if (cfg.witnessCalc?.backend)
+    process.env.WITNESS_BACKEND = cfg.witnessCalc.backend
+  if (cfg.witnessCalc?.witnesscalcPath || cfg.prover?.witnesscalcPath)
+    process.env.WITNESSCALC_PATH =
+      cfg.witnessCalc?.witnesscalcPath || cfg.prover?.witnesscalcPath || ''
   if (cfg.prover?.concurrencyByCircuit)
     process.env.PROVER_CONCURRENCY_BY_CIRCUIT = JSON.stringify(
       cfg.prover.concurrencyByCircuit,
@@ -370,13 +400,16 @@ async function main(argv: string[]) {
       )
       // Download three circuit packs by default
       if (doDownload) {
-        await downloadAndExtractZKeys('2-1-1-5_v3', destRoot, {
+        await downloadAndExtractZKeys('2-1-1-5_v4', destRoot, {
           force: forceDownload,
         })
-        await downloadAndExtractZKeys('4-2-2-25_v3', destRoot, {
+        await downloadAndExtractZKeys('4-2-2-25_v4', destRoot, {
           force: forceDownload,
         })
-        await downloadAndExtractZKeys('6-3-3-125_v3', destRoot, {
+        await downloadAndExtractZKeys('6-3-3-125_v4', destRoot, {
+          force: forceDownload,
+        })
+        await downloadAndExtractZKeys('9-4-3-125_v4', destRoot, {
           force: forceDownload,
         })
         // If actual extracted path is destRoot/zkey but zkeyPath differs, rename
@@ -433,7 +466,12 @@ async function main(argv: string[]) {
     const zk = cfg.zkeyPath || path.join(workDir, 'zkey')
     console.log(`Using config: ${cfgPath}`)
     console.log(`Using zkeyPath: ${zk}`)
-    const required = ['2-1-1-5_v3', '4-2-2-25_v3', '6-3-3-125_v3']
+    const required = [
+      '2-1-1-5_v4',
+      '4-2-2-25_v4',
+      '6-3-3-125_v4',
+      '9-4-3-125_v4',
+    ]
     let missing = required.filter((r) => !fs.existsSync(path.join(zk, r)))
     if (missing.length) {
       const choice = readlineSync.question(
@@ -448,11 +486,14 @@ async function main(argv: string[]) {
             '../lib/downloadZkeys.js'
           )
           // download required packs (force to ensure presence)
-          await downloadAndExtractZKeys('2-1-1-5_v3', destRoot, { force: true })
-          await downloadAndExtractZKeys('4-2-2-25_v3', destRoot, {
+          await downloadAndExtractZKeys('2-1-1-5_v4', destRoot, { force: true })
+          await downloadAndExtractZKeys('4-2-2-25_v4', destRoot, {
             force: true,
           })
-          await downloadAndExtractZKeys('6-3-3-125_v3', destRoot, {
+          await downloadAndExtractZKeys('6-3-3-125_v4', destRoot, {
+            force: true,
+          })
+          await downloadAndExtractZKeys('9-4-3-125_v4', destRoot, {
             force: true,
           })
           moveExtractedZkeys(path.join(destRoot, 'zkey'), zk)
@@ -523,13 +564,16 @@ async function main(argv: string[]) {
     }
     const { downloadAndExtractZKeys } = await import('../lib/downloadZkeys.js')
     if (proceed) {
-      await downloadAndExtractZKeys('2-1-1-5_v3', destRoot, {
+      await downloadAndExtractZKeys('2-1-1-5_v4', destRoot, {
         force: forceDownload,
       })
-      await downloadAndExtractZKeys('4-2-2-25_v3', destRoot, {
+      await downloadAndExtractZKeys('4-2-2-25_v4', destRoot, {
         force: forceDownload,
       })
-      await downloadAndExtractZKeys('6-3-3-125_v3', destRoot, {
+      await downloadAndExtractZKeys('6-3-3-125_v4', destRoot, {
+        force: forceDownload,
+      })
+      await downloadAndExtractZKeys('9-4-3-125_v4', destRoot, {
         force: forceDownload,
       })
       const extracted = path.join(destRoot, 'zkey')
