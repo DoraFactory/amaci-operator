@@ -114,7 +114,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       })
 
       if (['pending', 'voting'].includes(period.status)) {
-        const startProcessRes = await withRetry(
+        const startProcessRes = await withBroadcastRetry(
           () => maciClient.startProcessPeriod(1.5),
           {
             context: 'RPC-START-PROCESS-PERIOD',
@@ -387,7 +387,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
             'Executing stopTallying and claim as batch operation (no-signup fast-path)...',
             'TALLY-TASK',
           )
-          const batchResult = await withRetry(
+          const batchResult = await withBroadcastRetry(
             () =>
               maciClient.stopTallyingAndClaim(
                 {
@@ -411,7 +411,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
 
           info('Trying operations separately (no-signup fast-path)...', 'TALLY-TASK')
           try {
-            await withRetry(
+            await withBroadcastRetry(
               () =>
                 maciClient.stopTallyingPeriod(
                   {
@@ -427,7 +427,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
             )
 
             info('Executing claim operation (no-signup fast-path).....', 'TALLY-TASK')
-            const claimResult = await withRetry(() => maciClient.claim(1.5), {
+            const claimResult = await withBroadcastRetry(() => maciClient.claim(1.5), {
               context: 'RPC-CLAIM-NO-SIGNUP',
               maxRetries: 3,
             })
@@ -938,7 +938,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
           const size = right - left
           const slice = items.slice(left, right)
           try {
-            const res = await withRetry(
+            const res = await withBroadcastRetry(
               () => maciClient.processMessagesBatch(slice, 'auto'), 
               { context: 'RPC-PROCESS-MESSAGE-BATCH', maxRetries: 3 },
             )
@@ -948,7 +948,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
             if (size === 1) {
               // fallback to single
               const single = slice[0]
-              const res = await withRetry(
+              const res = await withBroadcastRetry(
                 () =>
                   maciClient.processMessage(
                     {
@@ -980,7 +980,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         })
       }
 
-      await withRetry(() => maciClient.stopProcessingPeriod('auto'), {
+      await withBroadcastRetry(() => maciClient.stopProcessingPeriod('auto'), {
         context: 'RPC-STOP-PROCESSING-PERIOD',
         maxRetries: 3,
       })
@@ -1000,7 +1000,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
           })
         }
 
-        await withRetry(() => maciClient.stopProcessingPeriod('auto'), {
+        await withBroadcastRetry(() => maciClient.stopProcessingPeriod('auto'), {
           context: 'RPC-STOP-PROCESSING-PERIOD',
           maxRetries: 3,
         })
@@ -1181,7 +1181,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
             'Executing stopTallying and claim as batch operation...',
             'TALLY-TASK',
           )
-          const batchResult = await withRetry(
+          const batchResult = await withBroadcastRetry(
             () =>
               maciClient.stopTallyingAndClaim(
                 {
@@ -1206,7 +1206,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
 
           info('Trying operations separately...', 'TALLY-TASK')
           try {
-            await withRetry(
+            await withBroadcastRetry(
               () =>
                 maciClient.stopTallyingPeriod(
                   {
@@ -1222,7 +1222,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
             )
 
             info('Executing claim operation.....', 'TALLY-TASK')
-            const claimResult = await withRetry(() => maciClient.claim(1.5), {
+            const claimResult = await withBroadcastRetry(() => maciClient.claim(1.5), {
               context: 'RPC-CLAIM',
               maxRetries: 3,
             })

@@ -482,6 +482,16 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     this.stopTallyingAndClaim = this.stopTallyingAndClaim.bind(this)
   }
 
+  private executeLocked = async (
+    msg: Record<string, unknown>,
+    fee: number | StdFee | 'auto' = 'auto',
+    memo?: string,
+    _funds?: Coin[],
+  ): Promise<ExecuteResult> =>
+    withTxLock(this.sender, () =>
+      this.client.execute(this.sender, this.contractAddress, msg, fee, memo, _funds),
+    )
+
   setParams = async (
     {
       intStateTreeDepth,
@@ -498,9 +508,7 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     memo?: string,
     _funds?: Coin[],
   ): Promise<ExecuteResult> => {
-    return await this.client.execute(
-      this.sender,
-      this.contractAddress,
+    return await this.executeLocked(
       {
         set_params: {
           int_state_tree_depth: intStateTreeDepth,
@@ -524,9 +532,7 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     memo?: string,
     _funds?: Coin[],
   ): Promise<ExecuteResult> => {
-    return await this.client.execute(
-      this.sender,
-      this.contractAddress,
+    return await this.executeLocked(
       {
         set_round_info: {
           round_info: roundInfo,
@@ -547,9 +553,7 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     memo?: string,
     _funds?: Coin[],
   ): Promise<ExecuteResult> => {
-    return await this.client.execute(
-      this.sender,
-      this.contractAddress,
+    return await this.executeLocked(
       {
         set_whitelists: {
           whitelists,
@@ -570,9 +574,7 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     memo?: string,
     _funds?: Coin[],
   ): Promise<ExecuteResult> => {
-    return await this.client.execute(
-      this.sender,
-      this.contractAddress,
+    return await this.executeLocked(
       {
         set_vote_options_map: {
           vote_option_map: voteOptionMap,
@@ -588,9 +590,7 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     memo?: string,
     _funds?: Coin[],
   ): Promise<ExecuteResult> => {
-    return await this.client.execute(
-      this.sender,
-      this.contractAddress,
+    return await this.executeLocked(
       {
         start_voting_period: {},
       },
@@ -609,9 +609,7 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     memo?: string,
     _funds?: Coin[],
   ): Promise<ExecuteResult> => {
-    return await this.client.execute(
-      this.sender,
-      this.contractAddress,
+    return await this.executeLocked(
       {
         sign_up: {
           pubkey,
@@ -627,17 +625,13 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     memo?: string,
     _funds?: Coin[],
   ): Promise<ExecuteResult> => {
-    return await withTxLock(this.sender, () =>
-      this.client.execute(
-        this.sender,
-        this.contractAddress,
-        {
-          start_process_period: {},
-        },
-        fee,
-        memo,
-        _funds,
-      ),
+    return await this.executeLocked(
+      {
+        start_process_period: {},
+      },
+      fee,
+      memo,
+      _funds,
     )
   }
   stopVotingPeriod = async (
@@ -645,9 +639,7 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     memo?: string,
     _funds?: Coin[],
   ): Promise<ExecuteResult> => {
-    return await this.client.execute(
-      this.sender,
-      this.contractAddress,
+    return await this.executeLocked(
       {
         stop_voting_period: {},
       },
@@ -668,20 +660,16 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     memo?: string,
     _funds?: Coin[],
   ): Promise<ExecuteResult> => {
-    return await withTxLock(this.sender, () =>
-      this.client.execute(
-        this.sender,
-        this.contractAddress,
-        {
-          publish_deactivate_message: {
-            enc_pub_key: encPubKey,
-            message,
-          },
+    return await this.executeLocked(
+      {
+        publish_deactivate_message: {
+          enc_pub_key: encPubKey,
+          message,
         },
-        fee,
-        memo,
-        _funds,
-      ),
+      },
+      fee,
+      memo,
+      _funds,
     )
   }
   processDeactivateMessage = async (
@@ -700,22 +688,18 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     memo?: string,
     _funds?: Coin[],
   ): Promise<ExecuteResult> => {
-    return await withTxLock(this.sender, () =>
-      this.client.execute(
-        this.sender,
-        this.contractAddress,
-        {
-          process_deactivate_message: {
-            groth16_proof: groth16Proof,
-            new_deactivate_commitment: newDeactivateCommitment,
-            new_deactivate_root: newDeactivateRoot,
-            size,
-          },
+    return await this.executeLocked(
+      {
+        process_deactivate_message: {
+          groth16_proof: groth16Proof,
+          new_deactivate_commitment: newDeactivateCommitment,
+          new_deactivate_root: newDeactivateRoot,
+          size,
         },
-        fee,
-        memo,
-        _funds,
-      ),
+      },
+      fee,
+      memo,
+      _funds,
     )
   }
   addNewKey = async (
@@ -734,9 +718,7 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     memo?: string,
     _funds?: Coin[],
   ): Promise<ExecuteResult> => {
-    return await this.client.execute(
-      this.sender,
-      this.contractAddress,
+    return await this.executeLocked(
       {
         add_new_key: {
           d,
@@ -762,20 +744,16 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     memo?: string,
     _funds?: Coin[],
   ): Promise<ExecuteResult> => {
-    return await withTxLock(this.sender, () =>
-      this.client.execute(
-        this.sender,
-        this.contractAddress,
-        {
-          publish_message: {
-            enc_pub_key: encPubKey,
-            message,
-          },
+    return await this.executeLocked(
+      {
+        publish_message: {
+          enc_pub_key: encPubKey,
+          message,
         },
-        fee,
-        memo,
-        _funds,
-      ),
+      },
+      fee,
+      memo,
+      _funds,
     )
   }
   processMessage = async (
@@ -790,20 +768,16 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     memo?: string,
     _funds?: Coin[],
   ): Promise<ExecuteResult> => {
-    return await withTxLock(this.sender, () =>
-      this.client.execute(
-        this.sender,
-        this.contractAddress,
-        {
-          process_message: {
-            groth16_proof: groth16Proof,
-            new_state_commitment: newStateCommitment,
-          },
+    return await this.executeLocked(
+      {
+        process_message: {
+          groth16_proof: groth16Proof,
+          new_state_commitment: newStateCommitment,
         },
-        fee,
-        memo,
-        _funds,
-      ),
+      },
+      fee,
+      memo,
+      _funds,
     )
   }
   stopProcessingPeriod = async (
@@ -811,17 +785,13 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     memo?: string,
     _funds?: Coin[],
   ): Promise<ExecuteResult> => {
-    return await withTxLock(this.sender, () =>
-      this.client.execute(
-        this.sender,
-        this.contractAddress,
-        {
-          stop_processing_period: {},
-        },
-        fee,
-        memo,
-        _funds,
-      ),
+    return await this.executeLocked(
+      {
+        stop_processing_period: {},
+      },
+      fee,
+      memo,
+      _funds,
     )
   }
   processTally = async (
@@ -836,20 +806,16 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     memo?: string,
     _funds?: Coin[],
   ): Promise<ExecuteResult> => {
-    return await withTxLock(this.sender, () =>
-      this.client.execute(
-        this.sender,
-        this.contractAddress,
-        {
-          process_tally: {
-            groth16_proof: groth16Proof,
-            new_tally_commitment: newTallyCommitment,
-          },
+    return await this.executeLocked(
+      {
+        process_tally: {
+          groth16_proof: groth16Proof,
+          new_tally_commitment: newTallyCommitment,
         },
-        fee,
-        memo,
-        _funds,
-      ),
+      },
+      fee,
+      memo,
+      _funds,
     )
   }
   stopTallyingPeriod = async (
@@ -864,20 +830,16 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     memo?: string,
     _funds?: Coin[],
   ): Promise<ExecuteResult> => {
-    return await withTxLock(this.sender, () =>
-      this.client.execute(
-        this.sender,
-        this.contractAddress,
-        {
-          stop_tallying_period: {
-            results,
-            salt,
-          },
+    return await this.executeLocked(
+      {
+        stop_tallying_period: {
+          results,
+          salt,
         },
-        fee,
-        memo,
-        _funds,
-      ),
+      },
+      fee,
+      memo,
+      _funds,
     )
   }
   claim = async (
@@ -885,19 +847,13 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     memo?: string,
     _funds?: Coin[],
   ): Promise<ExecuteResult> => {
-    return await withTxLock(this.sender, () =>
-      this.client.execute(
-        this.sender,
-        // process.env.DEACTIVATE_RECORDER,
-        this.contractAddress,
-        {
-          // claim: { round_addr: this.contractAddress },
-          claim: {}
-        },
-        fee,
-        memo,
-        _funds,
-      ),
+    return await this.executeLocked(
+      {
+        claim: {},
+      },
+      fee,
+      memo,
+      _funds,
     )
   }
   grant = async (
@@ -910,9 +866,7 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     memo?: string,
     _funds?: Coin[],
   ): Promise<ExecuteResult> => {
-    return await this.client.execute(
-      this.sender,
-      this.contractAddress,
+    return await this.executeLocked(
       {
         grant: {
           max_amount: maxAmount,
@@ -928,9 +882,7 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     memo?: string,
     _funds?: Coin[],
   ): Promise<ExecuteResult> => {
-    return await this.client.execute(
-      this.sender,
-      this.contractAddress,
+    return await this.executeLocked(
       {
         revoke: {},
       },
@@ -944,9 +896,7 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     memo?: string,
     _funds?: Coin[],
   ): Promise<ExecuteResult> => {
-    return await this.client.execute(
-      this.sender,
-      this.contractAddress,
+    return await this.executeLocked(
       {
         bond: {},
       },
@@ -965,9 +915,7 @@ export class MaciClient extends MaciQueryClient implements MaciInterface {
     memo?: string,
     _funds?: Coin[],
   ): Promise<ExecuteResult> => {
-    return await this.client.execute(
-      this.sender,
-      this.contractAddress,
+    return await this.executeLocked(
       {
         withdraw: {
           amount,
