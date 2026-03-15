@@ -5,6 +5,7 @@ import { GasPrice, calculateFee } from '@cosmjs/stargate'
 
 import { fetchAllDeactivateLogs, fetchAllVotesLogs, fetchRound, streamPublishMessageEvents } from '../vota/indexer'
 import { getContractSignerClient, withRetry, withBroadcastRetry } from '../lib/client/utils'
+import { resolveRoundCircuitArtifacts } from '../lib/circuitArtifacts'
 import { maciParamsFromCircuitPower, ProofData, TaskAct } from '../types'
 import {
   info,
@@ -129,27 +130,12 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     }
 
     const params = maciParamsFromCircuitPower(maciRound.circuitPower)
-    let pollId: number | undefined
-    try {
-      const rawPollId = await withRetry(
-        () =>
-          (maciClient as any).client.queryContractSmart(
-            (maciClient as any).contractAddress,
-            { get_poll_id: {} },
-          ),
-        {
-          context: 'RPC-GET-POLL-ID',
-          maxRetries: 3,
-        },
-      )
-      const parsed = Number(rawPollId)
-      if (Number.isFinite(parsed)) {
-        pollId = parsed
-      }
-    } catch {
-      // keep backward compatibility for contracts that do not expose get_poll_id
-      pollId = undefined
-    }
+    const artifact = await resolveRoundCircuitArtifacts(
+      maciClient as any,
+      maciRound.codeId,
+      maciRound.circuitPower,
+    )
+    const pollId = artifact.pollId
 
     /**
      * 尝试查看本地是否已经生成了所有证明信息
@@ -643,8 +629,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         period: maciRound.period,
         circuitPower: maciRound.circuitPower,
       })
-      const msgBin = path.join(zkeyRoot, `${maciRound.circuitPower}_v4`, 'msg.bin')
-      const msgZkey = path.join(zkeyRoot, `${maciRound.circuitPower}_v4`, 'msg.zkey')
+      const msgBin = path.join(zkeyRoot, artifact.bundle, 'msg.bin')
+      const msgZkey = path.join(zkeyRoot, artifact.bundle, 'msg.zkey')
       const cachedMsg = cache?.msg?.proofs || []
       let startMsg = 0
       for (let i = 0; i < Math.min(cachedMsg.length, res.msgInputs.length); i++) {
@@ -804,8 +790,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         period: maciRound.period,
         circuitPower: maciRound.circuitPower,
       })
-      const tallyBin = path.join(zkeyRoot, `${maciRound.circuitPower}_v4`, 'tally.bin')
-      const tallyZkey = path.join(zkeyRoot, `${maciRound.circuitPower}_v4`, 'tally.zkey')
+      const tallyBin = path.join(zkeyRoot, artifact.bundle, 'tally.bin')
+      const tallyZkey = path.join(zkeyRoot, artifact.bundle, 'tally.zkey')
       const cachedTally = cache?.tally?.proofs || []
       let startTally = 0
       for (let i = 0; i < Math.min(cachedTally.length, res.tallyInputs.length); i++) {

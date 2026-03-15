@@ -3,6 +3,7 @@ import path from 'path'
 // proof generation is offloaded to worker pool
 
 import { getContractSignerClient, withRetry, withBroadcastRetry } from '../lib/client/utils'
+import { resolveRoundCircuitArtifacts } from '../lib/circuitArtifacts'
 import { uploadDeactivateHistory } from '../lib/client/Deactivate.client'
 import { genDeacitveMaciInputs } from '../operator/genDeactivateInputs'
 import {
@@ -89,26 +90,12 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
 
     const params = maciParamsFromCircuitPower(maciRound.circuitPower)
     const maciClient = await getContractSignerClient(id)
-    let pollId: number | undefined
-    try {
-      const rawPollId = await withRetry(
-        () =>
-          (maciClient as any).client.queryContractSmart(
-            (maciClient as any).contractAddress,
-            { get_poll_id: {} },
-          ),
-        {
-          context: 'RPC-GET-POLL-ID',
-          maxRetries: 3,
-        },
-      )
-      const parsed = Number(rawPollId)
-      if (Number.isFinite(parsed)) {
-        pollId = parsed
-      }
-    } catch {
-      pollId = undefined
-    }
+    const artifact = await resolveRoundCircuitArtifacts(
+      maciClient as any,
+      maciRound.codeId,
+      maciRound.circuitPower,
+    )
+    const pollId = artifact.pollId
 
     const dc = await withRetry(() => maciClient.getProcessedDMsgCount(), {
       context: 'RPC-GET-DMSG-COUNT',
@@ -263,8 +250,8 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
         }
       }
       const phaseStart = Date.now()
-      const bin = path.join(zkeyRoot, `${maciRound.circuitPower}_v4`, 'deactivate.bin')
-      const zkey = path.join(zkeyRoot, `${maciRound.circuitPower}_v4`, 'deactivate.zkey')
+      const bin = path.join(zkeyRoot, artifact.bundle, 'deactivate.bin')
+      const zkey = path.join(zkeyRoot, artifact.bundle, 'deactivate.zkey')
     const chunk = Math.max(
       1,
       Number(process.env.PROVER_SAVE_CHUNK || 0) || circuitConcurrency,

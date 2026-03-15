@@ -16,13 +16,14 @@ export async function downloadAndExtractZKeys(
 ) {
   const fileName = `amaci_${circuitPower}_zkeys.tar.gz`
   const zkeyRoot = path.join(destRoot, 'zkey')
+  const bundleRoot = path.join(zkeyRoot, circuitPower)
 
   if (fs.existsSync(zkeyRoot) && !opts.force) {
     // When called by CLI, override is handled there; avoid double prompt here.
     // Default to skip removal and proceed to extraction (will overwrite files where needed).
     // If full cleanup is desired, caller should pass opts.force=true.
-  } else if (opts.force && fs.existsSync(zkeyRoot)) {
-    await removeZKeys(zkeyRoot)
+  } else if (opts.force && fs.existsSync(bundleRoot)) {
+    await removeZKeyBundle(bundleRoot)
   }
 
   await downloadZKeysWithRetry(fileName, 3)
@@ -108,8 +109,8 @@ async function extractZKeys(fileName: string, destRoot: string) {
   }
 }
 
-async function removeZKeys(zkeyRoot: string) {
+async function removeZKeyBundle(bundleRoot: string) {
   try {
-    fs.rmSync(zkeyRoot, { recursive: true, force: true })
+    fs.rmSync(bundleRoot, { recursive: true, force: true })
   } catch {}
 }
