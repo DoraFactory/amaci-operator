@@ -6,7 +6,7 @@ import { genKeypair } from './lib/keypair'
 import { GenerateWallet } from './wallet'
 import { info, error as logError } from './logger'
 import { SUPPORTED_ZKEY_BUNDLES } from './types'
-import { isBundleComplete, listMissingBundleFiles } from './lib/zkeyBundles'
+import { isBundleComplete, listMissingBundleFiles } from './lib/bundlesZkey'
 
 export async function init() {
   info('Init your coordinator info', 'INIT')

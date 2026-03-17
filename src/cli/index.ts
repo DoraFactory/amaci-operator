@@ -6,7 +6,7 @@ import path from 'path'
 // note: import heavy deps lazily inside subcommands to avoid keeping the process alive
 import * as readlineSync from 'readline-sync'
 import { SUPPORTED_ZKEY_BUNDLES } from '../types'
-import { isBundleComplete, listMissingBundleFiles } from '../lib/zkeyBundles'
+import { isBundleComplete, listMissingBundleFiles } from '../lib/bundlesZkey'
 
 // Helper: write file if missing
 function ensureDir(p: string) {
