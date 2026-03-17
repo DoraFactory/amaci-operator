@@ -1,39 +1,153 @@
 import * as fs from 'fs'
 import * as path from 'path'
-import * as readlineSync from 'readline-sync'
 import * as https from 'https'
 import * as tar from 'tar'
 import ProgressBar from 'progress'
 import { MaciType } from '../types'
 
-// Download and extract zkey bundle into a destination root.
-// The tarball contains a top-level `zkey/` folder with power-specific subfolders.
-// destRoot should be the parent directory where `zkey/` will be created.
+const REQUIRED_FILES = [
+  'msg.wasm',
+  'msg.zkey',
+  'tally.wasm',
+  'tally.zkey',
+  'deactivate.wasm',
+  'deactivate.zkey',
+] as const
+
+function ensureDir(dir: string) {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+}
+
+function hasRequiredFiles(dir: string): boolean {
+  return REQUIRED_FILES.every((file) => fs.existsSync(path.join(dir, file)))
+}
+
+function bundleAliases(circuitPower: MaciType): string[] {
+  const powerOnly = circuitPower.replace(/_v[34]$/, '')
+  return [
+    circuitPower,
+    powerOnly,
+    `amaci_${circuitPower}_zkeys`,
+    `amaci_${powerOnly}_zkeys`,
+    `maci_${circuitPower}_zkeys`,
+    `maci_${powerOnly}_zkeys`,
+  ]
+}
+
+function walkDirectories(root: string): string[] {
+  const dirs = [root]
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    dirs.push(...walkDirectories(path.join(root, entry.name)))
+  }
+  return dirs
+}
+
+function locateBundleDirectory(extractRoot: string, circuitPower: MaciType): string {
+  const aliases = new Set(bundleAliases(circuitPower))
+  const candidates = walkDirectories(extractRoot).filter((dir) => hasRequiredFiles(dir))
+
+  if (candidates.length === 0) {
+    throw new Error(
+      `Extracted archive for ${circuitPower} does not contain a valid bundle directory. Expected files: ${REQUIRED_FILES.join(', ')}`,
+    )
+  }
+
+  const exact = candidates.find((dir) => path.basename(dir) === circuitPower)
+  if (exact) return exact
+
+  const alias = candidates.find((dir) => aliases.has(path.basename(dir)))
+  if (alias) return alias
+
+  if (candidates.length === 1) return candidates[0]
+
+  throw new Error(
+    `Extracted archive for ${circuitPower} contains multiple candidate bundle directories: ${candidates.join(', ')}`,
+  )
+}
+
+function copyDirectoryContents(sourceDir: string, targetDir: string) {
+  ensureDir(targetDir)
+  for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
+    const source = path.join(sourceDir, entry.name)
+    const target = path.join(targetDir, entry.name)
+    if (entry.isDirectory()) {
+      fs.cpSync(source, target, { recursive: true })
+      continue
+    }
+    fs.copyFileSync(source, target)
+  }
+}
+
+function replaceBundleDirectory(stagedBundleDir: string, targetBundleDir: string) {
+  const backupDir = `${targetBundleDir}.bak`
+  let movedExisting = false
+  try {
+    if (fs.existsSync(backupDir)) fs.rmSync(backupDir, { recursive: true, force: true })
+    if (fs.existsSync(targetBundleDir)) {
+      fs.renameSync(targetBundleDir, backupDir)
+      movedExisting = true
+    }
+    fs.renameSync(stagedBundleDir, targetBundleDir)
+    if (movedExisting && fs.existsSync(backupDir)) {
+      fs.rmSync(backupDir, { recursive: true, force: true })
+    }
+  } catch (error) {
+    if (!fs.existsSync(targetBundleDir) && movedExisting && fs.existsSync(backupDir)) {
+      try {
+        fs.renameSync(backupDir, targetBundleDir)
+      } catch {}
+    }
+    throw error
+  }
+}
+
+// Download and normalize a zkey bundle into targetZkeyRoot/<bundle>.
+// The tarball filename remains fixed, but the extracted top-level directory may vary.
 export async function downloadAndExtractZKeys(
   circuitPower: MaciType,
-  destRoot: string = '.',
+  targetZkeyRoot: string = '.',
   opts: { force?: boolean } = {},
 ) {
   const fileName = `amaci_${circuitPower}_zkeys.tar.gz`
-  const zkeyRoot = path.join(destRoot, 'zkey')
+  const bundleRoot = path.join(targetZkeyRoot, circuitPower)
+  const shouldReplace = opts.force || !hasRequiredFiles(bundleRoot)
 
-  if (fs.existsSync(zkeyRoot) && !opts.force) {
-    // When called by CLI, override is handled there; avoid double prompt here.
-    // Default to skip removal and proceed to extraction (will overwrite files where needed).
-    // If full cleanup is desired, caller should pass opts.force=true.
-  } else if (opts.force && fs.existsSync(zkeyRoot)) {
-    await removeZKeys(zkeyRoot)
+  if (!shouldReplace) return
+
+  ensureDir(targetZkeyRoot)
+  const workspace = fs.mkdtempSync(path.join(targetZkeyRoot, '.amaci-zkey-'))
+  const archivePath = path.join(workspace, fileName)
+  const extractRoot = path.join(workspace, 'extract')
+  const stagedBundleDir = path.join(workspace, 'stage', circuitPower)
+
+  ensureDir(extractRoot)
+  ensureDir(path.dirname(stagedBundleDir))
+
+  try {
+    await downloadZKeysWithRetry(archivePath, fileName, 3)
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    await extractZKeys(archivePath, extractRoot)
+
+    const sourceBundleDir = locateBundleDirectory(extractRoot, circuitPower)
+    copyDirectoryContents(sourceBundleDir, stagedBundleDir)
+
+    if (!hasRequiredFiles(stagedBundleDir)) {
+      throw new Error(
+        `Normalized bundle for ${circuitPower} is incomplete after extraction`,
+      )
+    }
+
+    replaceBundleDirectory(stagedBundleDir, bundleRoot)
+  } finally {
+    fs.rmSync(workspace, { recursive: true, force: true })
   }
-
-  await downloadZKeysWithRetry(fileName, 3)
-  await new Promise((resolve) => setTimeout(resolve, 500))
-  await extractZKeys(fileName, destRoot)
 }
 
-async function downloadZKeys(fileName: string) {
+async function downloadZKeys(archivePath: string, fileName: string) {
   const url = `https://vota-zkey.s3.ap-southeast-1.amazonaws.com/${fileName}`
   console.log(url)
-  const file = fs.createWriteStream(fileName)
+  const file = fs.createWriteStream(archivePath)
 
   // Initialize progress bar
   const progressBar = new ProgressBar('Downloading [:bar] :percent :etas', {
@@ -72,17 +186,21 @@ async function downloadZKeys(fileName: string) {
       })
       .on('error', (err) => {
         console.error('Error during download:', err)
-        try { fs.unlinkSync(fileName) } catch {}
+        try { fs.unlinkSync(archivePath) } catch {}
         reject(err)
       })
   })
 }
 
-async function downloadZKeysWithRetry(fileName: string, retries: number) {
+async function downloadZKeysWithRetry(
+  archivePath: string,
+  fileName: string,
+  retries: number,
+) {
   let attempt = 0
   while (true) {
     try {
-      await downloadZKeys(fileName)
+      await downloadZKeys(archivePath, fileName)
       return
     } catch (e) {
       attempt++
@@ -94,22 +212,14 @@ async function downloadZKeysWithRetry(fileName: string, retries: number) {
   }
 }
 
-async function extractZKeys(fileName: string, destRoot: string) {
+async function extractZKeys(archivePath: string, destRoot: string) {
   try {
     await tar.x({
       C: destRoot,
-      file: fileName,
-      // cwd: ".", // Extract to the current working directory
-      // filter: (path: any) => path.endsWith("zkeys"),
+      file: archivePath,
     })
   } catch (error) {
     console.error('An error occurred during extraction:', error)
     throw error
   }
-}
-
-async function removeZKeys(zkeyRoot: string) {
-  try {
-    fs.rmSync(zkeyRoot, { recursive: true, force: true })
-  } catch {}
 }

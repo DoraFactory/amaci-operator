@@ -54,6 +54,7 @@ interface PublishDeactivateMessageEvent {
 interface RoundData {
   id: string
   blockHeight: string
+  codeId: string
   txHash: string
   operator: string
   contractAddress: string
@@ -85,6 +86,7 @@ const ROUND_QUERY = (id: string) => `query {
   round(id: "${id}") {
     id
     blockHeight
+    codeId
     txHash
     operator
     contractAddress

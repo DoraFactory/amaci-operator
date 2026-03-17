@@ -8,10 +8,48 @@ export enum ChainId {
 export type ProofType = 'msg' | 'tally' | 'deactivate'
 
 export type MaciType =
+  | '6-3-3-125_v3'
+  | '4-2-2-25_v3'
+  | '2-1-1-5_v3'
   | '9-4-3-125_v4'
   | '6-3-3-125_v4'
   | '4-2-2-25_v4'
   | '2-1-1-5_v4'
+
+export type CircuitArtifactVersion = 'v3' | 'v4'
+
+export const SUPPORTED_ZKEY_BUNDLES: MaciType[] = [
+  '2-1-1-5_v3',
+  '4-2-2-25_v3',
+  '6-3-3-125_v3',
+  '2-1-1-5_v4',
+  '4-2-2-25_v4',
+  '6-3-3-125_v4',
+  '9-4-3-125_v4',
+]
+
+const V3_CIRCUIT_POWERS = new Set(['2-1-1-5', '4-2-2-25', '6-3-3-125'])
+const V4_CIRCUIT_POWERS = new Set([
+  '2-1-1-5',
+  '4-2-2-25',
+  '6-3-3-125',
+  '9-4-3-125',
+])
+
+export const supportsCircuitArtifactVersion = (
+  circuitPower: string,
+  version: CircuitArtifactVersion,
+) => (version === 'v3' ? V3_CIRCUIT_POWERS.has(circuitPower) : V4_CIRCUIT_POWERS.has(circuitPower))
+
+export const toCircuitBundleName = (
+  circuitPower: string,
+  version: CircuitArtifactVersion,
+): MaciType => {
+  if (!supportsCircuitArtifactVersion(circuitPower, version)) {
+    throw new Error(`Unsupported circuit bundle: ${circuitPower}_${version}`)
+  }
+  return `${circuitPower}_${version}` as MaciType
+}
 
 export const MaciParams: Record<
   MaciType,
@@ -22,6 +60,24 @@ export const MaciParams: Record<
     voteOptionTreeDepth: number
   }
 > = {
+  '2-1-1-5_v3': {
+    stateTreeDepth: 2,
+    intStateTreeDepth: 1,
+    batchSize: 5,
+    voteOptionTreeDepth: 1,
+  },
+  '4-2-2-25_v3': {
+    stateTreeDepth: 4,
+    intStateTreeDepth: 2,
+    batchSize: 25,
+    voteOptionTreeDepth: 2,
+  },
+  '6-3-3-125_v3': {
+    stateTreeDepth: 6,
+    intStateTreeDepth: 3,
+    batchSize: 125,
+    voteOptionTreeDepth: 3,
+  },
   '9-4-3-125_v4': {
     stateTreeDepth: 9,
     intStateTreeDepth: 4,

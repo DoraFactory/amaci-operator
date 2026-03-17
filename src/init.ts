@@ -5,6 +5,8 @@ import path from 'path'
 import { genKeypair } from './lib/keypair'
 import { GenerateWallet } from './wallet'
 import { info, error as logError } from './logger'
+import { SUPPORTED_ZKEY_BUNDLES } from './types'
+import { isBundleComplete, listMissingBundleFiles } from './lib/zkeyBundles'
 
 export async function init() {
   info('Init your coordinator info', 'INIT')
@@ -83,23 +85,13 @@ export async function init() {
   info('Check your required zkey files🧐🧐🧐🧐', 'INIT')
 
   const zkeyRoot = (process.env.ZKEY_PATH || path.join(process.env.WORK_PATH || './work', 'zkey'))
-  if (!fs.existsSync(path.join(zkeyRoot, '2-1-1-5_v4'))) {
-    info('Start to download zkey: 2-1-1-5_v4', 'INIT')
-    await downloadAndExtractZKeys('2-1-1-5_v4')
-  }
-
-  if (!fs.existsSync(path.join(zkeyRoot, '4-2-2-25_v4'))) {
-    info('download zkey: 4-2-2-25_v4', 'INIT')
-    await downloadAndExtractZKeys('4-2-2-25_v4')
-  }
-
-  if (!fs.existsSync(path.join(zkeyRoot, '6-3-3-125_v4'))) {
-    info('download zkey: 6-3-3-125_v4', 'INIT')
-    await downloadAndExtractZKeys('6-3-3-125_v4')
-  }
-
-  if (!fs.existsSync(path.join(zkeyRoot, '9-4-3-125_v4'))) {
-    info('download zkey: 9-4-3-125_v4', 'INIT')
-    await downloadAndExtractZKeys('9-4-3-125_v4')
+  for (const bundle of SUPPORTED_ZKEY_BUNDLES) {
+    const missing = listMissingBundleFiles(zkeyRoot, bundle)
+    if (!isBundleComplete(zkeyRoot, bundle)) {
+      info(`download zkey: ${bundle}${missing.length ? ` (missing: ${missing.join(', ')})` : ''}`, 'INIT')
+      await downloadAndExtractZKeys(bundle, zkeyRoot, {
+        force: fs.existsSync(path.join(zkeyRoot, bundle)),
+      })
+    }
   }
 }

@@ -5,6 +5,8 @@ import fs from 'fs'
 import path from 'path'
 // note: import heavy deps lazily inside subcommands to avoid keeping the process alive
 import * as readlineSync from 'readline-sync'
+import { SUPPORTED_ZKEY_BUNDLES } from '../types'
+import { isBundleComplete, listMissingBundleFiles } from '../lib/zkeyBundles'
 
 // Helper: write file if missing
 function ensureDir(p: string) {
@@ -80,26 +82,6 @@ function defaultConfig(workPath: string): Config {
   }
 }
 
-function moveExtractedZkeys(extracted: string, target: string) {
-  const src = path.resolve(extracted)
-  const dst = path.resolve(target)
-  if (!fs.existsSync(src)) return
-  if (src === dst) return
-  if (!fs.existsSync(dst)) fs.mkdirSync(dst, { recursive: true })
-  const entries = fs.readdirSync(src)
-  for (const name of entries) {
-    const s = path.join(src, name)
-    const t = path.join(dst, name)
-    try {
-      if (fs.existsSync(t)) fs.rmSync(t, { recursive: true, force: true })
-    } catch {}
-    fs.renameSync(s, t)
-  }
-  try {
-    fs.rmSync(src, { recursive: true, force: true })
-  } catch {}
-}
-
 function writeConfigToml(cfgPath: string, cfg: Config) {
   const lines: string[] = []
   lines.push('# aMACI operator configuration (config.toml)')
@@ -142,7 +124,7 @@ function writeConfigToml(cfgPath: string, cfg: Config) {
   lines.push(`metricsPort = ${cfg.metricsPort ?? 3001}`)
   lines.push('')
   lines.push(
-    '# Path to zkey folder containing circuit packs (2-1-1-5_v4, 4-2-2-25_v4, 6-3-3-125_v4, 9-4-3-125_v4)',
+    '# Path to zkey folder containing circuit packs (2-1-1-5_v3/v4, 4-2-2-25_v3/v4, 6-3-3-125_v3/v4, 9-4-3-125_v4)',
   )
   lines.push(`zkeyPath = "${cfg.zkeyPath || path.join(cfg.workPath, 'zkey')}"`)
   lines.push('')
@@ -167,7 +149,7 @@ function writeConfigToml(cfgPath: string, cfg: Config) {
   lines.push('# Persist proofs/inputs in chunks (0 = use the number of concurrency)')
   lines.push(`saveChunk = ${cfg.prover?.saveChunk ?? 0}`)
   lines.push('')
-  lines.push('# Per-circuit concurrency overrides (keys are circuit power without _v4)')
+  lines.push('# Per-circuit concurrency overrides (keys are circuit power without _v3/_v4 suffix)')
   lines.push('[prover.concurrencyByCircuit]')
   const concurrencyByCircuit = cfg.prover?.concurrencyByCircuit || {}
   const entries = Object.entries(concurrencyByCircuit)
@@ -318,6 +300,12 @@ function getVersion(): string {
   }
 }
 
+function existingZkeyBundles(zkeyPath: string, bundles: string[]): string[] {
+  return bundles.filter((bundle) =>
+    fs.existsSync(path.join(zkeyPath, bundle)),
+  )
+}
+
 function printVersion() {
   console.log(`maci-operator v${getVersion()}`)
 }
@@ -376,52 +364,34 @@ async function main(argv: string[]) {
     const cfg = defaultConfig(workDir)
     cfg.zkeyPath = zkeyPath
     writeConfigToml(cfgPath, cfg)
-    // Download zkeys into parent dir of zkeyPath, which creates 'zkey/' folder
-    const destRoot = path.dirname(zkeyPath)
-    // Single override prompt for zkey target
-    let doDownload = true
-    let forceDownload = !!force
-    if (fs.existsSync(zkeyPath) && !force) {
+    ensureDir(zkeyPath)
+    let overwriteExistingBundles = !!force
+    const existingBundles = existingZkeyBundles(zkeyPath, SUPPORTED_ZKEY_BUNDLES)
+    if (existingBundles.length > 0 && !force) {
       const choice = readlineSync.question(
-        `Zkey folder already exists at ${zkeyPath}, override? (y/n): `,
+        `Existing zkey bundles found at ${zkeyPath}: ${existingBundles.join(', ')}. Overwrite only these bundles? (y/n): `,
       )
-      if (choice.toLowerCase() === 'y') {
-        try {
-          fs.rmSync(zkeyPath, { recursive: true, force: true })
-        } catch {}
-        forceDownload = true
-      } else {
-        doDownload = false
-      }
+      overwriteExistingBundles = choice.toLowerCase() === 'y'
     }
     try {
       const { downloadAndExtractZKeys } = await import(
         '../lib/downloadZkeys.js'
       )
-      // Download three circuit packs by default
-      if (doDownload) {
-        await downloadAndExtractZKeys('2-1-1-5_v4', destRoot, {
-          force: forceDownload,
+      // Download all supported circuit packs by default
+      for (const bundle of SUPPORTED_ZKEY_BUNDLES) {
+        const exists = fs.existsSync(path.join(zkeyPath, bundle))
+        const complete = isBundleComplete(zkeyPath, bundle)
+        if (exists && complete && !overwriteExistingBundles) {
+          continue
+        }
+        await downloadAndExtractZKeys(bundle, zkeyPath, {
+          force: exists,
         })
-        await downloadAndExtractZKeys('4-2-2-25_v4', destRoot, {
-          force: forceDownload,
-        })
-        await downloadAndExtractZKeys('6-3-3-125_v4', destRoot, {
-          force: forceDownload,
-        })
-        await downloadAndExtractZKeys('9-4-3-125_v4', destRoot, {
-          force: forceDownload,
-        })
-        // If actual extracted path is destRoot/zkey but zkeyPath differs, rename
-        const extracted = path.join(destRoot, 'zkey')
-        moveExtractedZkeys(extracted, zkeyPath)
-      } else {
-        console.log('Skip downloading zkeys (user chose not to override)')
       }
     } catch (e: any) {
       console.error(`ZKey download failed: ${e?.message || e}`)
       console.error(
-        `You can retry later with: amaci zkey download ${workDir} --zkey ${zkeyPath} --force`,
+        `You can retry later with: maci zkey download ${workDir} --zkey ${zkeyPath} --force`,
       )
       process.exit(1)
     }
@@ -466,18 +436,17 @@ async function main(argv: string[]) {
     const zk = cfg.zkeyPath || path.join(workDir, 'zkey')
     console.log(`Using config: ${cfgPath}`)
     console.log(`Using zkeyPath: ${zk}`)
-    const required = [
-      '2-1-1-5_v4',
-      '4-2-2-25_v4',
-      '6-3-3-125_v4',
-      '9-4-3-125_v4',
-    ]
-    const missing = required.filter((r) => !fs.existsSync(path.join(zk, r)))
+    const required = SUPPORTED_ZKEY_BUNDLES
+    const missing = required.filter((r) => !isBundleComplete(zk, r))
     if (missing.length) {
+      const details = missing
+        .map((bundle) => `${bundle}: ${listMissingBundleFiles(zk, bundle).join(', ')}`)
+        .join('\n')
       console.error(
         `Missing required zkeys in ${zk}: ${missing.join(', ')}.\n` +
+          `${details}\n` +
           `Please verify that zkeyPath is correct and the required circuit packs exist.\n` +
-          `Download them first with: amaci zkey download ${workDir} --zkey ${zk} --force`,
+          `Download them first with: maci zkey download ${workDir} --zkey ${zk} --force`,
       )
       process.exit(1)
     }
@@ -515,43 +484,25 @@ async function main(argv: string[]) {
     const targetZkey = zkeyOpt
       ? path.resolve(zkeyOpt)
       : cfgZkey || path.join(workDir, 'zkey')
-    // download required packs into parent of target zkey
-    const destRoot = path.dirname(targetZkey)
-    ensureDir(destRoot)
-    // Single override prompt
-    let proceed = true
-    let forceDownload = !!force
-    if (fs.existsSync(targetZkey) && !force) {
+    ensureDir(targetZkey)
+    let overwriteExistingBundles = !!force
+    const existingBundles = existingZkeyBundles(targetZkey, SUPPORTED_ZKEY_BUNDLES)
+    if (existingBundles.length > 0 && !force) {
       const choice = readlineSync.question(
-        `Zkey folder already exists at ${targetZkey}, override? (y/n): `,
+        `Existing zkey bundles found at ${targetZkey}: ${existingBundles.join(', ')}. Overwrite only these bundles? (y/n): `,
       )
-      if (choice.toLowerCase() === 'y') {
-        try {
-          fs.rmSync(targetZkey, { recursive: true, force: true })
-        } catch {}
-        forceDownload = true
-      } else {
-        proceed = false
-      }
+      overwriteExistingBundles = choice.toLowerCase() === 'y'
     }
     const { downloadAndExtractZKeys } = await import('../lib/downloadZkeys.js')
-    if (proceed) {
-      await downloadAndExtractZKeys('2-1-1-5_v4', destRoot, {
-        force: forceDownload,
+    for (const bundle of SUPPORTED_ZKEY_BUNDLES) {
+      const exists = fs.existsSync(path.join(targetZkey, bundle))
+      const complete = isBundleComplete(targetZkey, bundle)
+      if (exists && complete && !overwriteExistingBundles) {
+        continue
+      }
+      await downloadAndExtractZKeys(bundle, targetZkey, {
+        force: exists,
       })
-      await downloadAndExtractZKeys('4-2-2-25_v4', destRoot, {
-        force: forceDownload,
-      })
-      await downloadAndExtractZKeys('6-3-3-125_v4', destRoot, {
-        force: forceDownload,
-      })
-      await downloadAndExtractZKeys('9-4-3-125_v4', destRoot, {
-        force: forceDownload,
-      })
-      const extracted = path.join(destRoot, 'zkey')
-      moveExtractedZkeys(extracted, targetZkey)
-    } else {
-      console.log('Skip downloading zkeys (user chose not to override)')
     }
     console.log(`ZKeys downloaded to ${targetZkey}`)
     process.exit(0)
