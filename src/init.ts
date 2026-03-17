@@ -89,7 +89,9 @@ export async function init() {
     const missing = listMissingBundleFiles(zkeyRoot, bundle)
     if (!isBundleComplete(zkeyRoot, bundle)) {
       info(`download zkey: ${bundle}${missing.length ? ` (missing: ${missing.join(', ')})` : ''}`, 'INIT')
-      await downloadAndExtractZKeys(bundle)
+      await downloadAndExtractZKeys(bundle, zkeyRoot, {
+        force: fs.existsSync(path.join(zkeyRoot, bundle)),
+      })
     }
   }
 }
