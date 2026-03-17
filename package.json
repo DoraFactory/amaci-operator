@@ -1,6 +1,6 @@
 {
     "name": "@dorafactory/maci-operator",
-    "version": "2.1.1",
+    "version": "2.1.2",
     "description": "An operator for managing MACI (Minimal Anti-Collusion Infrastructure)/aMACI deployments and interactions.",
     "main": "dist/index.js",
     "bin": {
@@ -23,6 +23,7 @@
         "init": " node --env-file=.env dist/init.js",
         "new-key": " node dist/generate_key.js",
         "benchmark:calculate": "tsx scripts/calculate-benchmark.ts",
+        "benchmark:proof-batches": "tsx scripts/analyze-proof-batch.ts",
         "test": "vitest run",
         "test:watch": "vitest watch",
         "test:ui": "vitest --ui",
