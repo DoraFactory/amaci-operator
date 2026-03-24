@@ -29,6 +29,7 @@ import { getProverConcurrency } from '../prover/concurrency'
 
 import { genMaciInputs, genMaciInputsFromStore } from '../operator/genInputs'
 import { proveMany } from '../prover/pool'
+import { describeProverRuntime } from '../prover/prove'
 import { loadProofCache, saveProofCache, buildInputsSignature } from '../storage/proofCache'
 import { markRoundTallyCompleted } from '../storage/roundStatus'
 import { clearInputsDir, loadInputFiles, saveInputFiles } from '../storage/inputFiles'
@@ -132,7 +133,6 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     const params = maciParamsFromCircuitPower(maciRound.circuitPower)
     const artifact = await resolveRoundCircuitArtifacts(
       maciClient as any,
-      maciRound.codeId,
       maciRound.circuitPower,
     )
     const pollId = artifact.pollId
@@ -625,6 +625,11 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
 
       // Sequential phases; each internally parallel via worker pool
       // usePipeline is determined at function scope
+      info(describeProverRuntime(), 'PROVER', {
+        round: id,
+        period: maciRound.period,
+        circuitPower: maciRound.circuitPower,
+      })
       info('Start to generate proof for msgs', 'TALLY-TASK', {
         period: maciRound.period,
         circuitPower: maciRound.circuitPower,
