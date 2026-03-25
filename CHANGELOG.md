@@ -2,6 +2,39 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v2.2.0] - 2026-03-25
+
+### Added
+
+- **Benchmark Tooling**
+  - Added `benchmark:calculate` to generate benchmark cost reports from benchmark inputs and pricing config.
+  - Added `benchmark:proof-batches` to analyze proof batch timing from benchmark logs.
+  - Added benchmark reference materials for bare-metal cost, latency, and gas estimation.
+
+- **Code-Level Utilities**
+  - Added transaction-level locking via `withTxLock()` to serialize in-flight transactions per key/address and reduce submission races.
+  - Added proof-batch log parsers and report generators for MSG, TALLY, and DEACTIVATE benchmark phases.
+  - Added benchmark report generation based on machine pricing config and live/cached DORA price data.
+
+- **Deployment Documentation**
+  - Added a dedicated `DOCKER.md` guide covering npm install, Docker Compose deployment, image version selection, workspace mounts, and metrics access.
+  - Expanded container usage examples for both package-based deployment and local source builds.
+
+### Changed
+
+- **Cost Modeling Documentation**
+  - Documented simplified execution-time, gas-cost, and server-cost formulas for supported circuit configurations.
+  - Added clearer benchmark summaries for P50/P90 runtime and cost assumptions.
+
+- **Proof Cache and Input Signatures**
+  - Updated proof-cache handling with versioned cache records and atomic writes.
+  - Extended cached input signatures to include `pollId`, processed deactivate-message count, and circuit metadata used for deterministic cache reuse.
+  - Preserved cached proof arrays by selecting the longer valid proof set during merges.
+
+- **Operator Runtime**
+  - Kept operator input generation aligned with poll-aware flows in message, tally, and deactivate processing.
+  - Updated package delivery and scripts around the `v2.2.0` release.
+
 ## [v2.1.0] - 2026-03-10
 
 ### Added
