@@ -30,11 +30,7 @@ export const stringizing = (o: any, path: any[] = []): any => {
 }
 
 export const bigInt2Buffer = (i: bigint) => {
-  let hex = i.toString(16)
-  if (hex.length % 2 === 1) {
-    hex = '0' + hex
-  }
-  return Buffer.from(hex, 'hex')
+  return Buffer.from(i.toString(16), 'hex')
 }
 
 export const genRandomKey = () => {
