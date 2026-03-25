@@ -11,40 +11,56 @@ export type ResolvedCircuitArtifacts = {
   pollId?: number
 }
 
-async function queryPollId(maciClient: any): Promise<number> {
-  const rawPollId = await maciClient.client.queryContractSmart(
-    maciClient.contractAddress,
-    { get_poll_id: {} },
-  )
-  const parsed = Number(rawPollId)
-  if (!Number.isFinite(parsed)) {
-    throw new Error(`Invalid poll id response: ${String(rawPollId)}`)
+async function queryPollId(maciClient: any): Promise<number | undefined> {
+  try {
+    const rawPollId = await maciClient.client.queryContractSmart(
+      maciClient.contractAddress,
+      { get_poll_id: {} },
+    )
+
+    if (rawPollId === null || rawPollId === undefined || rawPollId === '') {
+      return undefined
+    }
+
+    const parsed = Number(rawPollId)
+    if (!Number.isFinite(parsed)) {
+      throw new Error(`Invalid poll id response: ${String(rawPollId)}`)
+    }
+
+    return parsed
+  } catch (err: any) {
+    const message = err?.message || String(err)
+    if (
+      message.includes('get_poll_id') ||
+      message.includes('unknown request') ||
+      message.includes('unknown variant') ||
+      message.includes('not found') ||
+      message.includes('does not exist')
+    ) {
+      return undefined
+    }
+
+    throw err
   }
-  return parsed
 }
 
-function resolveVersionByCodeId(codeId: string | number): CircuitArtifactVersion {
-  const parsed = Number(codeId)
-  if (!Number.isFinite(parsed)) {
-    throw new Error(`Invalid round codeId: ${String(codeId)}`)
-  }
-  return parsed >= 239 ? 'v4' : 'v3'
+function resolveVersionByPollId(pollId?: number): CircuitArtifactVersion {
+  return pollId === undefined ? 'v3' : 'v4'
 }
 
 export async function resolveRoundCircuitArtifacts(
   maciClient: any,
-  codeId: string | number,
   circuitPower: string,
 ): Promise<ResolvedCircuitArtifacts> {
-  const version = resolveVersionByCodeId(codeId)
+  const pollId = await queryPollId(maciClient)
+  const version = resolveVersionByPollId(pollId)
   if (!supportsCircuitArtifactVersion(circuitPower, version)) {
     throw new Error(
-      `Unsupported circuit bundle: circuitPower=${circuitPower}, version=${version}, codeId=${String(codeId)}`,
+      `Unsupported circuit bundle: circuitPower=${circuitPower}, version=${version}, pollId=${String(pollId)}`,
     )
   }
 
   if (version === 'v4') {
-    const pollId = await queryPollId(maciClient)
     return {
       bundle: toCircuitBundleName(circuitPower, 'v4'),
       version,

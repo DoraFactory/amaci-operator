@@ -3,6 +3,7 @@ import { Task, TaskAct } from '../types'
 import { Timer } from '../storage/timer'
 import { genKeypair } from '../lib/keypair'
 import { clearRoundStatus, loadRoundStatus } from '../storage/roundStatus'
+import { getContractSignerClient, withRetry } from '../lib/client/utils'
 import {
   info,
   debug,
@@ -65,17 +66,37 @@ export const inspect: TaskAct = async () => {
     for (const maciRound of rounds) {
       const status = roundStatus[maciRound.id]
       if (status?.status === 'tally_completed') {
-        if (
-          ['Pending', 'Voting', 'Processing', 'Tallying'].includes(maciRound.period)
-        ) {
+        if (maciRound.period === 'Ended') {
+          debug(`Skipping completed round ${maciRound.id}`, 'INSPECT')
+          continue
+        }
+
+        try {
+          const maciClient = await getContractSignerClient(maciRound.id)
+          const chainPeriod = await withRetry(() => maciClient.getPeriod(), {
+            context: 'RPC-GET-PERIOD-INSPECT',
+            maxRetries: 3,
+          })
+
+          if (chainPeriod.status === 'ended') {
+            debug(
+              `Skipping locally completed round ${maciRound.id} while indexer catches up (indexer=${maciRound.period}, chain=${chainPeriod.status})`,
+              'INSPECT',
+            )
+            continue
+          }
+
           warn(
-            `Clearing stale completed marker for active round ${maciRound.id} (period=${maciRound.period})`,
+            `Clearing stale completed marker for round ${maciRound.id} (indexer=${maciRound.period}, chain=${chainPeriod.status})`,
             'INSPECT',
           )
           clearRoundStatus(maciRound.id)
-        } else {
-        debug(`Skipping completed round ${maciRound.id}`, 'INSPECT')
-        continue
+        } catch (err: any) {
+          warn(
+            `Keeping completed marker for round ${maciRound.id} because chain verification failed: ${err.message || String(err)}`,
+            'INSPECT',
+          )
+          continue
         }
       }
       // deactivate task

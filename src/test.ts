@@ -55,7 +55,6 @@ interface RoundData {
   id: string
   blockHeight: string
   txHash: string
-  operator: string
   contractAddress: string
   circuitName: string
   timestamp: string
@@ -112,7 +111,6 @@ const ROUNDS_QUERY = (
       id
       blockHeight
       txHash
-      operator
       contractAddress
       coordinatorPubkeyX
       coordinatorPubkeyY

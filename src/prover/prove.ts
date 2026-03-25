@@ -33,34 +33,29 @@ const getWitnessBackend = (): WitnessBackend => {
 }
 let loggedBackend = false
 
-function logBackendOnce() {
-  if (loggedBackend) return
-  loggedBackend = true
+export function describeProverRuntime(): string {
   const proverBackend = getBackend()
   const witnessBackend = getWitnessBackend()
   const witnesscalcPath = getWitnesscalcPath()
+
   if (proverBackend === 'rapidsnark') {
     if (witnessBackend === 'witnesscalc') {
-      info(
-        `Prover backend=rapidsnark witnessBackend=witnesscalc rapidsnark=${getRapidsnarkPath()} witnesscalc=${witnesscalcPath || '(unset)'}`,
-        'PROVER',
-      )
-    } else {
-      info(
-        `Prover backend=rapidsnark witnessBackend=snarkjs rapidsnark=${getRapidsnarkPath()}`,
-        'PROVER',
-      )
+      return `Prover backend=rapidsnark witnessBackend=witnesscalc rapidsnark=${getRapidsnarkPath()} witnesscalc=${witnesscalcPath || '(unset)'}`
     }
-  } else {
-    if (witnessBackend === 'witnesscalc') {
-      info(
-        `Prover backend=snarkjs witnessBackend=witnesscalc witnesscalc=${witnesscalcPath || '(unset)'}`,
-        'PROVER',
-      )
-    } else {
-      info('Prover backend=snarkjs witnessBackend=snarkjs', 'PROVER')
-    }
+    return `Prover backend=rapidsnark witnessBackend=snarkjs rapidsnark=${getRapidsnarkPath()}`
   }
+
+  if (witnessBackend === 'witnesscalc') {
+    return `Prover backend=snarkjs witnessBackend=witnesscalc witnesscalc=${witnesscalcPath || '(unset)'}`
+  }
+
+  return 'Prover backend=snarkjs witnessBackend=snarkjs'
+}
+
+function logBackendOnce() {
+  if (loggedBackend) return
+  loggedBackend = true
+  info(describeProverRuntime(), 'PROVER')
 }
 
 async function pathExists(pathname: string): Promise<boolean> {

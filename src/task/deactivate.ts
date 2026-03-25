@@ -15,6 +15,7 @@ import {
 import { fetchAllDeactivateLogs, fetchRound } from '../vota/indexer'
 // adaptToUncompressed is handled inside worker
 import { proveMany } from '../prover/pool'
+import { describeProverRuntime } from '../prover/prove'
 import { loadProofCache, saveProofCache, buildInputsSignature } from '../storage/proofCache'
 import { recordProverPhaseDuration } from '../metrics'
 import { Timer } from '../storage/timer'
@@ -92,7 +93,6 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
     const maciClient = await getContractSignerClient(id)
     const artifact = await resolveRoundCircuitArtifacts(
       maciClient as any,
-      maciRound.codeId,
       maciRound.circuitPower,
     )
     const pollId = artifact.pollId
@@ -234,6 +234,11 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
       const dmsg: (ProofData & { root: string; size: string })[] = []
 
       const usePipeline = Number(process.env.PROVER_PIPELINE || 0) > 0
+      info(describeProverRuntime(), 'PROVER', {
+        round: id,
+        period: maciRound.period,
+        circuitPower: maciRound.circuitPower,
+      })
       info('Start generating proof for deactivate', 'DEACTIVATE-TASK', {
         period: maciRound.period,
         circuitPower: maciRound.circuitPower,
