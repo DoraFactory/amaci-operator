@@ -30,8 +30,9 @@ export interface ProofCache {
   inputsSig?: string
 }
 
-// Bump cache schema after coordinator private-key formatting fix to avoid reusing invalid proofs.
-const VERSION = 2
+// Bump cache schema after restoring legacy v3 message layout handling
+// so old cached msgInputs do not get reused.
+const VERSION = 3
 
 function getCachePath(id: string) {
   // New layout: use 'data' directory for caches
@@ -130,7 +131,11 @@ function sanitizeInputs(inputs: ProofCache['inputs']): ProofCache['inputs'] {
 export function buildInputsSignature(args: {
   circuitPower: string
   circuitType: string | number
+  artifactVersion?: string
+  artifactBundle?: string
   pollId?: string | number
+  messageArity?: number
+  deactivateMessageArity?: number
   maxVoteOptions: number
   signupCount: number
   lastSignupId?: string
@@ -143,7 +148,11 @@ export function buildInputsSignature(args: {
   const parts = [
     String(args.circuitPower),
     String(args.circuitType),
+    String(args.artifactVersion ?? ''),
+    String(args.artifactBundle ?? ''),
     String(args.pollId ?? ''),
+    `ma:${args.messageArity ?? ''}`,
+    `dma:${args.deactivateMessageArity ?? ''}`,
     String(args.maxVoteOptions),
     `su:${args.signupCount}:${args.lastSignupId || ''}`,
     `m:${args.msgCount}:${args.lastMsgId || ''}`,

@@ -4,7 +4,7 @@ import { solidityPackedSha256 } from 'ethers'
 import {
   stringizing,
   genStaticRandomKey,
-  genKeypair,
+  genRoundKeypair,
   genEcdhSharedKey,
 } from './keypair'
 import { Tree } from './Tree'
@@ -159,8 +159,11 @@ export class MACI {
     this.numSignUps = numSignUps
     this.isQuadraticCost = isQuadraticCost
 
-    this.coordinator = genKeypair(coordPriKey)
     this.pollId = pollId
+    this.coordinator =
+      pollId === undefined
+        ? genRoundKeypair(coordPriKey)
+        : genRoundKeypair(coordPriKey, pollId)
     this.pubKeyHasher = poseidon(this.coordinator.pubKey)
 
     const emptyVOTree = new Tree(5, voteOptionTreeDepth, 0n)
@@ -200,8 +203,9 @@ export class MACI {
   }
 
   emptyMessage(): IMsg {
+    const width = this.pollId === undefined ? 7 : 10
     return {
-      ciphertext: [0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n],
+      ciphertext: new Array(width).fill(0n),
       encPubKey: [0n, 0n],
       prevHash: 0n,
       hash: 0n,
@@ -244,31 +248,60 @@ export class MACI {
   }
 
   msgToCmd(ciphertext: bigint[], encPubKey: [bigint, bigint]): ICmd | null {
-    const sharedKey = genEcdhSharedKey(this.coordinator.privKey, encPubKey)
+    const sharedKey = genEcdhSharedKey(
+      this.coordinator.privKey,
+      encPubKey,
+      this.pollId,
+    )
     try {
-      const plaintext = poseidonDecrypt(ciphertext, sharedKey, 0n, 7)
-      const packaged = plaintext[0]
+      if (this.pollId === undefined) {
+        const plaintext = poseidonDecrypt(ciphertext, sharedKey, 0n, 6)
+        const packaged = plaintext[0]
 
-      const nonce = packaged % UINT32
-      const stateIdx = (packaged >> 32n) % UINT32
-      const voIdx = (packaged >> 64n) % UINT32
-      const newVotes = (packaged >> 96n) % UINT96
-      const pollId = (packaged >> 192n) % UINT32
+        const nonce = packaged % UINT32
+        const stateIdx = (packaged >> 32n) % UINT32
+        const voIdx = (packaged >> 64n) % UINT32
+        const newVotes = (packaged >> 96n) % UINT96
 
-      const cmd: ICmd = {
-        nonce,
-        stateIdx,
-        voIdx,
-        newVotes,
-        newPubKey: [plaintext[1], plaintext[2]],
-        pollId,
-        signature: {
-          R8: [plaintext[4], plaintext[5]],
-          S: plaintext[6],
-        },
-        msgHash: poseidon([packaged, plaintext[1], plaintext[2]]),
+        const cmd: ICmd = {
+          nonce,
+          stateIdx,
+          voIdx,
+          newVotes,
+          newPubKey: [plaintext[1], plaintext[2]],
+          pollId: 0n,
+          signature: {
+            R8: [plaintext[3], plaintext[4]],
+            S: plaintext[5],
+          },
+          msgHash: poseidon(plaintext.slice(0, 3)),
+        }
+        return cmd
+      } else {
+        const plaintext = poseidonDecrypt(ciphertext, sharedKey, 0n, 7)
+        const packaged = plaintext[0]
+
+        const nonce = packaged % UINT32
+        const stateIdx = (packaged >> 32n) % UINT32
+        const voIdx = (packaged >> 64n) % UINT32
+        const newVotes = (packaged >> 96n) % UINT96
+        const pollId = (packaged >> 192n) % UINT32
+
+        const cmd: ICmd = {
+          nonce,
+          stateIdx,
+          voIdx,
+          newVotes,
+          newPubKey: [plaintext[1], plaintext[2]],
+          pollId,
+          signature: {
+            R8: [plaintext[4], plaintext[5]],
+            S: plaintext[6],
+          },
+          msgHash: poseidon([packaged, plaintext[1], plaintext[2]]),
+        }
+        return cmd
       }
-      return cmd
     } catch (e: any) {
       return null
     }
@@ -508,7 +541,11 @@ export class MACI {
       )
       currentActiveState[i] = this.activeStateTree.leaf(stateIdx)
 
-      const sharedKey = genEcdhSharedKey(this.coordinator.privKey, s.pubKey)
+      const sharedKey = genEcdhSharedKey(
+        this.coordinator.privKey,
+        s.pubKey,
+        this.pollId,
+      )
 
       const deactivate = encryptOdevity(
         !!error,

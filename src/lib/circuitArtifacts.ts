@@ -11,6 +11,11 @@ export type ResolvedCircuitArtifacts = {
   pollId?: number
 }
 
+export type CircuitArtifactHints = {
+  messageArity?: number
+  deactivateMessageArity?: number
+}
+
 async function queryPollId(maciClient: any): Promise<number | undefined> {
   try {
     const rawPollId = await maciClient.client.queryContractSmart(
@@ -44,23 +49,40 @@ async function queryPollId(maciClient: any): Promise<number | undefined> {
   }
 }
 
-function resolveVersionByPollId(pollId?: number): CircuitArtifactVersion {
-  return pollId === undefined ? 'v3' : 'v4'
+function resolveVersionByHints(
+  circuitPower: string,
+  hints?: CircuitArtifactHints,
+): CircuitArtifactVersion {
+  if (circuitPower === '9-4-3-125') {
+    return 'v4'
+  }
+
+  const inferredArity =
+    hints?.messageArity ?? hints?.deactivateMessageArity
+
+  if (typeof inferredArity === 'number' && Number.isFinite(inferredArity)) {
+    return inferredArity >= 10 ? 'v4' : 'v3'
+  }
+
+  // Ambiguous rounds without observable message width default to v3.
+  // This keeps old rounds working and avoids feeding v4 circuits with v3 inputs.
+  return 'v3'
 }
 
 export async function resolveRoundCircuitArtifacts(
   maciClient: any,
   circuitPower: string,
+  hints?: CircuitArtifactHints,
 ): Promise<ResolvedCircuitArtifacts> {
-  const pollId = await queryPollId(maciClient)
-  const version = resolveVersionByPollId(pollId)
+  const version = resolveVersionByHints(circuitPower, hints)
   if (!supportsCircuitArtifactVersion(circuitPower, version)) {
     throw new Error(
-      `Unsupported circuit bundle: circuitPower=${circuitPower}, version=${version}, pollId=${String(pollId)}`,
+      `Unsupported circuit bundle: circuitPower=${circuitPower}, version=${version}, hints=${JSON.stringify(hints || {})}`,
     )
   }
 
   if (version === 'v4') {
+    const pollId = await queryPollId(maciClient)
     return {
       bundle: toCircuitBundleName(circuitPower, 'v4'),
       version,

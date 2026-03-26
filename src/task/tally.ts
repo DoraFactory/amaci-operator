@@ -60,6 +60,24 @@ const sleep = async (ms: number) =>
     }, ms)
   })
 
+const inferMessageArity = (messages: bigint[][]): number | undefined => {
+  for (const msg of messages) {
+    if (Array.isArray(msg) && msg.length > 0) {
+      return msg.length
+    }
+  }
+  return undefined
+}
+
+const summarizeMsgInputShape = (input: any) => ({
+  rowCount: Array.isArray(input?.msgs) ? input.msgs.length : 0,
+  rowWidths: Array.isArray(input?.msgs)
+    ? input.msgs.map((row: any) => (Array.isArray(row) ? row.length : null))
+    : [],
+  hasExpectedPollId:
+    !!input && Object.prototype.hasOwnProperty.call(input, 'expectedPollId'),
+})
+
 export const tally: TaskAct = async (_, { id }: { id: string }) => {
   // logger: set the current round ID
   setCurrentRound(id)
@@ -131,11 +149,6 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     }
 
     const params = maciParamsFromCircuitPower(maciRound.circuitPower)
-    const artifact = await resolveRoundCircuitArtifacts(
-      maciClient as any,
-      maciRound.circuitPower,
-    )
-    const pollId = artifact.pollId
 
     /**
      * 尝试查看本地是否已经生成了所有证明信息
@@ -220,6 +233,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       let msgCount = 0
       let lastMsgId = ''
       let messageStore: DiskMessageStore | null = null
+      let inferredMessageArity: number | undefined
 
       const loadLogsFromIndexer = async () => {
         if (useMessageStore) {
@@ -243,6 +257,9 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
                     m.msgChainLength,
                     'TALLY-TASK',
                   )
+                  if (inferredMessageArity === undefined && msg.length > 0) {
+                    inferredMessageArity = msg.length
+                  }
                   const pubkey = (m.encPubKey.match(/\d+/g) || []).map(
                     (n: string) => BigInt(n),
                   ) as [bigint, bigint]
@@ -299,6 +316,43 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
 
       info(
         `The current round has ${logs.signup.length} signups, ${msgCount} messages, ${logs.dmsg.length} dmessages`,
+        'TALLY-TASK',
+      )
+
+      const messageArity =
+        useMessageStore
+          ? inferredMessageArity
+          : inferMessageArity(
+              logs.msg.map((m: any) =>
+                parseMessageNumbers(
+                  m.message,
+                  'msg',
+                  m.msgChainLength,
+                  'TALLY-TASK',
+                ),
+              ),
+            )
+      const deactivateMessageArity = inferMessageArity(
+        logs.dmsg.map((m: any) =>
+          parseMessageNumbers(
+            m.message,
+            'dmsg',
+            m.dmsgChainLength,
+            'TALLY-TASK',
+          ),
+        ),
+      )
+      const artifact = await resolveRoundCircuitArtifacts(
+        maciClient as any,
+        maciRound.circuitPower,
+        {
+          messageArity,
+          deactivateMessageArity,
+        },
+      )
+      const pollId = artifact.pollId
+      info(
+        `Resolved circuit artifacts: bundle=${artifact.bundle}, version=${artifact.version}, pollId=${String(pollId ?? '')}, messageArity=${String(messageArity ?? '')}, deactivateMessageArity=${String(deactivateMessageArity ?? '')}`,
         'TALLY-TASK',
       )
 
@@ -465,7 +519,11 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       const inputsSig = buildInputsSignature({
         circuitPower: maciRound.circuitPower,
         circuitType: maciRound.circuitType,
+        artifactVersion: artifact.version,
+        artifactBundle: artifact.bundle,
         pollId,
+        messageArity,
+        deactivateMessageArity,
         maxVoteOptions: Number(maxVoteOptions),
         signupCount: logs.signup.length,
         lastSignupId: logs.signup[logs.signup.length - 1]?.id,
@@ -612,6 +670,17 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
             salt: (res.tallyInputs.length ? res.tallyInputs[res.tallyInputs.length - 1].newResultsRootSalt.toString() : '0'),
           })
         }
+      }
+
+      info(
+        `MSG input shape[0]: ${JSON.stringify(summarizeMsgInputShape(res.msgInputs[0]))}`,
+        'TALLY-TASK',
+      )
+      if (res.msgInputs.length > 1) {
+        info(
+          `MSG input shape[1]: ${JSON.stringify(summarizeMsgInputShape(res.msgInputs[1]))}`,
+          'TALLY-TASK',
+        )
       }
 
       const lastTallyInput = res.tallyInputs[res.tallyInputs.length - 1]
