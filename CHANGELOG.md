@@ -35,6 +35,12 @@ All notable changes to this project will be documented in this file.
   - Kept operator input generation aligned with poll-aware flows in message, tally, and deactivate processing.
   - Updated package delivery and scripts around the `v2.2.0` release.
 
+### Fixed
+
+- **Keypair Derivation**
+  - Fixed BabyJub private-key formatting to match the SDK/@zk-kit-compatible clamp and subgroup reduction flow.
+  - Resolved coordinator keypair derivation mismatches that could cause the operator to derive a different public key from the configured `coordinatorPrivKey`.
+
 ## [v2.1.0] - 2026-03-10
 
 ### Added

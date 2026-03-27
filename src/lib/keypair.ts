@@ -10,6 +10,8 @@ const SNARK_FIELD_SIZE =
 const BABYJUB_SUBORDER =
   2736030358979909402780800718157159386076813972158567259200215660948447373041n
 
+type BabyJubKeyFormat = 'legacy-v154' | 'poll-aware'
+
 export const stringizing = (o: any, path: any[] = []): any => {
   if (path.includes(o)) {
     throw new Error('loop nesting!')
@@ -89,7 +91,16 @@ export const genKeypair = (pkey?: bigint): IKeypair => {
   return { privKey, pubKey, formatedPrivKey }
 }
 
-const formatPrivKeyForBabyJub = (privKey: bigint): bigint => {
+const resolveBabyJubKeyFormat = (
+  pollId?: number | bigint,
+): BabyJubKeyFormat => {
+  return pollId === undefined ? 'legacy-v154' : 'poll-aware'
+}
+
+const formatPrivKeyForBabyJub = (
+  privKey: bigint,
+  pollId?: number | bigint,
+): bigint => {
   const sBuff = eddsa.pruneBuffer(
     createBlakeHash('blake512')
       .update(bigInt2Buffer(privKey))
@@ -97,13 +108,30 @@ const formatPrivKeyForBabyJub = (privKey: bigint): bigint => {
       .slice(0, 32),
   )
   const s = ff.utils.leBuff2int(sBuff)
-  // Match SDK/@zk-kit behavior: clamp then reduce to subgroup order.
+  if (resolveBabyJubKeyFormat(pollId) === 'legacy-v154') {
+    return ff.Scalar.shr(s, 3)
+  }
+
+  // Match SDK/@zk-kit behavior for poll-aware (v4) rounds:
+  // clamp, then reduce to the BabyJub subgroup order.
   return ff.Scalar.mod(ff.Scalar.shr(s, 3), BABYJUB_SUBORDER)
+}
+
+export const genRoundKeypair = (
+  pkey: bigint,
+  pollId?: number | bigint,
+): IKeypair => {
+  const privKey = BigInt(pkey.toString())
+  const pubKey = genPubKey(privKey)
+  const formatedPrivKey = formatPrivKeyForBabyJub(privKey, pollId)
+
+  return { privKey, pubKey, formatedPrivKey }
 }
 
 export const genEcdhSharedKey = (
   privKey: bigint,
   pubKey: [bigint, bigint],
+  pollId?: number | bigint,
 ): [bigint, bigint] => {
-  return babyJub.mulPointEscalar(pubKey, formatPrivKeyForBabyJub(privKey))
+  return babyJub.mulPointEscalar(pubKey, formatPrivKeyForBabyJub(privKey, pollId))
 }

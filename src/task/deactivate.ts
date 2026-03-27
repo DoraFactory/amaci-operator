@@ -42,6 +42,15 @@ const zkeyRoot = process.env.ZKEY_PATH || path.join(process.env.WORK_PATH || './
 
 const deactivateInterval = Number(process.env.DEACTIVATE_INTERVAL || 60000)
 
+const inferMessageArity = (messages: bigint[][]): number | undefined => {
+  for (const msg of messages) {
+    if (Array.isArray(msg) && msg.length > 0) {
+      return msg.length
+    }
+  }
+  return undefined
+}
+
 export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
   // log the round id
   setCurrentRound(id)
@@ -91,11 +100,6 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
 
     const params = maciParamsFromCircuitPower(maciRound.circuitPower)
     const maciClient = await getContractSignerClient(id)
-    const artifact = await resolveRoundCircuitArtifacts(
-      maciClient as any,
-      maciRound.circuitPower,
-    )
-    const pollId = artifact.pollId
 
     const dc = await withRetry(() => maciClient.getProcessedDMsgCount(), {
       context: 'RPC-GET-DMSG-COUNT',
@@ -113,6 +117,27 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
       processedCount: Number(dc),
     })
 
+    const deactivateMessageArity = inferMessageArity(
+      logs.dmsg.map((m) =>
+        parseMessageNumbers(
+          m.message,
+          'dmsg',
+          m.dmsgChainLength,
+          'DEACTIVATE-TASK',
+        ),
+      ),
+    )
+    const artifact = await resolveRoundCircuitArtifacts(
+      maciClient as any,
+      maciRound.circuitPower,
+      { deactivateMessageArity },
+    )
+    const pollId = artifact.pollId
+    info(
+      `Resolved circuit artifacts: bundle=${artifact.bundle}, version=${artifact.version}, pollId=${String(pollId ?? '')}, deactivateMessageArity=${String(deactivateMessageArity ?? '')}`,
+      'DEACTIVATE-TASK',
+    )
+
     if (logs.dmsg.length > Number(dc)) {
       const maxVoteOptions = await withRetry(
         () => maciClient.maxVoteOptions(),
@@ -126,7 +151,10 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
       const inputsSig = buildInputsSignature({
         circuitPower: maciRound.circuitPower,
         circuitType: maciRound.circuitType,
+        artifactVersion: artifact.version,
+        artifactBundle: artifact.bundle,
         pollId,
+        deactivateMessageArity,
         maxVoteOptions: Number(maxVoteOptions),
         signupCount: logs.signup.length,
         lastSignupId: logs.signup[logs.signup.length - 1]?.id,
