@@ -8,6 +8,7 @@ export enum ChainId {
 export type ProofType = 'msg' | 'tally' | 'deactivate'
 
 export type MaciType =
+  | '2-1-1-25_v4'
   | '6-3-3-125_v3'
   | '4-2-2-25_v3'
   | '2-1-1-5_v3'
@@ -22,6 +23,7 @@ export const SUPPORTED_ZKEY_BUNDLES: MaciType[] = [
   '2-1-1-5_v3',
   '4-2-2-25_v3',
   '6-3-3-125_v3',
+  '2-1-1-25_v4',
   '2-1-1-5_v4',
   '4-2-2-25_v4',
   '6-3-3-125_v4',
@@ -30,6 +32,7 @@ export const SUPPORTED_ZKEY_BUNDLES: MaciType[] = [
 
 const V3_CIRCUIT_POWERS = new Set(['2-1-1-5', '4-2-2-25', '6-3-3-125'])
 const V4_CIRCUIT_POWERS = new Set([
+  '2-1-1-25',
   '2-1-1-5',
   '4-2-2-25',
   '6-3-3-125',
@@ -60,6 +63,12 @@ export const MaciParams: Record<
     voteOptionTreeDepth: number
   }
 > = {
+  '2-1-1-25_v4': {
+    stateTreeDepth: 2,
+    intStateTreeDepth: 1,
+    batchSize: 25,
+    voteOptionTreeDepth: 1,
+  },
   '2-1-1-5_v3': {
     stateTreeDepth: 2,
     intStateTreeDepth: 1,

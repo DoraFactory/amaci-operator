@@ -53,8 +53,15 @@ function resolveVersionByHints(
   circuitPower: string,
   hints?: CircuitArtifactHints,
 ): CircuitArtifactVersion {
-  if (circuitPower === '9-4-3-125') {
+  const supportsV3 = supportsCircuitArtifactVersion(circuitPower, 'v3')
+  const supportsV4 = supportsCircuitArtifactVersion(circuitPower, 'v4')
+
+  if (supportsV4 && !supportsV3) {
     return 'v4'
+  }
+
+  if (supportsV3 && !supportsV4) {
+    return 'v3'
   }
 
   const inferredArity =
