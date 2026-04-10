@@ -9,7 +9,11 @@ import { MaciClient } from './Maci.client'
 import { RegistryClient } from './Registry.client'
 import { GenerateWallet } from '../../wallet'
 import { info, warn, error as logError } from '../../logger'
-import { recordApiRetryExhausted } from '../../metrics'
+import {
+  recordApiRetryExhausted,
+  recordExternalRequest,
+  recordExternalRetry,
+} from '../../metrics'
 
 export const prefix = 'dora'
 
@@ -38,6 +42,7 @@ export async function withRetry<T>(
   let pendingTxId: string | null = null
 
   for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+    const requestStart = Date.now()
     try {
       if (pendingTxId && checkTxStatus) {
         info(
@@ -51,9 +56,12 @@ export async function withRetry<T>(
         throw new Error(`Transaction ${pendingTxId} still pending`)
       }
 
-      return await fn()
+      const result = await fn()
+      recordExternalRequest(context, (Date.now() - requestStart) / 1000, 'success')
+      return result
     } catch (error: any) {
       lastError = error
+      recordExternalRequest(context, (Date.now() - requestStart) / 1000, 'error')
 
       if (
         error.message.includes(
@@ -72,6 +80,7 @@ export async function withRetry<T>(
       }
 
       if (attempt <= maxRetries) {
+        recordExternalRetry(context)
         warn(
           `API call failed (attempt ${attempt}/${maxRetries + 1}): ${error.message}`,
           context,

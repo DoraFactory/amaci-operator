@@ -1,11 +1,13 @@
 import { withBroadcastRetry } from '../lib/client/utils'
 import { info } from '../logger'
+import { recordSubmitBatch } from '../metrics'
 
 type SubmitterOptions = {
   batchLimit: number
   contextBatch: string
   contextSingle: string
   phaseLabel: 'MSG' | 'TALLY' | 'DEACTIVATE'
+  circuitPower: string
   shouldStop?: (err: any) => boolean
 }
 
@@ -63,10 +65,18 @@ export function createSubmitter<T>(
           while (true) {
             const slice = group.slice(index, index + attemptSize)
             try {
+              const submitStart = Date.now()
               const res = await withBroadcastRetry(() => submitBatch(slice), {
                 context: opts.contextBatch,
                 maxRetries: 3,
               })
+              recordSubmitBatch(
+                opts.phaseLabel.toLowerCase(),
+                opts.circuitPower,
+                'batch',
+                slice.length,
+                (Date.now() - submitStart) / 1000,
+              )
               info(
                 `Processed ${opts.phaseLabel} batch (count=${slice.length}) ✅ tx=${res.transactionHash}`,
                 `${opts.phaseLabel}-TASK`,
@@ -84,10 +94,18 @@ export function createSubmitter<T>(
               if (attemptSize === 1) {
                 const single = group[index]
                 try {
+                  const submitStart = Date.now()
                   const res = await withBroadcastRetry(() => submitSingle(single), {
                     context: opts.contextSingle,
                     maxRetries: 3,
                   })
+                  recordSubmitBatch(
+                    opts.phaseLabel.toLowerCase(),
+                    opts.circuitPower,
+                    'single',
+                    1,
+                    (Date.now() - submitStart) / 1000,
+                  )
                   info(
                     `Processed ${opts.phaseLabel} #${index} ✅ tx=${res.transactionHash}`,
                     `${opts.phaseLabel}-TASK`,

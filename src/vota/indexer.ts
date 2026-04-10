@@ -334,7 +334,11 @@ async function fetchOne<T>(query: string): Promise<T> {
     })
 }
 
-async function fetchAllPages<T>(query: string, variables: any): Promise<T[]> {
+async function fetchAllPages<T>(
+  query: string,
+  variables: any,
+  operation: string,
+): Promise<T[]> {
   let hasNextPage = true
   let offset = 0
   const limit = 100 // Adjust the limit as needed
@@ -394,7 +398,7 @@ async function fetchAllPages<T>(query: string, variables: any): Promise<T[]> {
         {
           maxRetries: 3,
           initialDelay: 1000,
-          context: 'INDEXER',
+          context: `INDEXER-${operation}`,
         },
       )
 
@@ -429,6 +433,7 @@ async function fetchAllPages<T>(query: string, variables: any): Promise<T[]> {
 async function fetchAllPagesStream<T extends { id?: string }>(
   query: string,
   variables: any,
+  operation: string,
   onPage: (nodes: T[]) => Promise<void> | void,
 ): Promise<{ count: number; lastId: string }> {
   let hasNextPage = true
@@ -489,7 +494,7 @@ async function fetchAllPagesStream<T extends { id?: string }>(
         {
           maxRetries: 3,
           initialDelay: 1000,
-          context: 'INDEXER',
+          context: `INDEXER-${operation}`,
         },
       )
 
@@ -528,6 +533,7 @@ export const fetchRounds = async (coordinatorPubkey: string[]) => {
   return fetchAllPages<RoundData>(
     ROUNDS_QUERY(coordinatorPubkey[0], coordinatorPubkey[1]),
     {},
+    'fetch_rounds',
   )
 }
 
@@ -539,10 +545,12 @@ export const fetchAllVotesLogs = async (contract: string) => {
   const signup = await fetchAllPages<SignUpEvent>(
     SIGN_UP_EVENTS_QUERY(contract),
     {},
+    'fetch_signups',
   )
   const msg = await fetchAllPages<PublishMessageEvent>(
     PUBLISH_MESSAGE_EVENTS_QUERY(contract),
     {},
+    'fetch_publish_messages',
   )
   // const ds = await fetchAllPages<DeactivateMessage>(
   //   DEACTIVATE_MESSAGE_QUERY(contract),
@@ -551,6 +559,7 @@ export const fetchAllVotesLogs = async (contract: string) => {
   const dmsg = await fetchAllPages<PublishDeactivateMessageEvent>(
     PUBLISH_DEACTIVATE_MESSAGE_EVENTS_QUERY(contract),
     {},
+    'fetch_publish_deactivate_messages',
   )
 
   return {
@@ -571,6 +580,7 @@ export const streamPublishMessageEvents = async (
   return fetchAllPagesStream<PublishMessageEvent>(
     PUBLISH_MESSAGE_EVENTS_QUERY(contract),
     {},
+    'stream_publish_messages',
     onPage,
   )
 }
@@ -579,6 +589,7 @@ export const fetchAllDeactivateLogs = async (contract: string) => {
   const signup = await fetchAllPages<SignUpEvent>(
     SIGN_UP_EVENTS_QUERY(contract),
     {},
+    'fetch_signups',
   )
   // const ds = await fetchAllPages<DeactivateMessage>(
   //   DEACTIVATE_MESSAGE_QUERY(contract),
@@ -587,6 +598,7 @@ export const fetchAllDeactivateLogs = async (contract: string) => {
   const dmsg = await fetchAllPages<PublishDeactivateMessageEvent>(
     PUBLISH_DEACTIVATE_MESSAGE_EVENTS_QUERY(contract),
     {},
+    'fetch_publish_deactivate_messages',
   )
 
   return {

@@ -2,51 +2,60 @@ import * as client from 'prom-client'
 import express from 'express'
 import { info, debug } from './logger'
 
-// Create Registry
 const register = client.register
-
-// Add default metrics
 client.collectDefaultMetrics({ register })
 
-// operator start time
 const startTime = Date.now()
 
-// Add operator uptime metric in seconds
+type TaskRuntime = {
+  startTime: number
+  circuitPower: string
+  completionRecorded: boolean
+}
+
+type TaskLabels = {
+  circuitPower?: string
+}
+
+type ExternalLabels = {
+  dependency: 'rpc' | 'indexer' | 'unknown'
+  operation: string
+}
+
+type SubmissionMode = 'batch' | 'single'
+
+const DEFAULT_CIRCUIT_POWER = 'unknown'
+
 const operatorUptime = new client.Gauge({
   name: 'amaci_operator_uptime_seconds',
   help: 'How long the operator service has been running, in seconds',
   registers: [register],
 })
 
-// Operator balance metric
 const operatorBalanceGauge = new client.Gauge({
   name: 'amaci_operator_balance_dora',
   help: 'Current operator balance in DORA tokens',
   registers: [register],
 })
 
-// Last successful inspection timestamp
 const lastSuccessfulInspection = new client.Gauge({
-  name: 'amaci_operator_last_successful_inspection_timestamp',
-  help: 'Timestamp of the last successful inspection',
+  name: 'amaci_operator_last_successful_inspection_timestamp_seconds',
+  help: 'Unix timestamp in seconds of the last successful inspection',
   registers: [register],
 })
 
-// Last successful tally timestamp
 const lastSuccessfulTally = new client.Gauge({
-  name: 'amaci_operator_last_successful_tally_timestamp',
-  help: 'Timestamp of the last successful tally operation',
+  name: 'amaci_operator_last_successful_tally_timestamp_seconds',
+  help: 'Unix timestamp in seconds of the last successful tally operation',
   registers: [register],
 })
 
-// Last successful deactivate timestamp
 const lastSuccessfulDeactivate = new client.Gauge({
-  name: 'amaci_operator_last_successful_deactivate_timestamp',
-  help: 'Timestamp of the last successful deactivate operation',
+  name: 'amaci_operator_last_successful_deactivate_timestamp_seconds',
+  help: 'Unix timestamp in seconds of the last successful deactivate operation',
   registers: [register],
 })
 
-// Task counter
 const taskCounter = new client.Counter({
   name: 'amaci_operator_tasks_total',
   help: 'Total number of tasks processed',
@@ -54,7 +63,14 @@ const taskCounter = new client.Counter({
   registers: [register],
 })
 
-// Round status metrics
+const taskCompletedDuration = new client.Histogram({
+  name: 'amaci_operator_task_completed_duration_seconds',
+  help: 'Completed task duration in seconds',
+  labelNames: ['task_type', 'status', 'circuit_power'],
+  buckets: [1, 5, 10, 30, 60, 120, 300, 600, 1200, 1800, 3600, 7200],
+  registers: [register],
+})
+
 const roundStatusGauge = new client.Gauge({
   name: 'amaci_operator_rounds_status',
   help: 'Number of rounds in each status',
@@ -62,22 +78,26 @@ const roundStatusGauge = new client.Gauge({
   registers: [register],
 })
 
-// Active rounds metrics
 const activeRoundsGauge = new client.Gauge({
   name: 'amaci_operator_active_rounds',
-  help: 'Currently active rounds in the system',
-  labelNames: ['round_id', 'period'],
+  help: 'Currently active rounds grouped by period and circuit power',
+  labelNames: ['period', 'circuit_power'],
   registers: [register],
 })
 
-// Completed rounds counter
 const completedRoundsCounter = new client.Counter({
   name: 'amaci_operator_completed_rounds_total',
   help: 'Total number of successfully completed rounds',
   registers: [register],
 })
 
-// Prover metrics: active children and jobs
+const roundsCounter = new client.Counter({
+  name: 'amaci_operator_rounds_total',
+  help: 'Total number of rounds observed by terminal status and circuit power',
+  labelNames: ['circuit_power', 'status'],
+  registers: [register],
+})
+
 const proverActiveChildren = new client.Gauge({
   name: 'amaci_prover_active_children',
   help: 'Number of active prover child processes',
@@ -91,17 +111,14 @@ const proverJobsTotal = new client.Counter({
   registers: [register],
 })
 
-// Prover phase duration (proof generation time per phase)
 const proverPhaseDuration = new client.Histogram({
   name: 'amaci_prover_phase_duration_seconds',
-  help: 'Time spent generating proofs per phase (deactivate/msg/tally)',
-  labelNames: ['phase', 'round_id'],
-  // Buckets in seconds
-  buckets: [1, 2, 5, 10, 20, 30, 60, 120, 300, 600],
+  help: 'Time spent generating proofs per phase and circuit power',
+  labelNames: ['phase', 'circuit_power'],
+  buckets: [1, 2, 5, 10, 20, 30, 60, 120, 300, 600, 1200, 1800, 3600, 7200],
   registers: [register],
 })
 
-// Active tasks gauge
 const activeTasksGauge = new client.Gauge({
   name: 'amaci_operator_active_tasks',
   help: 'Number of active tasks by type',
@@ -109,7 +126,6 @@ const activeTasksGauge = new client.Gauge({
   registers: [register],
 })
 
-// new: Inspect task metrics
 const inspectedTasksGauge = new client.Gauge({
   name: 'amaci_operator_inspected_tasks',
   help: 'Number of tasks found during inspection',
@@ -117,7 +133,6 @@ const inspectedTasksGauge = new client.Gauge({
   registers: [register],
 })
 
-// Operator current state gauge
 const operatorStateGauge = new client.Gauge({
   name: 'amaci_operator_current_state',
   help: 'Current state of the operator (1 = active, 0 = inactive)',
@@ -125,15 +140,13 @@ const operatorStateGauge = new client.Gauge({
   registers: [register],
 })
 
-// Task duration gauge
 const taskDurationGauge = new client.Gauge({
   name: 'amaci_operator_task_duration_seconds',
-  help: 'Duration of current running tasks in seconds',
-  labelNames: ['task_type', 'round_id'],
+  help: 'Maximum duration of currently running tasks in seconds',
+  labelNames: ['task_type', 'circuit_power'],
   registers: [register],
 })
 
-// API retry exhausted counter
 const apiRetryExhaustedCounter = new client.Counter({
   name: 'amaci_operator_api_retry_exhausted_total',
   help: 'Total number of API calls that exhausted retries',
@@ -141,293 +154,199 @@ const apiRetryExhaustedCounter = new client.Counter({
   registers: [register],
 })
 
-// Task start times map
-const taskStartTimes = new Map<string, Map<string, number>>()
+const proofBatchesCounter = new client.Counter({
+  name: 'amaci_operator_proof_batches_total',
+  help: 'Total number of generated proof batches',
+  labelNames: ['phase', 'circuit_power'],
+  registers: [register],
+})
 
-// update the operator uptime instead of the binary status
-setInterval(() => {
-  // calculate the operator uptime (seconds)
-  const uptimeSeconds = (Date.now() - startTime) / 1000
-  // update the uptime metric
-  operatorUptime.set(uptimeSeconds)
-}, 10000)
+const proofItemsCounter = new client.Counter({
+  name: 'amaci_operator_proof_items_total',
+  help: 'Total number of proof items generated',
+  labelNames: ['phase', 'circuit_power'],
+  registers: [register],
+})
 
-/**
- * Record a successful task execution
- * @param taskType Task type
- */
-export const recordTaskSuccess = (taskType: string) => {
-  taskCounter.inc({ task_type: taskType, status: 'success' })
+const proofBatchDuration = new client.Histogram({
+  name: 'amaci_operator_proof_batch_duration_seconds',
+  help: 'Duration of proof batch generation in seconds',
+  labelNames: ['phase', 'circuit_power'],
+  buckets: [0.1, 0.5, 1, 2, 5, 10, 20, 30, 60, 120, 300, 600, 1200],
+  registers: [register],
+})
 
-  // Update last successful timestamp
-  const now = Date.now()
-  switch (taskType) {
-    case 'inspect':
-      lastSuccessfulInspection.set(now)
-      break
-    case 'tally':
-      lastSuccessfulTally.set(now)
-      break
-    case 'deactivate':
-      lastSuccessfulDeactivate.set(now)
-      break
-  }
-}
+const submitBatchesCounter = new client.Counter({
+  name: 'amaci_operator_submit_batches_total',
+  help: 'Total number of submitted on-chain proof batches',
+  labelNames: ['phase', 'circuit_power', 'mode'],
+  registers: [register],
+})
 
-/**
- * Record a failed task execution
- * @param taskType Task type
- */
-export const recordTaskFailure = (taskType: string) => {
-  taskCounter.inc({ task_type: taskType, status: 'failed' })
-}
+const submitItemsCounter = new client.Counter({
+  name: 'amaci_operator_submit_items_total',
+  help: 'Total number of on-chain submitted proof items',
+  labelNames: ['phase', 'circuit_power', 'mode'],
+  registers: [register],
+})
 
-/**
- * Update round status statistics
- * @param statusCounts Status count object
- */
-export const updateRoundStatus = (statusCounts: Record<string, number>) => {
-  // Reset all metrics
-  roundStatusGauge.reset()
+const submitBatchDuration = new client.Histogram({
+  name: 'amaci_operator_submit_batch_duration_seconds',
+  help: 'Duration of on-chain batch submissions in seconds',
+  labelNames: ['phase', 'circuit_power', 'mode'],
+  buckets: [0.1, 0.5, 1, 2, 5, 10, 20, 30, 60, 120, 300, 600],
+  registers: [register],
+})
 
-  // Set new values
-  Object.entries(statusCounts).forEach(([status, count]) => {
-    roundStatusGauge.set({ status }, count)
-  })
-}
+const roundStageDuration = new client.Histogram({
+  name: 'amaci_operator_round_stage_duration_seconds',
+  help: 'Round stage durations in seconds by stage and circuit power',
+  labelNames: ['stage', 'circuit_power'],
+  buckets: [0.1, 0.5, 1, 2, 5, 10, 20, 30, 60, 120, 300, 600, 1200, 3600, 7200],
+  registers: [register],
+})
 
-/**
- * Update active round list
- * @param activeRounds Active round list, containing id and period
- */
-export const updateActiveRounds = (
-  activeRounds: Array<{ id: string; period: string }>,
-) => {
-  // Reset all active round metrics
-  activeRoundsGauge.reset()
-  // Set each active round
-  activeRounds.forEach((round) => {
-    activeRoundsGauge.set({ round_id: round.id, period: round.period }, 1)
-  })
-}
+const cacheCounter = new client.Counter({
+  name: 'amaci_operator_cache_total',
+  help: 'Cache hits and misses by phase and circuit power',
+  labelNames: ['phase', 'circuit_power', 'result'],
+  registers: [register],
+})
 
-/**
- * Record a round completion
- * @param roundId Completed round ID
- */
-export const recordRoundCompletion = (roundId: string) => {
-  // Increment completed round counter
-  completedRoundsCounter.inc()
+const externalRequestsCounter = new client.Counter({
+  name: 'amaci_operator_external_requests_total',
+  help: 'Total external requests by dependency, operation, and status',
+  labelNames: ['dependency', 'operation', 'status'],
+  registers: [register],
+})
 
-  // 可以在这里添加日志记录
-  info(`Round ${roundId} successfully completed`, 'METRICS')
-}
+const externalRequestDuration = new client.Histogram({
+  name: 'amaci_operator_external_request_duration_seconds',
+  help: 'External request duration in seconds by dependency and operation',
+  labelNames: ['dependency', 'operation'],
+  buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 30, 60, 120],
+  registers: [register],
+})
 
-/** Prover metrics helpers */
-export const incProverActiveChildren = () => {
-  proverActiveChildren.inc()
-}
+const externalRetriesCounter = new client.Counter({
+  name: 'amaci_operator_external_retries_total',
+  help: 'Total number of external request retries',
+  labelNames: ['dependency', 'operation'],
+  registers: [register],
+})
 
-export const decProverActiveChildren = () => {
-  // Guard against going below zero
-  try {
-    proverActiveChildren.dec()
-  } catch {}
-}
+const externalRetryExhaustedCounter = new client.Counter({
+  name: 'amaci_operator_external_retry_exhausted_total',
+  help: 'Total number of external requests that exhausted retries',
+  labelNames: ['dependency', 'operation'],
+  registers: [register],
+})
 
-export const incProverJobs = (count: number, phase: string = 'unknown') => {
-  if (count > 0) proverJobsTotal.inc({ phase }, count)
-}
-
-/** Record prover phase duration (in seconds) */
-export const recordProverPhaseDuration = (
-  roundId: string,
-  phase: string,
-  seconds: number,
-) => {
-  if (seconds >= 0) {
-    proverPhaseDuration.labels(phase, roundId).observe(seconds)
-    info(
-      `Prover phase ${phase} took ${seconds.toFixed(2)}s for round ${roundId}`,
-      'METRICS',
-    )
-  }
-}
-
-// Total children in the pool (long-lived)
 const proverPoolSize = new client.Gauge({
   name: 'amaci_prover_pool_children',
   help: 'Number of child processes in the prover pool',
   registers: [register],
 })
 
-export const setProverPoolSize = (size: number) => {
-  proverPoolSize.set(size)
+const taskRuntimes = new Map<string, Map<string, TaskRuntime>>()
+
+function sanitizeLabelValue(value: string | undefined, fallback: string) {
+  const normalized = (value || '').trim()
+  return normalized ? normalized : fallback
 }
 
-/**
- * Record task start
- * @param taskType Task type
- * @param roundId Round ID
- */
-export const recordTaskStart = (taskType: string, roundId: string) => {
-  // Metrics: Update operator state - ensure the status is updated to the current task type
-  updateOperatorState(taskType)
+function taskCircuitPower(runtime?: TaskRuntime) {
+  return sanitizeLabelValue(runtime?.circuitPower, DEFAULT_CIRCUIT_POWER)
+}
 
-  // Record start time
+function getTaskRuntime(taskType: string, roundId: string) {
+  return taskRuntimes.get(taskType)?.get(roundId)
+}
+
+function observeTaskCompletion(
+  taskType: string,
+  roundId: string,
+  status: 'success' | 'failed',
+) {
+  const runtime = getTaskRuntime(taskType, roundId)
+  if (!runtime || runtime.completionRecorded) return
+
+  const durationSeconds = Math.max(0, (Date.now() - runtime.startTime) / 1000)
+  taskCompletedDuration.observe(
+    {
+      task_type: taskType,
+      status,
+      circuit_power: taskCircuitPower(runtime),
+    },
+    durationSeconds,
+  )
+  runtime.completionRecorded = true
+}
+
+function refreshTaskGauges() {
+  activeTasksGauge.reset()
+  taskDurationGauge.reset()
+
+  const activeTaskCounts = new Map<string, number>()
+  const runningDurationByKey = new Map<string, number>()
   const now = Date.now()
 
-  if (!taskStartTimes.has(taskType)) {
-    taskStartTimes.set(taskType, new Map())
+  for (const [taskType, taskMap] of taskRuntimes.entries()) {
+    if (taskType !== 'inspect') {
+      activeTaskCounts.set(taskType, taskMap.size)
+    }
+
+    for (const runtime of taskMap.values()) {
+      if (taskType === 'inspect') continue
+      const durationSeconds = Math.max(0, (now - runtime.startTime) / 1000)
+      const circuitPower = taskCircuitPower(runtime)
+      const key = `${taskType}|${circuitPower}`
+      const previous = runningDurationByKey.get(key)
+      if (previous == null || durationSeconds > previous) {
+        runningDurationByKey.set(key, durationSeconds)
+      }
+    }
   }
 
-  const taskMap = taskStartTimes.get(taskType)!
-  taskMap.set(roundId, now)
-
-  // Metrics: Only increase the active tasks count and track the duration for non-inspect tasks
-  if (taskType !== 'inspect') {
-    // Increment active tasks count
-    activeTasksGauge.inc({ task_type: taskType })
-
-    // Start tracking task duration
-    startTrackingTaskDuration(taskType, roundId)
+  for (const [taskType, count] of activeTaskCounts.entries()) {
+    activeTasksGauge.set({ task_type: taskType }, count)
   }
 
-  // Add log for debugging
-  info(
-    `Task ${taskType} started for round ${roundId}. Operator state updated to ${taskType}.`,
-    'METRICS',
-  )
+  for (const [key, durationSeconds] of runningDurationByKey.entries()) {
+    const [taskType, circuitPower] = key.split('|')
+    taskDurationGauge.set(
+      { task_type: taskType, circuit_power: circuitPower },
+      durationSeconds,
+    )
+  }
 }
 
-/**
- * Record task end
- * @param taskType Task type
- * @param roundId Round ID
- */
-export const recordTaskEnd = (taskType: string, roundId: string) => {
-  // Remove task record
-  if (taskStartTimes.has(taskType)) {
-    const taskMap = taskStartTimes.get(taskType)!
-    taskMap.delete(roundId)
-  }
+function inferExternalLabels(context: string): ExternalLabels {
+  const raw = sanitizeLabelValue(context, 'unknown')
+  const lower = raw.toLowerCase()
 
-  // Metrics: Only decrease the active tasks count and delete the duration for non-inspect tasks
-  if (taskType !== 'inspect') {
-    // Decrement active tasks count
-    activeTasksGauge.dec({ task_type: taskType })
-
-    // Metrics: Completely delete the duration metric for this task, not just set to 0
-    taskDurationGauge.remove({ task_type: taskType, round_id: roundId })
-  }
-
-  // Check if all tasks are empty
-  let allTasksEmpty = true
-  let hasHigherPriorityTask = false
-
-  // Metrics: Check if there is a higher priority task running
-  // Priority: tally > deactivate > inspect
-  if (taskStartTimes.has('tally') && taskStartTimes.get('tally')!.size > 0) {
-    hasHigherPriorityTask = true
-    updateOperatorState('tally')
-  } else if (
-    taskStartTimes.has('deactivate') &&
-    taskStartTimes.get('deactivate')!.size > 0
+  let dependency: ExternalLabels['dependency'] = 'unknown'
+  if (lower.includes('indexer')) dependency = 'indexer'
+  else if (
+    lower.includes('rpc') ||
+    lower.includes('contract') ||
+    lower.includes('registry') ||
+    lower.includes('balance')
   ) {
-    hasHigherPriorityTask = true
-    updateOperatorState('deactivate')
-  } else {
-    // Metrics: Default back to inspect state, not idle
-    updateOperatorState('inspect')
+    dependency = 'rpc'
+  }
+
+  const operation = lower
+    .replace(/^(indexer|rpc|contract|registry|balance)[-_]?/, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+
+  return {
+    dependency,
+    operation: operation || 'unknown',
   }
 }
 
-/**
- * Update operator state, showing only one state at a time
- * @param currentState Current state
- */
-export const updateOperatorState = (currentState: string) => {
-  const allStates = ['inspect', 'tally', 'deactivate']
-
-  allStates.forEach((state) => {
-    if (state === currentState) {
-      operatorStateGauge.set({ state }, 1)
-    } else {
-      operatorStateGauge.set({ state }, 0)
-    }
-  })
-}
-
-/**
- * Start tracking task duration
- * @param taskType Task type
- * @param roundId Round ID
- */
-const startTrackingTaskDuration = (taskType: string, roundId: string) => {
-  // Update duration every second
-  const intervalId = setInterval(() => {
-    // Check if task is still running
-    if (
-      taskStartTimes.has(taskType) &&
-      taskStartTimes.get(taskType)!.has(roundId)
-    ) {
-      const startTime = taskStartTimes.get(taskType)!.get(roundId)!
-      const durationSeconds = (Date.now() - startTime) / 1000
-
-      taskDurationGauge.set(
-        { task_type: taskType, round_id: roundId },
-        durationSeconds,
-      )
-    } else {
-      // If task no longer exists, clear timer
-      clearInterval(intervalId)
-    }
-  }, 1000)
-}
-
-/**
- * Get current active tasks count
- */
-export const updateActiveTasksCount = () => {
-  // Reset active tasks count
-  activeTasksGauge.reset()
-
-  // Count active tasks for each type
-  for (const [taskType, taskMap] of taskStartTimes.entries()) {
-    activeTasksGauge.set({ task_type: taskType }, taskMap.size)
-  }
-}
-
-/**
- * Update the number of tasks found during inspection
- * @param taskCounts The mapping of task types and their counts
- */
-export const updateInspectedTasksCount = (
-  taskCounts: Record<string, number>,
-) => {
-  // Reset the inspected tasks count
-  inspectedTasksGauge.reset()
-
-  Object.entries(taskCounts).forEach(([taskType, count]) => {
-    inspectedTasksGauge.set({ task_type: taskType }, count)
-  })
-}
-
-/**
- * Update operator balance metrics
- * @param balance Current operator balance in DORA
- */
-export const updateOperatorBalance = (balance: number) => {
-  operatorBalanceGauge.set(balance)
-
-  // Add log for debugging
-  info(`Updated operator balance metrics: ${balance} DORA`, 'METRICS')
-}
-
-/**
- * Record an API retry exhaustion
- * @param context Context label for the API call
- */
 const normalizeRetryContext = (context: string) => {
   const value = (context || '').toLowerCase()
   if (!value) return 'unknown'
@@ -443,43 +362,333 @@ const normalizeRetryContext = (context: string) => {
   return 'unknown'
 }
 
-export const recordApiRetryExhausted = (context: string) => {
-  apiRetryExhaustedCounter.inc({ context: normalizeRetryContext(context) })
+setInterval(() => {
+  operatorUptime.set((Date.now() - startTime) / 1000)
+  refreshTaskGauges()
+}, 10000)
+
+export const recordTaskSuccess = (taskType: string, roundId: string = 'global') => {
+  taskCounter.inc({ task_type: taskType, status: 'success' })
+  observeTaskCompletion(taskType, roundId, 'success')
+
+  const nowSeconds = Date.now() / 1000
+  switch (taskType) {
+    case 'inspect':
+      lastSuccessfulInspection.set(nowSeconds)
+      break
+    case 'tally':
+      lastSuccessfulTally.set(nowSeconds)
+      break
+    case 'deactivate':
+      lastSuccessfulDeactivate.set(nowSeconds)
+      break
+  }
 }
 
-/**
- * Update operator status
- * @param isUp Whether the operator is up (true) or down (false)
- * @deprecated Use the uptime metric instead of binary up/down status
- */
+export const recordTaskFailure = (taskType: string, roundId: string = 'global') => {
+  taskCounter.inc({ task_type: taskType, status: 'failed' })
+  observeTaskCompletion(taskType, roundId, 'failed')
+}
+
+export const updateRoundStatus = (statusCounts: Record<string, number>) => {
+  roundStatusGauge.reset()
+  Object.entries(statusCounts).forEach(([status, count]) => {
+    roundStatusGauge.set({ status }, count)
+  })
+}
+
+export const updateActiveRounds = (
+  activeRounds: Array<{ id?: string; period: string; circuitPower?: string }>,
+) => {
+  activeRoundsGauge.reset()
+
+  const counts = new Map<string, number>()
+  for (const round of activeRounds) {
+    const period = sanitizeLabelValue(round.period, 'unknown')
+    const circuitPower = sanitizeLabelValue(
+      round.circuitPower,
+      DEFAULT_CIRCUIT_POWER,
+    )
+    const key = `${period}|${circuitPower}`
+    counts.set(key, (counts.get(key) || 0) + 1)
+  }
+
+  for (const [key, count] of counts.entries()) {
+    const [period, circuitPower] = key.split('|')
+    activeRoundsGauge.set({ period, circuit_power: circuitPower }, count)
+  }
+}
+
+export const recordRoundCompletion = (
+  roundId: string,
+  circuitPower: string = DEFAULT_CIRCUIT_POWER,
+) => {
+  completedRoundsCounter.inc()
+  roundsCounter.inc({
+    circuit_power: sanitizeLabelValue(circuitPower, DEFAULT_CIRCUIT_POWER),
+    status: 'completed',
+  })
+  info(`Round ${roundId} successfully completed`, 'METRICS')
+}
+
+export const incProverActiveChildren = () => {
+  proverActiveChildren.inc()
+}
+
+export const decProverActiveChildren = () => {
+  try {
+    proverActiveChildren.dec()
+  } catch {}
+}
+
+export const incProverJobs = (count: number, phase: string = 'unknown') => {
+  if (count > 0) proverJobsTotal.inc({ phase }, count)
+}
+
+export const recordProverPhaseDuration = (
+  roundId: string,
+  phase: string,
+  seconds: number,
+  circuitPower: string = DEFAULT_CIRCUIT_POWER,
+) => {
+  if (seconds < 0) return
+
+  const normalizedCircuitPower = sanitizeLabelValue(
+    circuitPower,
+    DEFAULT_CIRCUIT_POWER,
+  )
+  proverPhaseDuration.observe(
+    { phase, circuit_power: normalizedCircuitPower },
+    seconds,
+  )
+  roundStageDuration.observe(
+    { stage: `${phase}_prove`, circuit_power: normalizedCircuitPower },
+    seconds,
+  )
+  info(
+    `Prover phase ${phase} took ${seconds.toFixed(2)}s for round ${roundId}`,
+    'METRICS',
+  )
+}
+
+export const setProverPoolSize = (size: number) => {
+  proverPoolSize.set(size)
+}
+
+export const recordTaskStart = (
+  taskType: string,
+  roundId: string,
+  labels: TaskLabels = {},
+) => {
+  updateOperatorState(taskType)
+
+  if (!taskRuntimes.has(taskType)) {
+    taskRuntimes.set(taskType, new Map())
+  }
+
+  taskRuntimes.get(taskType)!.set(roundId, {
+    startTime: Date.now(),
+    circuitPower: sanitizeLabelValue(
+      labels.circuitPower,
+      DEFAULT_CIRCUIT_POWER,
+    ),
+    completionRecorded: false,
+  })
+
+  refreshTaskGauges()
+
+  info(
+    `Task ${taskType} started for round ${roundId}. Operator state updated to ${taskType}.`,
+    'METRICS',
+  )
+}
+
+export const updateTaskContext = (
+  taskType: string,
+  roundId: string,
+  labels: TaskLabels,
+) => {
+  const runtime = getTaskRuntime(taskType, roundId)
+  if (!runtime) return
+
+  if (labels.circuitPower) {
+    runtime.circuitPower = sanitizeLabelValue(
+      labels.circuitPower,
+      DEFAULT_CIRCUIT_POWER,
+    )
+  }
+
+  refreshTaskGauges()
+}
+
+export const recordTaskEnd = (taskType: string, roundId: string) => {
+  if (taskRuntimes.has(taskType)) {
+    taskRuntimes.get(taskType)!.delete(roundId)
+  }
+
+  refreshTaskGauges()
+
+  if (taskRuntimes.has('tally') && taskRuntimes.get('tally')!.size > 0) {
+    updateOperatorState('tally')
+  } else if (
+    taskRuntimes.has('deactivate') &&
+    taskRuntimes.get('deactivate')!.size > 0
+  ) {
+    updateOperatorState('deactivate')
+  } else {
+    updateOperatorState('inspect')
+  }
+}
+
+export const updateActiveTasksCount = () => {
+  refreshTaskGauges()
+}
+
+export const updateOperatorState = (currentState: string) => {
+  const allStates = ['inspect', 'tally', 'deactivate']
+
+  for (const state of allStates) {
+    operatorStateGauge.set({ state }, state === currentState ? 1 : 0)
+  }
+}
+
+export const updateInspectedTasksCount = (
+  taskCounts: Record<string, number>,
+) => {
+  inspectedTasksGauge.reset()
+  Object.entries(taskCounts).forEach(([taskType, count]) => {
+    inspectedTasksGauge.set({ task_type: taskType }, count)
+  })
+}
+
+export const updateOperatorBalance = (balance: number) => {
+  operatorBalanceGauge.set(balance)
+  info(`Updated operator balance metrics: ${balance} DORA`, 'METRICS')
+}
+
+export const recordProofBatch = (
+  phase: string,
+  circuitPower: string,
+  itemCount: number,
+  durationSeconds: number,
+) => {
+  const normalizedCircuitPower = sanitizeLabelValue(
+    circuitPower,
+    DEFAULT_CIRCUIT_POWER,
+  )
+  proofBatchesCounter.inc({ phase, circuit_power: normalizedCircuitPower })
+  if (itemCount > 0) {
+    proofItemsCounter.inc(
+      { phase, circuit_power: normalizedCircuitPower },
+      itemCount,
+    )
+  }
+  proofBatchDuration.observe(
+    { phase, circuit_power: normalizedCircuitPower },
+    Math.max(0, durationSeconds),
+  )
+}
+
+export const recordSubmitBatch = (
+  phase: string,
+  circuitPower: string,
+  mode: SubmissionMode,
+  itemCount: number,
+  durationSeconds: number,
+) => {
+  const normalizedCircuitPower = sanitizeLabelValue(
+    circuitPower,
+    DEFAULT_CIRCUIT_POWER,
+  )
+  submitBatchesCounter.inc({
+    phase,
+    circuit_power: normalizedCircuitPower,
+    mode,
+  })
+  if (itemCount > 0) {
+    submitItemsCounter.inc(
+      {
+        phase,
+        circuit_power: normalizedCircuitPower,
+        mode,
+      },
+      itemCount,
+    )
+  }
+  submitBatchDuration.observe(
+    {
+      phase,
+      circuit_power: normalizedCircuitPower,
+      mode,
+    },
+    Math.max(0, durationSeconds),
+  )
+}
+
+export const recordRoundStageDuration = (
+  stage: string,
+  circuitPower: string,
+  seconds: number,
+) => {
+  roundStageDuration.observe(
+    {
+      stage,
+      circuit_power: sanitizeLabelValue(circuitPower, DEFAULT_CIRCUIT_POWER),
+    },
+    Math.max(0, seconds),
+  )
+}
+
+export const recordCacheResult = (
+  phase: string,
+  circuitPower: string,
+  result: 'hit' | 'miss',
+) => {
+  cacheCounter.inc({
+    phase,
+    circuit_power: sanitizeLabelValue(circuitPower, DEFAULT_CIRCUIT_POWER),
+    result,
+  })
+}
+
+export const recordExternalRequest = (
+  context: string,
+  durationSeconds: number,
+  status: 'success' | 'error',
+) => {
+  const { dependency, operation } = inferExternalLabels(context)
+  externalRequestsCounter.inc({ dependency, operation, status })
+  externalRequestDuration.observe({ dependency, operation }, durationSeconds)
+}
+
+export const recordExternalRetry = (context: string) => {
+  const { dependency, operation } = inferExternalLabels(context)
+  externalRetriesCounter.inc({ dependency, operation })
+}
+
+export const recordApiRetryExhausted = (context: string) => {
+  const normalizedContext = normalizeRetryContext(context)
+  apiRetryExhaustedCounter.inc({ context: normalizedContext })
+
+  const { dependency, operation } = inferExternalLabels(context)
+  externalRetryExhaustedCounter.inc({ dependency, operation })
+}
+
 export const updateOperatorStatus = (isUp: boolean) => {
-  // this function now only records logs, no longer sets the binary status
-  // the uptime metric will be updated automatically, no need to set manually
   debug(
     `Operator status tracking: ${isUp ? 'Running' : 'Shutting down'}`,
     'METRICS',
   )
 
-  // if the service is about to shut down, record the final uptime
   if (!isUp) {
-    const finalUptimeSeconds = (Date.now() - startTime) / 1000
-    operatorUptime.set(finalUptimeSeconds)
-    debug(
-      `Final operator uptime: ${finalUptimeSeconds.toFixed(2)} seconds`,
-      'METRICS',
-    )
+    operatorUptime.set((Date.now() - startTime) / 1000)
   }
 }
 
-/**
- * Start metrics HTTP server
- * @param port Port to listen on
- */
 export const startMetricsServer = (port: number = 9090) => {
   const app = express()
 
-  // Expose metrics endpoint
-  app.get('/metrics', async (req, res) => {
+  app.get('/metrics', async (_req, res) => {
     try {
       res.set('Content-Type', register.contentType)
       res.end(await register.metrics())
@@ -488,12 +697,10 @@ export const startMetricsServer = (port: number = 9090) => {
     }
   })
 
-  // Health check endpoint
-  app.get('/health', (req, res) => {
+  app.get('/health', (_req, res) => {
     res.status(200).send('OK')
   })
 
-  // Start the server
   app.listen(port, () => {
     info(`Metrics server started on port ${port}`, 'METRICS')
   })

@@ -169,6 +169,7 @@ export const inspect: TaskAct = async () => {
     const activeRounds = rounds.map((r) => ({
       id: r.id,
       period: r.period,
+      circuitPower: r.circuitPower,
     }))
 
     // Metrics: update the round status
@@ -176,7 +177,7 @@ export const inspect: TaskAct = async () => {
     // Metrics: update the active rounds
     updateActiveRounds(activeRounds)
     // Metrics: record the inspection success
-    recordTaskSuccess('inspect')
+    recordTaskSuccess('inspect', 'global')
     // Metrics: record the inspection end
     recordTaskEnd('inspect', 'global')
 
@@ -189,7 +190,7 @@ export const inspect: TaskAct = async () => {
       `Inspection failed after ${duration}ms: ${err.message || String(err)}`,
       'INSPECT',
     )
-    recordTaskFailure('inspect')
+    recordTaskFailure('inspect', 'global')
     // 使用保存的操作上下文
     endOperation('inspect', false, operationContext)
     recordTaskEnd('inspect', 'global')

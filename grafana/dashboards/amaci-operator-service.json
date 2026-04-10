@@ -18,30 +18,16 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 37,
+  "id": null,
   "links": [],
-  "liveNow": false,
   "panels": [
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
           "unit": "s"
         },
         "overrides": []
@@ -52,35 +38,18 @@
         "x": 0,
         "y": 0
       },
-      "id": 2,
+      "id": 1,
       "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
         "reduceOptions": {
           "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
-        },
-        "showPercentChange": false,
-        "text": {},
-        "textMode": "auto",
-        "wideLayout": true
+        }
       },
-      "pluginVersion": "10.2.3",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "editorMode": "code",
           "expr": "amaci_operator_uptime_seconds{job=\"$job\"}",
-          "interval": "",
-          "legendFormat": "",
-          "range": true,
+          "legendFormat": "uptime",
           "refId": "A"
         }
       ],
@@ -90,14 +59,10 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "prometheus"
       },
-      "description": "",
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
           "mappings": [
             {
               "options": {
@@ -110,831 +75,318 @@
               },
               "type": "value"
             }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "gray",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          }
+          ]
         },
         "overrides": []
       },
       "gridPos": {
         "h": 6,
-        "w": 7,
+        "w": 5,
         "x": 4,
         "y": 0
       },
-      "id": 14,
+      "id": 2,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
+        "orientation": "horizontal",
         "reduceOptions": {
           "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
-        "showPercentChange": false,
-        "text": {},
-        "textMode": "auto",
+        "textMode": "value_and_name",
         "wideLayout": true
       },
-      "pluginVersion": "10.2.3",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "editorMode": "code",
           "expr": "amaci_operator_current_state{state=\"inspect\", job=\"$job\"}",
-          "interval": "",
           "legendFormat": "Inspect",
-          "range": true,
           "refId": "A"
         },
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "amaci_operator_current_state{state=\"tally\", job=~\"$job\"}",
-          "interval": "",
+          "expr": "amaci_operator_current_state{state=\"tally\", job=\"$job\"}",
           "legendFormat": "Tally",
           "refId": "B"
         },
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "amaci_operator_current_state{state=\"deactivate\", job=~\"$job\"}",
-          "interval": "",
+          "expr": "amaci_operator_current_state{state=\"deactivate\", job=\"$job\"}",
           "legendFormat": "Deactivate",
           "refId": "C"
         }
       ],
-      "title": "Current status",
+      "title": "Current Status",
       "type": "stat"
     },
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
           "mappings": [
             {
               "options": {
                 "match": "null",
                 "result": {
-                  "color": "green",
-                  "index": 0,
-                  "text": "0"
+                  "text": "Never"
                 }
               },
               "type": "special"
             }
           ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
+          "unit": "s"
         },
         "overrides": []
       },
       "gridPos": {
         "h": 6,
-        "w": 7,
-        "x": 11,
+        "w": 5,
+        "x": 9,
         "y": 0
       },
-      "id": 4,
+      "id": 3,
       "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
         "reduceOptions": {
           "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
-        },
-        "textMode": "auto",
-        "wideLayout": true
+        }
       },
-      "pluginVersion": "10.2.3",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "editorMode": "code",
-          "expr": "sum(amaci_operator_tasks_total{job=\"$job\", task_type=\"deactivate\"}) by (status)",
-          "interval": "",
-          "legendFormat": "deactivate - {{status}}",
-          "range": true,
+          "expr": "(time() - amaci_operator_last_successful_inspection_timestamp_seconds{job=\"$job\"}) unless (amaci_operator_last_successful_inspection_timestamp_seconds{job=\"$job\"} == 0)",
+          "legendFormat": "inspect_age",
           "refId": "A"
         }
       ],
-      "title": "Processed Deactivate Tasks",
+      "title": "Inspect Success Age",
       "type": "stat"
     },
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
           "mappings": [
             {
               "options": {
                 "match": "null",
                 "result": {
-                  "color": "green",
-                  "index": 0,
-                  "text": "0"
+                  "text": "Never"
                 }
               },
               "type": "special"
             }
           ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
+          "unit": "s"
         },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 5,
+        "x": 14,
+        "y": 0
+      },
+      "id": 4,
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "expr": "(time() - amaci_operator_last_successful_tally_timestamp_seconds{job=\"$job\"}) unless (amaci_operator_last_successful_tally_timestamp_seconds{job=\"$job\"} == 0)",
+          "legendFormat": "tally_age",
+          "refId": "A"
+        }
+      ],
+      "title": "Tally Success Age",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "DORA"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 5,
+        "x": 19,
+        "y": 0
+      },
+      "id": 5,
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "expr": "amaci_operator_balance_dora{job=\"$job\"}",
+          "legendFormat": "balance",
+          "refId": "A"
+        }
+      ],
+      "title": "Operator Balance",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {},
         "overrides": []
       },
       "gridPos": {
         "h": 6,
         "w": 6,
-        "x": 18,
-        "y": 0
-      },
-      "id": 17,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "10.2.3",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "editorMode": "code",
-          "expr": "sum(amaci_operator_tasks_total{job=\"$job\", task_type=\"tally\"}) by (status) ",
-          "interval": "",
-          "legendFormat": "tally - {{status}}",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "Processed Tally Tasks",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "description": "",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "fieldMinMax": false,
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "DORA"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "amaci_operator_balance_dora"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "semi-dark-green",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 5,
         "x": 0,
         "y": 6
       },
-      "id": 19,
+      "id": 6,
       "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
         "reduceOptions": {
           "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
-        },
-        "textMode": "auto",
-        "wideLayout": true
+        }
       },
-      "pluginVersion": "10.2.3",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "editorMode": "code",
-          "expr": "amaci_operator_balance_dora{job=\"$job\"}",
-          "instant": false,
-          "interval": "",
-          "legendFormat": "__auto",
-          "range": true,
+          "expr": "sum(amaci_operator_tasks_total{job=\"$job\", status=\"failed\"}) by (task_type)",
+          "legendFormat": "{{task_type}}",
           "refId": "A"
         }
       ],
-      "title": "Operator balance",
-      "transformations": [],
+      "title": "Task Failures",
       "type": "stat"
     },
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "prometheus"
       },
       "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [
-            {
-              "options": {
-                "match": "null",
-                "result": {
-                  "color": "green",
-                  "index": 0,
-                  "text": "0"
-                }
-              },
-              "type": "special"
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
+        "defaults": {},
         "overrides": []
       },
       "gridPos": {
         "h": 6,
-        "w": 3,
-        "x": 5,
+        "w": 6,
+        "x": 6,
         "y": 6
       },
-      "id": 10,
+      "id": 7,
       "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
         "reduceOptions": {
           "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
-        },
-        "showPercentChange": false,
-        "text": {
-          "valueSize": 68
-        },
-        "textMode": "auto",
-        "wideLayout": true
+        }
       },
-      "pluginVersion": "10.2.3",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "disableTextWrap": false,
-          "editorMode": "code",
-          "expr": "amaci_operator_active_tasks{job=\"$job\", task_type=\"deactivate\"}",
-          "fullMetaSearch": false,
-          "includeNullMetadata": true,
-          "interval": "",
-          "legendFormat": "deactivate",
-          "range": true,
-          "refId": "A",
-          "useBackend": false
+          "expr": "sum(amaci_operator_rounds_status{job=\"$job\"}) by (status)",
+          "legendFormat": "{{status}}",
+          "refId": "A"
         }
       ],
-      "title": "Pending deactive tasks num",
+      "title": "Current Rounds Status",
       "type": "stat"
     },
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "prometheus"
       },
       "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [
-            {
-              "options": {
-                "match": "null",
-                "result": {
-                  "color": "green",
-                  "index": 0,
-                  "text": "0"
-                }
-              },
-              "type": "special"
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
+        "defaults": {},
         "overrides": []
       },
       "gridPos": {
         "h": 6,
-        "w": 3,
-        "x": 8,
-        "y": 6
-      },
-      "id": 18,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "text": {
-          "valueSize": 68
-        },
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "10.2.3",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "disableTextWrap": false,
-          "editorMode": "code",
-          "expr": "amaci_operator_active_tasks{job=\"$job\", task_type=\"tally\"}",
-          "fullMetaSearch": false,
-          "includeNullMetadata": true,
-          "interval": "",
-          "legendFormat": "deactivate",
-          "range": true,
-          "refId": "A",
-          "useBackend": false
-        }
-      ],
-      "title": "Pending tally tasks num",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 13,
-        "x": 11,
+        "w": 12,
+        "x": 12,
         "y": 6
       },
       "id": 8,
       "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "10.2.3",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "editorMode": "code",
-          "expr": "sum(amaci_operator_rounds_status{job=\"$job\"}) by (status)",
-          "interval": "",
-          "legendFormat": "{{status}}",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "Current rounds status",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "filterable": false,
-            "inspect": false
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 11,
-        "x": 0,
-        "y": 12
-      },
-      "id": 6,
-      "options": {
         "cellHeight": "sm",
         "footer": {
-          "countRows": false,
-          "fields": "",
-          "reducer": ["sum"],
           "show": false
         },
-        "showHeader": true,
-        "sortBy": []
+        "showHeader": true
       },
-      "pluginVersion": "10.2.3",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "editorMode": "code",
           "expr": "amaci_operator_active_rounds{job=\"$job\"}",
           "format": "table",
           "instant": true,
-          "interval": "",
-          "legendFormat": "",
           "refId": "A"
         }
       ],
-      "title": "Assigned rounds",
+      "title": "Assigned Rounds",
       "type": "table"
     },
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "prometheus"
       },
       "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "s"
-        },
-        "overrides": [
-          {
-            "__systemRef": "hideSeriesFrom",
-            "matcher": {
-              "id": "byNames",
-              "options": {
-                "mode": "exclude",
-                "names": [],
-                "prefix": "All except:",
-                "readOnly": true
-              }
-            },
-            "properties": [
-              {
-                "id": "custom.hideFrom",
-                "value": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": true
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 13,
-        "x": 11,
-        "y": 12
-      },
-      "id": 12,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "11.5.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "editorMode": "code",
-          "expr": "amaci_operator_task_duration_seconds{job=\"$job\"}",
-          "interval": "",
-          "legendFormat": "{{task_type}} - {{round_id}}",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "Duration of processing task",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [
-            {
-              "options": {
-                "match": "null",
-                "result": {
-                  "color": "green",
-                  "index": 0,
-                  "text": "0"
-                }
-              },
-              "type": "special"
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
+        "defaults": {},
         "overrides": []
       },
       "gridPos": {
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 20
+        "y": 12
       },
-      "id": 20,
+      "id": 9,
       "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
         },
-        "textMode": "auto",
-        "wideLayout": true
+        "showHeader": true
       },
-      "pluginVersion": "10.2.3",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "editorMode": "code",
-          "expr": "sum(amaci_operator_api_retry_exhausted_total{job=\"$job\"}) by (context)",
-          "interval": "",
-          "legendFormat": "{{context}}",
-          "range": true,
+          "expr": "amaci_operator_active_tasks{job=\"$job\"}",
+          "format": "table",
+          "instant": true,
           "refId": "A"
         }
       ],
-      "title": "API Retry Exhausted",
-      "type": "stat"
+      "title": "Active Tasks",
+      "type": "table"
     },
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [
-            {
-              "options": {
-                "match": "null",
-                "result": {
-                  "color": "green",
-                  "index": 0,
-                  "text": "0"
-                }
-              },
-              "type": "special"
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
+          "unit": "s"
         },
         "overrides": []
       },
@@ -942,48 +394,209 @@
         "h": 6,
         "w": 12,
         "x": 12,
-        "y": 20
+        "y": 12
       },
-      "id": 21,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "10.2.3",
+      "id": 10,
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "editorMode": "code",
-          "expr": "sum(amaci_operator_tasks_total{job=\"$job\", status=\"failed\"}) by (task_type)",
-          "interval": "",
-          "legendFormat": "{{task_type}}",
-          "range": true,
+          "expr": "amaci_operator_task_duration_seconds{job=\"$job\"}",
+          "legendFormat": "{{task_type}} / {{circuit_power}}",
           "refId": "A"
         }
       ],
-      "title": "Task Failures",
-      "type": "stat"
+      "title": "In-Flight Task Duration",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 18
+      },
+      "id": 11,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(amaci_operator_task_completed_duration_seconds_bucket{job=\"$job\"}[15m])) by (le, task_type, circuit_power))",
+          "legendFormat": "{{task_type}} / {{circuit_power}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Task Completed Duration P95",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 18
+      },
+      "id": 12,
+      "targets": [
+        {
+          "expr": "sum(rate(amaci_operator_proof_batches_total{job=\"$job\"}[15m])) by (phase, circuit_power)",
+          "legendFormat": "proof {{phase}} / {{circuit_power}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(amaci_operator_submit_batches_total{job=\"$job\"}[15m])) by (phase, circuit_power, mode)",
+          "legendFormat": "submit {{phase}} / {{circuit_power}} / {{mode}}",
+          "refId": "B"
+        }
+      ],
+      "title": "Proof / Submit Throughput",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 26
+      },
+      "id": 13,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(amaci_operator_external_request_duration_seconds_bucket{job=\"$job\"}[15m])) by (le, dependency, operation))",
+          "legendFormat": "{{dependency}} / {{operation}}",
+          "refId": "A"
+        }
+      ],
+      "title": "External Request Duration P95",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 26
+      },
+      "id": 14,
+      "targets": [
+        {
+          "expr": "sum(rate(amaci_operator_external_requests_total{job=\"$job\", status=\"error\"}[15m])) by (dependency, operation)",
+          "legendFormat": "{{dependency}} / {{operation}} errors",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(amaci_operator_external_retry_exhausted_total{job=\"$job\"}[15m])) by (dependency, operation)",
+          "legendFormat": "{{dependency}} / {{operation}} exhausted",
+          "refId": "B"
+        }
+      ],
+      "title": "External Errors and Retry Exhaustion",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 34
+      },
+      "id": 15,
+      "targets": [
+        {
+          "expr": "sum(rate(amaci_operator_cache_total{job=\"$job\", result=\"hit\"}[15m])) by (phase, circuit_power) / clamp_min(sum(rate(amaci_operator_cache_total{job=\"$job\"}[15m])) by (phase, circuit_power), 1)",
+          "legendFormat": "{{phase}} / {{circuit_power}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Cache Hit Ratio",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 34
+      },
+      "id": 16,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(amaci_operator_round_stage_duration_seconds_bucket{job=\"$job\"}[15m])) by (le, stage, circuit_power))",
+          "legendFormat": "{{stage}} / {{circuit_power}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Round Stage Duration P95",
+      "type": "timeseries"
     }
   ],
-  "refresh": "5s",
+  "refresh": "30s",
   "schemaVersion": 39,
-  "tags": [],
+  "style": "dark",
+  "tags": [
+    "amaci",
+    "operator",
+    "metrics-v2"
+  ],
   "templating": {
     "list": [
       {
-        "allValue": "",
         "current": {
           "selected": false,
           "text": "All",
@@ -991,9 +604,9 @@
         },
         "datasource": {
           "type": "prometheus",
-          "uid": "${DS_PROMETHEUS}"
+          "uid": "prometheus"
         },
-        "definition": "label_values(job)",
+        "definition": "label_values(up, job)",
         "hide": 0,
         "includeAll": true,
         "label": "Job",
@@ -1001,9 +614,8 @@
         "name": "job",
         "options": [],
         "query": {
-          "qryType": 1,
-          "query": "label_values(job)",
-          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+          "query": "label_values(up, job)",
+          "refId": "Prometheus-job-Variable-Query"
         },
         "refresh": 1,
         "regex": "^amaci.*",
@@ -1014,13 +626,13 @@
     ]
   },
   "time": {
-    "from": "now-15m",
+    "from": "now-6h",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "",
   "title": "AMACI Operator Monitor",
   "uid": "amaci-operator",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }
