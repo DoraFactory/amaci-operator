@@ -192,6 +192,10 @@ rpcEndpoint = "https://vota-rpc.dorafactory.org"
 
 The operator exposes Prometheus metrics at `http://localhost:3001/metrics`
 
+Prometheus alert rules are defined in [`prometheus-alerts.yml`](./prometheus-alerts.yml) and loaded automatically by the sample [`prometheus.yml`](./prometheus.yml).
+
+Grafana provisioning loads the operator dashboard from [`grafana/dashboards/amaci-operator-service.json`](./grafana/dashboards/amaci-operator-service.json) into the `aMACI Operator` folder.
+
 ### Health Check
 
 ```bash
