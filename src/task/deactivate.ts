@@ -17,7 +17,17 @@ import { fetchAllDeactivateLogs, fetchRound } from '../vota/indexer'
 import { proveMany } from '../prover/pool'
 import { describeProverRuntime } from '../prover/prove'
 import { loadProofCache, saveProofCache, buildInputsSignature } from '../storage/proofCache'
-import { recordProverPhaseDuration } from '../metrics'
+import {
+  recordCacheResult,
+  recordProofBatch,
+  recordProverPhaseDuration,
+  recordSubmitBatch,
+  recordTaskEnd,
+  recordTaskFailure,
+  recordTaskStart,
+  recordTaskSuccess,
+  updateTaskContext,
+} from '../metrics'
 import { Timer } from '../storage/timer'
 import {
   info,
@@ -28,9 +38,12 @@ import {
   endOperation,
   setCurrentRound,
 } from '../logger'
-import { recordTaskFailure, recordTaskSuccess, recordTaskStart, recordTaskEnd } from '../metrics'
 import { createSubmitter } from './submitter'
 import { parseMessageNumbers } from './messageParsing'
+import {
+  deriveCoordinatorPubKeyVariants,
+  resolveKeyGenerationModeForPubKey,
+} from '../lib/keypair'
 import {
   NetworkError,
   ContractError,
@@ -71,19 +84,59 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
       context: 'INDEXER-FETCH-ROUND',
       maxRetries: 3,
     })
-    info(`Current round period: ${maciRound.period}`, 'DEACTIVATE-TASK')
+    updateTaskContext('deactivate', id, { circuitPower: maciRound.circuitPower })
+    info(`Indexer round period: ${maciRound.period}`, 'DEACTIVATE-TASK')
 
     info('Start round deactivate', 'DEACTIVATE-TASK')
 
     const now = Date.now()
     const circuitConcurrency = getProverConcurrency(maciRound.circuitPower)
 
+    const params = maciParamsFromCircuitPower(maciRound.circuitPower)
+    const coordinatorPubKeys = deriveCoordinatorPubKeyVariants(
+      BigInt(process.env.COORDINATOR_PRI_KEY),
+    )
+    const keyGenerationMode = resolveKeyGenerationModeForPubKey(
+      coordinatorPubKeys,
+      [
+        BigInt(maciRound.coordinatorPubkeyX),
+        BigInt(maciRound.coordinatorPubkeyY),
+      ],
+    )
+    info(
+      `Resolved coordinator key generation mode: ${keyGenerationMode}`,
+      'DEACTIVATE-TASK',
+    )
+    const maciClient = await getContractSignerClient(id)
+    const [chainPeriod, processedDMsgCount, dmsgChainLength] =
+      await Promise.all([
+        withRetry(() => maciClient.getPeriod(), {
+          context: 'RPC-GET-PERIOD-DEACTIVATE-INITIAL',
+          maxRetries: 3,
+        }),
+        withRetry(() => maciClient.getProcessedDMsgCount(), {
+          context: 'RPC-GET-DMSG-COUNT-DEACTIVATE-INITIAL',
+          maxRetries: 3,
+        }),
+        withRetry(() => maciClient.getDMsgChainLength(), {
+          context: 'RPC-GET-DMSG-CHAIN-LENGTH-DEACTIVATE-INITIAL',
+          maxRetries: 3,
+        }),
+      ])
+    info(
+      `Chain round status: period=${chainPeriod.status}, processedDMsgCount=${Number(processedDMsgCount)}, dmsgChainLength=${Number(dmsgChainLength)}`,
+      'DEACTIVATE-TASK',
+    )
+
     // If the round has already ended, you can ignore the condition
     // and execute a deactivate task.
     if (now < Number(maciRound.votingEnd) / 1e6) {
-      if (!['Pending', 'Voting'].includes(maciRound.period)) {
-        logError('Round not in proper state for deactivate', 'DEACTIVATE-TASK')
-        recordTaskFailure('deactivate')
+      if (!['pending', 'voting'].includes(chainPeriod.status)) {
+        logError(
+          `Round not in proper state for deactivate: indexerPeriod=${maciRound.period}, chainPeriod=${chainPeriod.status}`,
+          'DEACTIVATE-TASK',
+        )
+        recordTaskFailure('deactivate', id)
         endOperation('deactivate', false, operationContext)
         return { error: { msg: 'error status' } }
       }
@@ -92,14 +145,11 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
 
       if (latestdeactivateAt + deactivateInterval > now) {
         logError('Too early to deactivate again', 'DEACTIVATE-TASK')
-        recordTaskFailure('deactivate')
+        recordTaskFailure('deactivate', id)
         endOperation('deactivate', false, operationContext)
         return { error: { msg: 'too earlier' } }
       }
     }
-
-    const params = maciParamsFromCircuitPower(maciRound.circuitPower)
-    const maciClient = await getContractSignerClient(id)
 
     const dc = await withRetry(() => maciClient.getProcessedDMsgCount(), {
       context: 'RPC-GET-DMSG-COUNT',
@@ -154,6 +204,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
         artifactVersion: artifact.version,
         artifactBundle: artifact.bundle,
         pollId,
+        keyGenerationMode,
         deactivateMessageArity,
         maxVoteOptions: Number(maxVoteOptions),
         signupCount: logs.signup.length,
@@ -179,6 +230,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
               coordPriKey: BigInt(process.env.COORDINATOR_PRI_KEY),
               maxVoteOptions: Number(maxVoteOptions),
               pollId,
+              keyGenerationMode,
             },
             {
               states: logs.signup.map((s) => ({
@@ -223,6 +275,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
           coordPriKey: BigInt(process.env.COORDINATOR_PRI_KEY),
           maxVoteOptions: Number(maxVoteOptions),
           pollId,
+          keyGenerationMode,
         },
         {
           states: logs.signup.map((s) => ({
@@ -258,6 +311,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
           inputs: { dMsgInputs: computed.dMsgInputs, newDeactivates: computed.newDeactivates },
         })
       }
+      recordCacheResult('deactivate_inputs', maciRound.circuitPower, res ? 'hit' : 'miss')
 
       const dmsg: (ProofData & { root: string; size: string })[] = []
 
@@ -282,6 +336,11 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
           break
         }
       }
+      recordCacheResult(
+        'deactivate_proofs',
+        maciRound.circuitPower,
+        start > 0 ? 'hit' : 'miss',
+      )
       const phaseStart = Date.now()
       const bin = path.join(zkeyRoot, artifact.bundle, 'deactivate.bin')
       const zkey = path.join(zkeyRoot, artifact.bundle, 'deactivate.zkey')
@@ -312,6 +371,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
             contextBatch: 'RPC-PROCESS-DEACTIVATE-BATCH',
             contextSingle: 'RPC-PROCESS-DEACTIVATE',
             phaseLabel: 'DEACTIVATE',
+            circuitPower: maciRound.circuitPower,
             shouldStop: (e: any) => isAllProcessedError(e),
           },
         )
@@ -348,6 +408,12 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
         )
         const _pd = Date.now() - _p0
         info(`Generated DEACTIVATE proof batch [${start}..${end - 1}] in ${_pd}ms`, 'DEACTIVATE-TASK')
+        recordProofBatch(
+          'deactivate',
+          maciRound.circuitPower,
+          slice.length,
+          _pd / 1000,
+        )
         for (let i = 0; i < slice.length; i++) {
           const { input, size } = slice[i]
           const proofHex = proofs[i]
@@ -369,7 +435,12 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
         }
         start = end
       }
-      recordProverPhaseDuration(id, 'deactivate', (Date.now() - phaseStart) / 1000)
+      recordProverPhaseDuration(
+        id,
+        'deactivate',
+        (Date.now() - phaseStart) / 1000,
+        maciRound.circuitPower,
+      )
       if (usePipeline && deactSubmitter) {
         await deactSubmitter.close()
       }
@@ -391,9 +462,17 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
             const size = right - left
             const slice = items.slice(left, right)
             try {
+              const submitStart = Date.now()
               const res = await withBroadcastRetry(
                 () => maciClient.processDeactivateMessageBatch(slice, 'auto'),
                 { context: 'RPC-PROCESS-DEACTIVATE-BATCH', maxRetries: 3 },
+              )
+              recordSubmitBatch(
+                'deactivate',
+                maciRound.circuitPower,
+                'batch',
+                slice.length,
+                (Date.now() - submitStart) / 1000,
               )
               info(`Processed deactivate batch [${di + left}..${di + right - 1}] ✅`, 'DEACTIVATE-TASK', { txHash: res.transactionHash })
               break
@@ -406,6 +485,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
               if (size === 1) {
                 const single = slice[0]
                 try {
+                const submitStart = Date.now()
                 const res = await withBroadcastRetry(
                   () =>
                     maciClient.processDeactivateMessage(
@@ -419,6 +499,13 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
                       ),
                   { context: 'RPC-PROCESS-DEACTIVATE', maxRetries: 3 },
                 )
+                  recordSubmitBatch(
+                    'deactivate',
+                    maciRound.circuitPower,
+                    'single',
+                    1,
+                    (Date.now() - submitStart) / 1000,
+                  )
                   info(`Processed deactivate #${di + left} ✅`, 'DEACTIVATE-TASK', { txHash: res.transactionHash })
                   break
                 } catch (e2) {
@@ -448,7 +535,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
 
       // Only record success when we actually processed messages
       endOperation('deactivate', true, operationContext)
-      recordTaskSuccess('deactivate')
+      recordTaskSuccess('deactivate', id)
     } else {
       info(
         'No new deactivate messages to process  👀 👀 👀, waiting for more',
@@ -480,7 +567,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
         ),
         'DEACTIVATE-TASK',
       )
-      recordTaskFailure('deactivate')
+      recordTaskFailure('deactivate', id)
       endOperation('deactivate', false, operationContext)
       return {
         error: { msg: 'network_error', details: categorizedError.message },
@@ -497,7 +584,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
         ),
         'DEACTIVATE-TASK',
       )
-      recordTaskFailure('deactivate')
+      recordTaskFailure('deactivate', id)
       endOperation('deactivate', false, operationContext)
       return {
         error: { msg: 'contract_error', details: categorizedError.message },
@@ -514,7 +601,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
       'DEACTIVATE-TASK',
     )
 
-    recordTaskFailure('deactivate')
+    recordTaskFailure('deactivate', id)
     endOperation('deactivate', false, operationContext)
     throw categorizedError
   } finally {

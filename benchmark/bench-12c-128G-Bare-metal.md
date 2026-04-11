@@ -671,11 +671,23 @@ Delayed time：
   ———
 
 
+  | Circuit | per-vote time | per-vote cost | tally time | tally cost | fixed overhead time | fixed overhead cost |
+  | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+  | 2-1-1-5 | 0.8841 s | 0.00006189 USD | 0.2267 min | 0.00095228 USD | 0.2516 min | 0.00105665 USD |
+  | 2-1-1-25 | 0.2454 s | 0.00001718 USD | 0.3442 min | 0.00144581 USD | 0.3361 min | 0.00141162 USD |
+  | 4-2-2-25 | 0.2531 s | 0.00001771 USD | 2.5346 min | 0.01064518 USD | 0.3404 min | 0.00142975 USD |
+  | 6-3-3-125 | 0.2289 s | 0.00001602 USD | 21.9313 min | 0.09211125 USD | 0.3308 min | 0.00138915 USD |
+  | 9-4-3-125 | 0.2776 s | 0.00001943 USD | 3585.7083 min | 15.05997500 USD | 0.2551 min | 0.00107156 USD |
+
 
   ### 2-1-1-5
 
   - Total Server Time(v) ≈ 0.8841s * v + 0.2267min + 0.2516min
   - Total Server Cost(v) ≈ (0.00006189 * v + 0.00095228 + 0.00105665) * 10   USD
+
+  ### 2-1-1-25
+  - Total Server Time(v) ≈  0.2454s * m + 0.3442min + 0.3361min
+  - Total Server Cost(v) ≈ 
 
   ### 4-2-2-25
 
@@ -687,34 +699,45 @@ Delayed time：
   - Total Server Time(v) ≈ 0.2289s * v + 21.9313min + 0.3308min
   - Total Server Cost(v) ≈ (0.00001602 * v + 0.09211125 + 0.00138915) * 10   USD
 
+  ### 9-4-3-125
+  - Total Server Time(v) = 0.2776s * m + 3585.7083min + 0.2551min
+  - Total Server Cost(v) = 
 
 
+### GAS 成本估算
+按照每个规模对应的最大人数来计算tally fixed gas成本
   | Circuit | MSG Gas / vote | TALLY Fixed Gas |
   | --- | ---: | ---: |
   | 2-1-1-5 | 0.00072 DORA / vote | 0.02 DORA |
   | 4-2-2-25 | 0.0002016 DORA / vote | 0.13 DORA |
   | 6-3-3-125 | 0.00008 DORA / vote | 1.25 DORA |
+  | 9-4-3-125 | 0.00008 DORA / vote | 31.25 DORA |
 
 
-
+## 不同电路规模delya时间/成本汇总
+> server cost + operator gas fee
 
 2-1-1-5:
 Base fee:
 (0.00095228 + 0.00105665) * 10USD + 0.02 * 0.005 USD = 0.0201893
 
 
-4-2-2-25:
-Base fee:
+- 2-1-1-25:
+  - Base fee: (0.00144581 + 0.00141162) * 10 USD + 0.02 * 0.005 USD = 0.0286743
+  - Vote fee: (0.00001718 * 1) * 10USD + (0.00072 * 1) * 0.005 USD = 0.0001754 USD
+- 4-2-2-25:
+  - Base fee:
 (0.01064518 + 0.00142975) * 10 USD + 0.13 * 0.005 USD = 0.1213993 USD
-Vote fee
+  - Vote fee
 (0.00001771 * 1 ) * 10USD + (0.0002016 * 1) * 0.005 USD = 0.000178108 USD
-
-
-6-3-3-125:
-Base fee:
-(0.09211125 + 0.00138915) * 10 USD + 1.25 * 0.005 USD = 0.941254 USD
-Vote fee:
-0.00001602 * 1 * 10USD + 0.00008 * 1 * 0.005USD = 0.0001606
+- 6-3-3-125:
+  - Base fee:
+  (0.09211125 + 0.00138915) * 10 USD + 1.25 * 0.005 USD = 0.941254 USD
+  - Vote fee:
+  0.00001602 * 1 * 10USD + 0.00008 * 1 * 0.005USD = 0.0001606 USD
+- 9-4-3-125:
+  - Base fee: (15.05997500 + 0.00107156) * 10 USD + 31.25 * 0.005 USD = 150.77 USD
+  - Vote fee: 0.00001943 * 1 * 10 USD + 0.00008 * 1 * 0.005USD = 0.0001947 USD
 
 
 The actual calculated vote fee is: 0.00018 USD

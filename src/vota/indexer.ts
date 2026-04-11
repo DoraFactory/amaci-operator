@@ -51,7 +51,7 @@ interface PublishDeactivateMessageEvent {
   contractAddress: string
 }
 
-interface RoundData {
+export interface RoundData {
   id: string
   blockHeight: string
   codeId: string
@@ -79,6 +79,24 @@ interface RoundData {
   circuitType: '1' | '0'
   circuitPower: string
   certificationSystem: string
+}
+
+const normalizeCoordinatorPubkeys = (
+  coordinatorPubkeys: string[] | string[][],
+): string[][] => {
+  if (coordinatorPubkeys.length === 0) return []
+  if (Array.isArray(coordinatorPubkeys[0])) {
+    return coordinatorPubkeys as string[][]
+  }
+  return [coordinatorPubkeys as string[]]
+}
+
+export const mergeRoundsById = (rounds: RoundData[]): RoundData[] => {
+  const deduped = new Map<string, RoundData>()
+  for (const round of rounds) {
+    deduped.set(round.id, round)
+  }
+  return [...deduped.values()]
 }
 
 const ROUND_QUERY = (id: string) => `query {
@@ -334,7 +352,11 @@ async function fetchOne<T>(query: string): Promise<T> {
     })
 }
 
-async function fetchAllPages<T>(query: string, variables: any): Promise<T[]> {
+async function fetchAllPages<T>(
+  query: string,
+  variables: any,
+  operation: string,
+): Promise<T[]> {
   let hasNextPage = true
   let offset = 0
   const limit = 100 // Adjust the limit as needed
@@ -394,7 +416,7 @@ async function fetchAllPages<T>(query: string, variables: any): Promise<T[]> {
         {
           maxRetries: 3,
           initialDelay: 1000,
-          context: 'INDEXER',
+          context: `INDEXER-${operation}`,
         },
       )
 
@@ -429,6 +451,7 @@ async function fetchAllPages<T>(query: string, variables: any): Promise<T[]> {
 async function fetchAllPagesStream<T extends { id?: string }>(
   query: string,
   variables: any,
+  operation: string,
   onPage: (nodes: T[]) => Promise<void> | void,
 ): Promise<{ count: number; lastId: string }> {
   let hasNextPage = true
@@ -489,7 +512,7 @@ async function fetchAllPagesStream<T extends { id?: string }>(
         {
           maxRetries: 3,
           initialDelay: 1000,
-          context: 'INDEXER',
+          context: `INDEXER-${operation}`,
         },
       )
 
@@ -524,11 +547,19 @@ async function fetchAllPagesStream<T extends { id?: string }>(
   return { count, lastId }
 }
 
-export const fetchRounds = async (coordinatorPubkey: string[]) => {
-  return fetchAllPages<RoundData>(
-    ROUNDS_QUERY(coordinatorPubkey[0], coordinatorPubkey[1]),
-    {},
+export const fetchRounds = async (coordinatorPubkeys: string[] | string[][]) => {
+  const pubkeys = normalizeCoordinatorPubkeys(coordinatorPubkeys)
+  const rounds = await Promise.all(
+    pubkeys.map((coordinatorPubkey) =>
+      fetchAllPages<RoundData>(
+        ROUNDS_QUERY(coordinatorPubkey[0], coordinatorPubkey[1]),
+        {},
+        'fetch_rounds',
+      ),
+    ),
   )
+
+  return mergeRoundsById(rounds.flat())
 }
 
 export const fetchRound = async (id: string) => {
@@ -539,10 +570,12 @@ export const fetchAllVotesLogs = async (contract: string) => {
   const signup = await fetchAllPages<SignUpEvent>(
     SIGN_UP_EVENTS_QUERY(contract),
     {},
+    'fetch_signups',
   )
   const msg = await fetchAllPages<PublishMessageEvent>(
     PUBLISH_MESSAGE_EVENTS_QUERY(contract),
     {},
+    'fetch_publish_messages',
   )
   // const ds = await fetchAllPages<DeactivateMessage>(
   //   DEACTIVATE_MESSAGE_QUERY(contract),
@@ -551,6 +584,7 @@ export const fetchAllVotesLogs = async (contract: string) => {
   const dmsg = await fetchAllPages<PublishDeactivateMessageEvent>(
     PUBLISH_DEACTIVATE_MESSAGE_EVENTS_QUERY(contract),
     {},
+    'fetch_publish_deactivate_messages',
   )
 
   return {
@@ -571,6 +605,7 @@ export const streamPublishMessageEvents = async (
   return fetchAllPagesStream<PublishMessageEvent>(
     PUBLISH_MESSAGE_EVENTS_QUERY(contract),
     {},
+    'stream_publish_messages',
     onPage,
   )
 }
@@ -579,6 +614,7 @@ export const fetchAllDeactivateLogs = async (contract: string) => {
   const signup = await fetchAllPages<SignUpEvent>(
     SIGN_UP_EVENTS_QUERY(contract),
     {},
+    'fetch_signups',
   )
   // const ds = await fetchAllPages<DeactivateMessage>(
   //   DEACTIVATE_MESSAGE_QUERY(contract),
@@ -587,6 +623,7 @@ export const fetchAllDeactivateLogs = async (contract: string) => {
   const dmsg = await fetchAllPages<PublishDeactivateMessageEvent>(
     PUBLISH_DEACTIVATE_MESSAGE_EVENTS_QUERY(contract),
     {},
+    'fetch_publish_deactivate_messages',
   )
 
   return {

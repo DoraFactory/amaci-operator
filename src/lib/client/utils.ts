@@ -9,9 +9,30 @@ import { MaciClient } from './Maci.client'
 import { RegistryClient } from './Registry.client'
 import { GenerateWallet } from '../../wallet'
 import { info, warn, error as logError } from '../../logger'
-import { recordApiRetryExhausted } from '../../metrics'
+import {
+  recordApiRetryExhausted,
+  recordExternalRequest,
+  recordExternalRetry,
+} from '../../metrics'
 
 export const prefix = 'dora'
+
+const isSequenceMismatchError = (error: unknown): boolean => {
+  const message = error instanceof Error ? error.message : String(error)
+  const lower = message.toLowerCase()
+  return (
+    lower.includes('account sequence mismatch') ||
+    lower.includes('incorrect account sequence')
+  )
+}
+
+const formatRetryErrorMessage = (error: unknown): string => {
+  const message = error instanceof Error ? error.message : String(error)
+  if (isSequenceMismatchError(error)) {
+    return `Sequence mismatch detected; retrying with refreshed account sequence. Details: ${message}`
+  }
+  return message
+}
 
 export async function withRetry<T>(
   fn: () => Promise<T>,
@@ -38,6 +59,7 @@ export async function withRetry<T>(
   let pendingTxId: string | null = null
 
   for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+    const requestStart = Date.now()
     try {
       if (pendingTxId && checkTxStatus) {
         info(
@@ -51,9 +73,12 @@ export async function withRetry<T>(
         throw new Error(`Transaction ${pendingTxId} still pending`)
       }
 
-      return await fn()
+      const result = await fn()
+      recordExternalRequest(context, (Date.now() - requestStart) / 1000, 'success')
+      return result
     } catch (error: any) {
       lastError = error
+      recordExternalRequest(context, (Date.now() - requestStart) / 1000, 'error')
 
       if (
         error.message.includes(
@@ -72,8 +97,9 @@ export async function withRetry<T>(
       }
 
       if (attempt <= maxRetries) {
+        recordExternalRetry(context)
         warn(
-          `API call failed (attempt ${attempt}/${maxRetries + 1}): ${error.message}`,
+          `API call failed (attempt ${attempt}/${maxRetries + 1}): ${formatRetryErrorMessage(error)}`,
           context,
         )
 
@@ -82,7 +108,7 @@ export async function withRetry<T>(
       } else if (attempt > maxRetries) {
         recordApiRetryExhausted(context)
         logError(
-          `API call failed, max retries reached: ${error.message}`,
+          `API call failed, max retries reached: ${formatRetryErrorMessage(error)}`,
           context,
         )
         throw error
