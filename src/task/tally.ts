@@ -92,6 +92,13 @@ const summarizeMsgInputShape = (input: any) => ({
     !!input && Object.prototype.hasOwnProperty.call(input, 'expectedPollId'),
 })
 
+type TallyChainSnapshot = {
+  chainPeriod: string
+  processedMsgCount: number
+  msgChainLength: number
+  processedUserCount: number
+}
+
 export const tally: TaskAct = async (_, { id }: { id: string }) => {
   // logger: set the current round ID
   setCurrentRound(id)
@@ -110,45 +117,79 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
   recordTaskStart('tally', id)
 
   try {
+    let getChainSnapshot:
+      | ((contextSuffix: string) => Promise<TallyChainSnapshot>)
+      | undefined
     const maciRound = await withRetry(() => fetchRound(id), {
       context: 'INDEXER-FETCH-ROUND',
       maxRetries: 3,
     })
     updateTaskContext('tally', id, { circuitPower: maciRound.circuitPower })
-    info(`Current round period:' ${maciRound.period}`, 'TALLY-TASK')
+    info(`Indexer round period: ${maciRound.period}`, 'TALLY-TASK')
 
     info('Start round Tally ', 'TALLY-TASK')
     const circuitConcurrency = getProverConcurrency(maciRound.circuitPower)
     const now = Date.now()
 
+    // Get the maci contract signer client
+    const maciClient = await getContractSignerClient(id)
+    getChainSnapshot = async (
+      contextSuffix: string,
+    ): Promise<TallyChainSnapshot> => {
+      const [period, processedMsgCount, msgChainLength, processedUserCount] =
+        await Promise.all([
+          withRetry(() => maciClient.getPeriod(), {
+            context: `RPC-GET-PERIOD-${contextSuffix}`,
+            maxRetries: 3,
+          }),
+          withRetry(() => maciClient.getProcessedMsgCount(), {
+            context: `RPC-GET-MSG-COUNT-${contextSuffix}`,
+            maxRetries: 3,
+          }),
+          withRetry(() => maciClient.getMsgChainLength(), {
+            context: `RPC-GET-MSG-CHAIN-LENGTH-${contextSuffix}`,
+            maxRetries: 3,
+          }),
+          withRetry(() => maciClient.getProcessedUserCount(), {
+            context: `RPC-GET-USER-COUNT-${contextSuffix}`,
+            maxRetries: 3,
+          }),
+        ])
+
+      return {
+        chainPeriod: period.status,
+        processedMsgCount: Number(processedMsgCount),
+        msgChainLength: Number(msgChainLength),
+        processedUserCount: Number(processedUserCount),
+      }
+    }
+    const initialChainSnapshot = await getChainSnapshot('INITIAL')
+    info(
+      `Chain round status: period=${initialChainSnapshot.chainPeriod}, processedMsgCount=${initialChainSnapshot.processedMsgCount}, msgChainLength=${initialChainSnapshot.msgChainLength}, processedUserCount=${initialChainSnapshot.processedUserCount}`,
+      'TALLY-TASK',
+    )
     if (
-      !['Pending', 'Voting', 'Processing', 'Tallying'].includes(
-        maciRound.period,
+      !['pending', 'voting', 'processing', 'tallying'].includes(
+        initialChainSnapshot.chainPeriod,
       ) &&
       now < Number(maciRound.votingEnd) / 1e6
     ) {
-      logError('Round not in proper state for tally', 'TALLY-TASK')
+      logError(
+        `Round not in proper state for tally: indexerPeriod=${maciRound.period}, chainPeriod=${initialChainSnapshot.chainPeriod}`,
+        'TALLY-TASK',
+      )
       recordTaskFailure('tally', id)
       endOperation('tally', false, operationContext)
       return {
         error: {
           msg: 'error_status: not end',
-          details: 'Round not in proper state',
+          details: `indexerPeriod=${maciRound.period}, chainPeriod=${initialChainSnapshot.chainPeriod}`,
         },
       }
     }
 
-    // Get the maci contract signer client
-    const maciClient = await getContractSignerClient(id)
-
     // If the round is pending or voting, start the process period
-    if (['Pending', 'Voting'].includes(maciRound.period)) {
-      const period = await withRetry(() => maciClient.getPeriod(), {
-        context: 'RPC-GET-PERIOD',
-        maxRetries: 5, // 增加重试次数
-      })
-
-      if (['pending', 'voting'].includes(period.status)) {
+    if (['pending', 'voting'].includes(initialChainSnapshot.chainPeriod)) {
         const startProcessRes = await withBroadcastRetry(
           () => maciClient.startProcessPeriod(1.5),
           {
@@ -160,7 +201,6 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         await sleep(6000)
 
         debug(`startProcessRes: ${startProcessRes}`, 'TALLY-TASK')
-      }
     }
 
     const params = maciParamsFromCircuitPower(maciRound.circuitPower)
@@ -908,12 +948,22 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       if (usePipeline) {
         const ok = await ensureTallying('PIPELINE')
         if (!ok) {
+          const snapshot = await getChainSnapshot('PIPELINE-NOT-TALLYING')
           logError(
             new TallyError('Contract not in tallying period', 'CONTRACT_ERROR', {
               roundId: id,
               operation: 'tally',
               timestamp: Date.now(),
+              indexerPeriod: maciRound.period,
+              chainPeriod: snapshot.chainPeriod,
+              processedMsgCount: snapshot.processedMsgCount,
+              msgChainLength: snapshot.msgChainLength,
+              processedUserCount: snapshot.processedUserCount,
             }),
+            'TALLY-TASK',
+          )
+          warn(
+            `Period mismatch before tally proof generation: indexerPeriod=${maciRound.period}, chainPeriod=${snapshot.chainPeriod}, processedMsgCount=${snapshot.processedMsgCount}, msgChainLength=${snapshot.msgChainLength}, processedUserCount=${snapshot.processedUserCount}`,
             'TALLY-TASK',
           )
           recordTaskFailure('tally', id)
@@ -1166,9 +1216,9 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
 
     // Non-pipeline mode submits message proofs only after all proofs are generated.
     // Ensure period has moved to tallying before submitting tally proofs.
-    if (!usePipeline) {
-      let tallying = false
-      for (let i = 0; i < 20; i++) {
+      if (!usePipeline) {
+        let tallying = false
+        for (let i = 0; i < 20; i++) {
         const period = await withRetry(() => maciClient.getPeriod(), {
           context: 'RPC-GET-PERIOD-TALLYING-POST-MSG',
           maxRetries: 3,
@@ -1178,19 +1228,29 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
           break
         }
         await sleep(1000)
-      }
-      if (!tallying) {
-        logError(
-          new TallyError('Contract not in tallying period', 'CONTRACT_ERROR', {
-            roundId: id,
-            operation: 'tally',
-            timestamp: Date.now(),
-          }),
-          'TALLY-TASK',
-        )
-        recordTaskFailure('tally', id)
-        endOperation('tally', false, operationContext)
-        return { error: { msg: 'period_not_tallying' } }
+        }
+        if (!tallying) {
+          const snapshot = await getChainSnapshot('POST-MSG-NOT-TALLYING')
+          logError(
+            new TallyError('Contract not in tallying period', 'CONTRACT_ERROR', {
+              roundId: id,
+              operation: 'tally',
+              timestamp: Date.now(),
+              indexerPeriod: maciRound.period,
+              chainPeriod: snapshot.chainPeriod,
+              processedMsgCount: snapshot.processedMsgCount,
+              msgChainLength: snapshot.msgChainLength,
+              processedUserCount: snapshot.processedUserCount,
+            }),
+            'TALLY-TASK',
+          )
+          warn(
+            `Period mismatch after message processing: indexerPeriod=${maciRound.period}, chainPeriod=${snapshot.chainPeriod}, processedMsgCount=${snapshot.processedMsgCount}, msgChainLength=${snapshot.msgChainLength}, processedUserCount=${snapshot.processedUserCount}`,
+            'TALLY-TASK',
+          )
+          recordTaskFailure('tally', id)
+          endOperation('tally', false, operationContext)
+          return { error: { msg: 'period_not_tallying' } }
       }
     }
 

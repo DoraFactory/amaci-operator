@@ -85,32 +85,12 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
       maxRetries: 3,
     })
     updateTaskContext('deactivate', id, { circuitPower: maciRound.circuitPower })
-    info(`Current round period: ${maciRound.period}`, 'DEACTIVATE-TASK')
+    info(`Indexer round period: ${maciRound.period}`, 'DEACTIVATE-TASK')
 
     info('Start round deactivate', 'DEACTIVATE-TASK')
 
     const now = Date.now()
     const circuitConcurrency = getProverConcurrency(maciRound.circuitPower)
-
-    // If the round has already ended, you can ignore the condition
-    // and execute a deactivate task.
-    if (now < Number(maciRound.votingEnd) / 1e6) {
-      if (!['Pending', 'Voting'].includes(maciRound.period)) {
-        logError('Round not in proper state for deactivate', 'DEACTIVATE-TASK')
-        recordTaskFailure('deactivate', id)
-        endOperation('deactivate', false, operationContext)
-        return { error: { msg: 'error status' } }
-      }
-
-      const latestdeactivateAt = Timer.get(id)
-
-      if (latestdeactivateAt + deactivateInterval > now) {
-        logError('Too early to deactivate again', 'DEACTIVATE-TASK')
-        recordTaskFailure('deactivate', id)
-        endOperation('deactivate', false, operationContext)
-        return { error: { msg: 'too earlier' } }
-      }
-    }
 
     const params = maciParamsFromCircuitPower(maciRound.circuitPower)
     const coordinatorPubKeys = deriveCoordinatorPubKeyVariants(
@@ -128,6 +108,48 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
       'DEACTIVATE-TASK',
     )
     const maciClient = await getContractSignerClient(id)
+    const [chainPeriod, processedDMsgCount, dmsgChainLength] =
+      await Promise.all([
+        withRetry(() => maciClient.getPeriod(), {
+          context: 'RPC-GET-PERIOD-DEACTIVATE-INITIAL',
+          maxRetries: 3,
+        }),
+        withRetry(() => maciClient.getProcessedDMsgCount(), {
+          context: 'RPC-GET-DMSG-COUNT-DEACTIVATE-INITIAL',
+          maxRetries: 3,
+        }),
+        withRetry(() => maciClient.getDMsgChainLength(), {
+          context: 'RPC-GET-DMSG-CHAIN-LENGTH-DEACTIVATE-INITIAL',
+          maxRetries: 3,
+        }),
+      ])
+    info(
+      `Chain round status: period=${chainPeriod.status}, processedDMsgCount=${Number(processedDMsgCount)}, dmsgChainLength=${Number(dmsgChainLength)}`,
+      'DEACTIVATE-TASK',
+    )
+
+    // If the round has already ended, you can ignore the condition
+    // and execute a deactivate task.
+    if (now < Number(maciRound.votingEnd) / 1e6) {
+      if (!['pending', 'voting'].includes(chainPeriod.status)) {
+        logError(
+          `Round not in proper state for deactivate: indexerPeriod=${maciRound.period}, chainPeriod=${chainPeriod.status}`,
+          'DEACTIVATE-TASK',
+        )
+        recordTaskFailure('deactivate', id)
+        endOperation('deactivate', false, operationContext)
+        return { error: { msg: 'error status' } }
+      }
+
+      const latestdeactivateAt = Timer.get(id)
+
+      if (latestdeactivateAt + deactivateInterval > now) {
+        logError('Too early to deactivate again', 'DEACTIVATE-TASK')
+        recordTaskFailure('deactivate', id)
+        endOperation('deactivate', false, operationContext)
+        return { error: { msg: 'too earlier' } }
+      }
+    }
 
     const dc = await withRetry(() => maciClient.getProcessedDMsgCount(), {
       context: 'RPC-GET-DMSG-COUNT',

@@ -30,9 +30,9 @@ export interface ProofCache {
   inputsSig?: string
 }
 
-// Bump cache schema after restoring legacy v3 message layout handling
-// so old cached msgInputs do not get reused.
-const VERSION = 3
+// Bump cache schema after key-generation compatibility and v4 no-message
+// artifact resolution changes so stale proofs/inputs are not reused.
+const VERSION = 4
 
 function getCachePath(id: string) {
   // New layout: use 'data' directory for caches

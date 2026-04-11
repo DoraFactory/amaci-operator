@@ -96,7 +96,7 @@ export async function init() {
   info(`Coordinator Vota address: ${address}`, 'INIT')
   info('************************************************', 'INIT')
 
-  info(`code id list: ${process.env.CODE_IDS}`, 'INIT')
+  info(`Excluded round code IDs: ${process.env.CODE_IDS}`, 'INIT')
 
   info('Check your required zkey files🧐🧐🧐🧐', 'INIT')
 

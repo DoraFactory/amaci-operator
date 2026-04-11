@@ -17,6 +17,23 @@ import {
 
 export const prefix = 'dora'
 
+const isSequenceMismatchError = (error: unknown): boolean => {
+  const message = error instanceof Error ? error.message : String(error)
+  const lower = message.toLowerCase()
+  return (
+    lower.includes('account sequence mismatch') ||
+    lower.includes('incorrect account sequence')
+  )
+}
+
+const formatRetryErrorMessage = (error: unknown): string => {
+  const message = error instanceof Error ? error.message : String(error)
+  if (isSequenceMismatchError(error)) {
+    return `Sequence mismatch detected; retrying with refreshed account sequence. Details: ${message}`
+  }
+  return message
+}
+
 export async function withRetry<T>(
   fn: () => Promise<T>,
   options: {
@@ -82,7 +99,7 @@ export async function withRetry<T>(
       if (attempt <= maxRetries) {
         recordExternalRetry(context)
         warn(
-          `API call failed (attempt ${attempt}/${maxRetries + 1}): ${error.message}`,
+          `API call failed (attempt ${attempt}/${maxRetries + 1}): ${formatRetryErrorMessage(error)}`,
           context,
         )
 
@@ -91,7 +108,7 @@ export async function withRetry<T>(
       } else if (attempt > maxRetries) {
         recordApiRetryExhausted(context)
         logError(
-          `API call failed, max retries reached: ${error.message}`,
+          `API call failed, max retries reached: ${formatRetryErrorMessage(error)}`,
           context,
         )
         throw error
