@@ -44,6 +44,10 @@ import { loadProofCache, saveProofCache, buildInputsSignature } from '../storage
 import { markRoundTallyCompleted } from '../storage/roundStatus'
 import { clearInputsDir, loadInputFiles, saveInputFiles } from '../storage/inputFiles'
 import { DiskMessageStore } from '../storage/messageStore'
+import {
+  deriveCoordinatorPubKeyVariants,
+  resolveKeyGenerationModeForPubKey,
+} from '../lib/keypair'
 import { createSubmitter } from './submitter'
 import { parseMessageNumbers } from './messageParsing'
 
@@ -160,6 +164,20 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     }
 
     const params = maciParamsFromCircuitPower(maciRound.circuitPower)
+    const coordinatorPubKeys = deriveCoordinatorPubKeyVariants(
+      BigInt(process.env.COORDINATOR_PRI_KEY),
+    )
+    const keyGenerationMode = resolveKeyGenerationModeForPubKey(
+      coordinatorPubKeys,
+      [
+        BigInt(maciRound.coordinatorPubkeyX),
+        BigInt(maciRound.coordinatorPubkeyY),
+      ],
+    )
+    info(
+      `Resolved coordinator key generation mode: ${keyGenerationMode}`,
+      'TALLY-TASK',
+    )
 
     /**
      * 尝试查看本地是否已经生成了所有证明信息
@@ -544,6 +562,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         artifactVersion: artifact.version,
         artifactBundle: artifact.bundle,
         pollId,
+        keyGenerationMode,
         messageArity,
         deactivateMessageArity,
         maxVoteOptions: Number(maxVoteOptions),
@@ -596,6 +615,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
                 maxVoteOptions: Number(maxVoteOptions),
                 isQuadraticCost: !!Number(maciRound.circuitType),
                 pollId,
+                keyGenerationMode,
               },
               {
                 states: logs.signup.map((s: any) => ({
@@ -631,6 +651,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
                 maxVoteOptions: Number(maxVoteOptions),
                 isQuadraticCost: !!Number(maciRound.circuitType),
                 pollId,
+                keyGenerationMode,
               },
               {
                 states: logs.signup.map((s: any) => ({

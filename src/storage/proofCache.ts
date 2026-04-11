@@ -134,6 +134,7 @@ export function buildInputsSignature(args: {
   artifactVersion?: string
   artifactBundle?: string
   pollId?: string | number
+  keyGenerationMode?: string
   messageArity?: number
   deactivateMessageArity?: number
   maxVoteOptions: number
@@ -151,6 +152,7 @@ export function buildInputsSignature(args: {
     String(args.artifactVersion ?? ''),
     String(args.artifactBundle ?? ''),
     String(args.pollId ?? ''),
+    String(args.keyGenerationMode ?? ''),
     `ma:${args.messageArity ?? ''}`,
     `dma:${args.deactivateMessageArity ?? ''}`,
     String(args.maxVoteOptions),

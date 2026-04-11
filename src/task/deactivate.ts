@@ -41,6 +41,10 @@ import {
 import { createSubmitter } from './submitter'
 import { parseMessageNumbers } from './messageParsing'
 import {
+  deriveCoordinatorPubKeyVariants,
+  resolveKeyGenerationModeForPubKey,
+} from '../lib/keypair'
+import {
   NetworkError,
   ContractError,
   DeactivateError,
@@ -109,6 +113,20 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
     }
 
     const params = maciParamsFromCircuitPower(maciRound.circuitPower)
+    const coordinatorPubKeys = deriveCoordinatorPubKeyVariants(
+      BigInt(process.env.COORDINATOR_PRI_KEY),
+    )
+    const keyGenerationMode = resolveKeyGenerationModeForPubKey(
+      coordinatorPubKeys,
+      [
+        BigInt(maciRound.coordinatorPubkeyX),
+        BigInt(maciRound.coordinatorPubkeyY),
+      ],
+    )
+    info(
+      `Resolved coordinator key generation mode: ${keyGenerationMode}`,
+      'DEACTIVATE-TASK',
+    )
     const maciClient = await getContractSignerClient(id)
 
     const dc = await withRetry(() => maciClient.getProcessedDMsgCount(), {
@@ -164,6 +182,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
         artifactVersion: artifact.version,
         artifactBundle: artifact.bundle,
         pollId,
+        keyGenerationMode,
         deactivateMessageArity,
         maxVoteOptions: Number(maxVoteOptions),
         signupCount: logs.signup.length,
@@ -189,6 +208,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
               coordPriKey: BigInt(process.env.COORDINATOR_PRI_KEY),
               maxVoteOptions: Number(maxVoteOptions),
               pollId,
+              keyGenerationMode,
             },
             {
               states: logs.signup.map((s) => ({
@@ -233,6 +253,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
           coordPriKey: BigInt(process.env.COORDINATOR_PRI_KEY),
           maxVoteOptions: Number(maxVoteOptions),
           pollId,
+          keyGenerationMode,
         },
         {
           states: logs.signup.map((s) => ({

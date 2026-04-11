@@ -6,6 +6,7 @@ import {
   genStaticRandomKey,
   genRoundKeypair,
   genEcdhSharedKey,
+  KeyGenerationMode,
 } from './keypair'
 import { Tree } from './Tree'
 
@@ -110,6 +111,7 @@ export class MACI {
 
   protected logs: any[]
   protected pollId?: bigint
+  protected keyGenerationMode: KeyGenerationMode
 
   get stateCommitment() {
     return this._stateCommitment
@@ -147,6 +149,7 @@ export class MACI {
     numSignUps: number,
     isQuadraticCost: boolean,
     pollId?: bigint,
+    keyGenerationMode: KeyGenerationMode = 'legacy',
   ) {
     const deactivateTreeDepth = stateTreeDepth + 2
     this.stateTreeDepth = stateTreeDepth
@@ -160,10 +163,11 @@ export class MACI {
     this.isQuadraticCost = isQuadraticCost
 
     this.pollId = pollId
+    this.keyGenerationMode = keyGenerationMode
     this.coordinator =
       pollId === undefined
-        ? genRoundKeypair(coordPriKey)
-        : genRoundKeypair(coordPriKey, pollId)
+        ? genRoundKeypair(coordPriKey, undefined, keyGenerationMode)
+        : genRoundKeypair(coordPriKey, pollId, keyGenerationMode)
     this.pubKeyHasher = poseidon(this.coordinator.pubKey)
 
     const emptyVOTree = new Tree(5, voteOptionTreeDepth, 0n)
@@ -252,6 +256,7 @@ export class MACI {
       this.coordinator.privKey,
       encPubKey,
       this.pollId,
+      this.keyGenerationMode,
     )
     try {
       if (this.pollId === undefined) {
@@ -545,6 +550,7 @@ export class MACI {
         this.coordinator.privKey,
         s.pubKey,
         this.pollId,
+        this.keyGenerationMode,
       )
 
       const deactivate = encryptOdevity(

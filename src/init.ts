@@ -2,7 +2,11 @@ import fs from 'fs'
 // import { Secp256k1HdWallet } from '@cosmjs/launchpad'
 import { downloadAndExtractZKeys } from './lib/downloadZkeys'
 import path from 'path'
-import { genKeypair } from './lib/keypair'
+import {
+  deriveCoordinatorPubKeyVariants,
+  pubKeysEqual,
+  serializePubKey,
+} from './lib/keypair'
 import { GenerateWallet } from './wallet'
 import { info, error as logError } from './logger'
 import { SUPPORTED_ZKEY_BUNDLES } from './types'
@@ -69,14 +73,26 @@ export async function init() {
     ensure(root + '/round')
   } catch {}
 
-  const coordinator = genKeypair(BigInt(process.env.COORDINATOR_PRI_KEY!))
+  const coordinatorPubKeys = deriveCoordinatorPubKeyVariants(
+    BigInt(process.env.COORDINATOR_PRI_KEY!),
+  )
   const wallet = await GenerateWallet(0)
   const [{ address }] = await wallet.getAccounts()
+  const legacy = serializePubKey(coordinatorPubKeys.legacy)
+  const padded = serializePubKey(coordinatorPubKeys.padded)
 
   info('************************************************', 'INIT')
-  info(`Coordinator Public key🔑🔑🔑🔑:`, 'INIT')
-  info(`X: ${coordinator.pubKey[0]}`, 'INIT')
-  info(`Y: ${coordinator.pubKey[1]}`, 'INIT')
+  info(`Coordinator Public key derivation🔑🔑🔑🔑:`, 'INIT')
+  info(`legacy X: ${legacy.x}`, 'INIT')
+  info(`legacy Y: ${legacy.y}`, 'INIT')
+  info(`padded X: ${padded.x}`, 'INIT')
+  info(`padded Y: ${padded.y}`, 'INIT')
+  info(
+    pubKeysEqual(coordinatorPubKeys.legacy, coordinatorPubKeys.padded)
+      ? 'legacy and padded pubkeys are identical; no rotation is required'
+      : 'legacy and padded pubkeys differ; operator will inspect both and resolve per-round mode automatically',
+    'INIT',
+  )
   info(`Coordinator Vota address: ${address}`, 'INIT')
   info('************************************************', 'INIT')
 

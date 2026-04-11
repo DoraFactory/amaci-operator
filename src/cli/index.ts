@@ -306,6 +306,17 @@ function existingZkeyBundles(zkeyPath: string, bundles: string[]): string[] {
   )
 }
 
+function readOptionValue(
+  args: string[],
+  longFlag: string,
+  shortFlag?: string,
+): string | undefined {
+  const longIdx = args.indexOf(longFlag)
+  const shortIdx = shortFlag ? args.indexOf(shortFlag) : -1
+  const idx = longIdx >= 0 ? longIdx : shortIdx
+  return idx >= 0 ? args[idx + 1] : undefined
+}
+
 function printVersion() {
   console.log(`maci-operator v${getVersion()}`)
 }
@@ -318,10 +329,11 @@ function printHelp() {
   console.log(`  maci start <dir> [--zkey <path>]`)
   console.log(`  maci zkey download <dir> [--zkey <path>] [--force]`)
   console.log(`  maci set-operator identity <dir>`)
-  console.log(`  maci set-operator maciPubKey <dir>`)
+  console.log(`  maci set-operator maciPubKey <dir> [--key-generation <legacy|padded>]`)
   console.log(`\nOptions:`)
   console.log(`  -h, --help       Show this help message`)
   console.log(`  -v, --version    Show version number`)
+  console.log(`  -k, --key-generation  Key derivation mode: legacy|padded`)
 }
 
 async function main(argv: string[]) {
@@ -547,23 +559,64 @@ async function main(argv: string[]) {
     }
     if (sub === 'maciPubkey') {
       // load key utils lazily
-      const { genKeypair } = await import('../lib/keypair.js')
+      const {
+        genKeypair,
+        deriveCoordinatorPubKeyVariants,
+        normalizeKeyGenerationMode,
+        pubKeysEqual,
+        serializePubKey,
+      } = await import('../lib/keypair.js')
+      const requestedModeRaw = readOptionValue(args, '--key-generation', '-k')
+      const requestedMode = normalizeKeyGenerationMode(requestedModeRaw)
+      if (requestedModeRaw && !requestedMode) {
+        console.error(
+          'Invalid --key-generation value. Use legacy, padded, old_key_generation, or new_key_generation',
+        )
+        process.exit(1)
+      }
       // helper to validate and derive pubkey from an existing privKey
       const deriveFromPriv = (privStr: string | undefined) => {
         if (!privStr) return undefined
         try {
           if (!/^\d+$/.test(privStr)) return undefined
-          const kp = genKeypair(BigInt(privStr))
-          return { priv: String(kp.privKey), x: String(kp.pubKey[0]), y: String(kp.pubKey[1]) }
+          const privKey = BigInt(privStr)
+          const variants = deriveCoordinatorPubKeyVariants(privKey)
+          return {
+            priv: privStr,
+            legacy: serializePubKey(variants.legacy),
+            padded: serializePubKey(variants.padded),
+            identical: pubKeysEqual(variants.legacy, variants.padded),
+          }
         } catch {
           return undefined
         }
       }
 
+      const chooseMode = (
+        derived: NonNullable<ReturnType<typeof deriveFromPriv>>,
+      ) => {
+        if (requestedMode) return requestedMode
+        if (derived.identical) return 'padded'
+
+        console.log('Coordinator pubkeys derived from the configured private key:')
+        console.log(`  legacy: (${derived.legacy.x}, ${derived.legacy.y})`)
+        console.log(`  padded: (${derived.padded.x}, ${derived.padded.y})`)
+        const answer = readlineSync.question(
+          'Choose key generation mode for the on-chain operator pubkey [padded recommended / legacy]: ',
+        )
+        const normalizedAnswer = normalizeKeyGenerationMode(answer.trim())
+        if (answer.trim() && !normalizedAnswer) {
+          console.error('Invalid key generation mode selection')
+          process.exit(1)
+        }
+        return normalizedAnswer || 'padded'
+      }
+
       const existing = deriveFromPriv(cfg.coordinatorPrivKey)
       let finalPriv: string
-      let finalX: string
-      let finalY: string
+      let finalDerived:
+        | NonNullable<ReturnType<typeof deriveFromPriv>>
+        | undefined
 
       if (existing) {
         const ans = readlineSync.question(
@@ -572,14 +625,12 @@ async function main(argv: string[]) {
         if (ans.toLowerCase() === 'y') {
           const kp = genKeypair()
           finalPriv = String(kp.privKey)
-          finalX = String(kp.pubKey[0])
-          finalY = String(kp.pubKey[1])
           cfg.coordinatorPrivKey = finalPriv
           writeConfigToml(cfgPath, cfg)
+          finalDerived = deriveFromPriv(finalPriv)
         } else {
           finalPriv = existing.priv
-          finalX = existing.x
-          finalY = existing.y
+          finalDerived = existing
         }
       } else {
         const ans = readlineSync.question(
@@ -591,16 +642,31 @@ async function main(argv: string[]) {
         }
         const kp = genKeypair()
         finalPriv = String(kp.privKey)
-        finalX = String(kp.pubKey[0])
-        finalY = String(kp.pubKey[1])
         cfg.coordinatorPrivKey = finalPriv
         writeConfigToml(cfgPath, cfg)
+        finalDerived = deriveFromPriv(finalPriv)
       }
 
+      if (!finalDerived) {
+        console.error('Failed to derive operator pubkeys from coordinatorPrivKey')
+        process.exit(1)
+      }
+
+      const finalMode = chooseMode(finalDerived)
+      const finalPubkey =
+        finalMode === 'legacy' ? finalDerived.legacy : finalDerived.padded
+
+      console.log(`Selected key generation mode: ${finalMode}`)
+      console.log(`  legacy: (${finalDerived.legacy.x}, ${finalDerived.legacy.y})`)
+      console.log(`  padded: (${finalDerived.padded.x}, ${finalDerived.padded.y})`)
+
       // call registry with final pubkey
-      const res = await registry.setOperatorPubkey(finalX, finalY)
+      const res = await registry.setOperatorPubkey(
+        finalPubkey.x,
+        finalPubkey.y,
+      )
       console.log(
-        `set_maci_operator_pubkey sent. pubkey=(${finalX}, ${finalY}) tx=${res.transactionHash}`,
+        `set_maci_operator_pubkey sent. mode=${finalMode} pubkey=(${finalPubkey.x}, ${finalPubkey.y}) tx=${res.transactionHash}`,
       )
       process.exit(0)
     }

@@ -1,7 +1,11 @@
 import { fetchRounds } from '../vota/indexer'
 import { Task, TaskAct } from '../types'
 import { Timer } from '../storage/timer'
-import { genKeypair } from '../lib/keypair'
+import {
+  deriveCoordinatorPubKeyVariants,
+  pubKeysEqual,
+  serializePubKey,
+} from '../lib/keypair'
 import { clearRoundStatus, loadRoundStatus } from '../storage/roundStatus'
 import { getContractSignerClient, withRetry } from '../lib/client/utils'
 import {
@@ -42,10 +46,23 @@ export const inspect: TaskAct = async () => {
 
   try {
     const now = Date.now()
-    const coordinator = genKeypair(BigInt(process.env.COORDINATOR_PRI_KEY))
-
-    const rounds = await fetchRounds(coordinator.pubKey.map(String))
+    const coordinatorPubKeys = deriveCoordinatorPubKeyVariants(
+      BigInt(process.env.COORDINATOR_PRI_KEY),
+    )
+    const legacy = serializePubKey(coordinatorPubKeys.legacy)
+    const padded = serializePubKey(coordinatorPubKeys.padded)
+    const rounds = await fetchRounds([
+      [legacy.x, legacy.y],
+      [padded.x, padded.y],
+    ])
     const roundStatus = loadRoundStatus()
+
+    if (!pubKeysEqual(coordinatorPubKeys.legacy, coordinatorPubKeys.padded)) {
+      debug(
+        `Coordinator pubkey compatibility mode enabled. legacy=(${legacy.x}, ${legacy.y}) padded=(${padded.x}, ${padded.y})`,
+        'INSPECT',
+      )
+    }
 
     const stats = {
       totalRounds: rounds.length,

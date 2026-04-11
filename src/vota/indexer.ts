@@ -51,7 +51,7 @@ interface PublishDeactivateMessageEvent {
   contractAddress: string
 }
 
-interface RoundData {
+export interface RoundData {
   id: string
   blockHeight: string
   codeId: string
@@ -79,6 +79,24 @@ interface RoundData {
   circuitType: '1' | '0'
   circuitPower: string
   certificationSystem: string
+}
+
+const normalizeCoordinatorPubkeys = (
+  coordinatorPubkeys: string[] | string[][],
+): string[][] => {
+  if (coordinatorPubkeys.length === 0) return []
+  if (Array.isArray(coordinatorPubkeys[0])) {
+    return coordinatorPubkeys as string[][]
+  }
+  return [coordinatorPubkeys as string[]]
+}
+
+export const mergeRoundsById = (rounds: RoundData[]): RoundData[] => {
+  const deduped = new Map<string, RoundData>()
+  for (const round of rounds) {
+    deduped.set(round.id, round)
+  }
+  return [...deduped.values()]
 }
 
 const ROUND_QUERY = (id: string) => `query {
@@ -529,12 +547,19 @@ async function fetchAllPagesStream<T extends { id?: string }>(
   return { count, lastId }
 }
 
-export const fetchRounds = async (coordinatorPubkey: string[]) => {
-  return fetchAllPages<RoundData>(
-    ROUNDS_QUERY(coordinatorPubkey[0], coordinatorPubkey[1]),
-    {},
-    'fetch_rounds',
+export const fetchRounds = async (coordinatorPubkeys: string[] | string[][]) => {
+  const pubkeys = normalizeCoordinatorPubkeys(coordinatorPubkeys)
+  const rounds = await Promise.all(
+    pubkeys.map((coordinatorPubkey) =>
+      fetchAllPages<RoundData>(
+        ROUNDS_QUERY(coordinatorPubkey[0], coordinatorPubkey[1]),
+        {},
+        'fetch_rounds',
+      ),
+    ),
   )
+
+  return mergeRoundsById(rounds.flat())
 }
 
 export const fetchRound = async (id: string) => {

@@ -1,4 +1,4 @@
-import { genStaticRandomKey } from '../lib/keypair'
+import { genStaticRandomKey, KeyGenerationMode } from '../lib/keypair'
 import { MACI, MACI_STATES, MsgInput, TallyInput } from '../lib/Maci'
 import { IContractLogs } from '../types'
 import { info } from '../logger'
@@ -13,6 +13,7 @@ interface IGenMaciInputsParams {
   maxVoteOptions: number
   isQuadraticCost: boolean
   pollId?: number | bigint
+  keyGenerationMode?: KeyGenerationMode
 }
 
 export const genMaciInputs = (
@@ -25,6 +26,7 @@ export const genMaciInputs = (
     maxVoteOptions,
     isQuadraticCost,
     pollId,
+    keyGenerationMode,
   }: IGenMaciInputsParams,
   contractLogs: IContractLogs,
   // deactivates: bigint[][],
@@ -40,6 +42,7 @@ export const genMaciInputs = (
     contractLogs.states.length,
     isQuadraticCost,
     pollId !== undefined ? BigInt(pollId) : undefined,
+    keyGenerationMode,
   )
 
   for (const state of contractLogs.states) {
@@ -120,6 +123,7 @@ export const genMaciInputsFromStore = (
     maxVoteOptions,
     isQuadraticCost,
     pollId,
+    keyGenerationMode,
   }: IGenMaciInputsParams,
   contractLogs: Omit<IContractLogs, 'messages'>,
   messageStore: MessageStoreReader,
@@ -136,6 +140,7 @@ export const genMaciInputsFromStore = (
     contractLogs.states.length,
     isQuadraticCost,
     pollId !== undefined ? BigInt(pollId) : undefined,
+    keyGenerationMode,
   )
 
   maci.setMessageStore(messageStore, messageCount)
