@@ -9,7 +9,7 @@ import {
 } from './lib/keypair'
 import { GenerateWallet } from './wallet'
 import { info, error as logError } from './logger'
-import { SUPPORTED_ZKEY_BUNDLES } from './types'
+import { STARTUP_REQUIRED_ZKEY_BUNDLES } from './types'
 import { isBundleComplete, listMissingBundleFiles } from './lib/bundlesZkey'
 
 export async function init() {
@@ -101,7 +101,7 @@ export async function init() {
   info('Check your required zkey files🧐🧐🧐🧐', 'INIT')
 
   const zkeyRoot = (process.env.ZKEY_PATH || path.join(process.env.WORK_PATH || './work', 'zkey'))
-  for (const bundle of SUPPORTED_ZKEY_BUNDLES) {
+  for (const bundle of STARTUP_REQUIRED_ZKEY_BUNDLES) {
     const missing = listMissingBundleFiles(zkeyRoot, bundle)
     if (!isBundleComplete(zkeyRoot, bundle)) {
       info(`download zkey: ${bundle}${missing.length ? ` (missing: ${missing.join(', ')})` : ''}`, 'INIT')

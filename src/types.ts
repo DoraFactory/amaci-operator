@@ -30,6 +30,8 @@ export const SUPPORTED_ZKEY_BUNDLES: MaciType[] = [
   '9-4-3-125_v4',
 ]
 
+export const STARTUP_REQUIRED_ZKEY_BUNDLES: MaciType[] = ['9-4-3-125_v4']
+
 const V3_CIRCUIT_POWERS = new Set(['2-1-1-5', '4-2-2-25', '6-3-3-125'])
 const V4_CIRCUIT_POWERS = new Set([
   '2-1-1-25',

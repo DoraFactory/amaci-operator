@@ -5,8 +5,13 @@ import fs from 'fs'
 import path from 'path'
 // note: import heavy deps lazily inside subcommands to avoid keeping the process alive
 import * as readlineSync from 'readline-sync'
-import { SUPPORTED_ZKEY_BUNDLES } from '../types'
+import { STARTUP_REQUIRED_ZKEY_BUNDLES, SUPPORTED_ZKEY_BUNDLES } from '../types'
 import { isBundleComplete, listMissingBundleFiles } from '../lib/bundlesZkey'
+import {
+  isAffirmativeAnswer,
+  normalizeSetOperatorSubcommand,
+  resolveCoordinatorPrivKeyStrategy,
+} from './setOperator'
 
 // Helper: write file if missing
 function ensureDir(p: string) {
@@ -448,16 +453,16 @@ async function main(argv: string[]) {
     const zk = cfg.zkeyPath || path.join(workDir, 'zkey')
     console.log(`Using config: ${cfgPath}`)
     console.log(`Using zkeyPath: ${zk}`)
-    const required = SUPPORTED_ZKEY_BUNDLES
+    const required = STARTUP_REQUIRED_ZKEY_BUNDLES
     const missing = required.filter((r) => !isBundleComplete(zk, r))
     if (missing.length) {
       const details = missing
         .map((bundle) => `${bundle}: ${listMissingBundleFiles(zk, bundle).join(', ')}`)
         .join('\n')
       console.error(
-        `Missing required zkeys in ${zk}: ${missing.join(', ')}.\n` +
+        `Missing required startup zkeys in ${zk}: ${missing.join(', ')}.\n` +
           `${details}\n` +
-          `Please verify that zkeyPath is correct and the required circuit packs exist.\n` +
+          `Please verify that zkeyPath is correct and the required startup circuit packs exist.\n` +
           `Download them first with: maci zkey download ${workDir} --zkey ${zk} --force`,
       )
       process.exit(1)
@@ -526,6 +531,13 @@ async function main(argv: string[]) {
       console.error('Usage: amaci set-operator <identity|maciPubKey> <workDir>')
       process.exit(1)
     }
+    const normalizedSub = normalizeSetOperatorSubcommand(sub)
+    if (!normalizedSub) {
+      console.error(
+        'Unknown set-operator subcommand. Use identity or maciPubKey',
+      )
+      process.exit(1)
+    }
     const workDir = path.resolve(dir)
     const cfgPath = path.join(workDir, 'config.toml')
     if (!fs.existsSync(cfgPath)) {
@@ -545,19 +557,18 @@ async function main(argv: string[]) {
       console.error('Missing rpcEndpoint in config.toml')
       process.exit(1)
     }
-    // connect signing client via shared utils
-    const { getRegistrySignerClient } = await import('../lib/client/utils.js')
-    const registry = await getRegistrySignerClient(cfg.registryContract)
-    if (sub === 'identity') {
+    if (normalizedSub === 'identity') {
       if (!cfg.identity) {
         console.error('Missing identity in config.toml (identity = "...")')
         process.exit(1)
       }
+      const { getRegistrySignerClient } = await import('../lib/client/utils.js')
+      const registry = await getRegistrySignerClient(cfg.registryContract)
       const res = await registry.setOperatorIdentity(cfg.identity)
       console.log(`set_maci_operator_identity sent. tx=${res.transactionHash}`)
       process.exit(0)
     }
-    if (sub === 'maciPubkey') {
+    if (normalizedSub === 'maciPubkey') {
       // load key utils lazily
       const {
         genKeypair,
@@ -618,33 +629,17 @@ async function main(argv: string[]) {
         | NonNullable<ReturnType<typeof deriveFromPriv>>
         | undefined
 
-      if (existing) {
-        const ans = readlineSync.question(
-          'Detected existing coordinatorPrivKey in config. Overwrite with a new key? (y/n): ',
-        )
-        if (ans.toLowerCase() === 'y') {
-          const kp = genKeypair()
-          finalPriv = String(kp.privKey)
-          cfg.coordinatorPrivKey = finalPriv
-          writeConfigToml(cfgPath, cfg)
-          finalDerived = deriveFromPriv(finalPriv)
-        } else {
-          finalPriv = existing.priv
-          finalDerived = existing
-        }
+      if (resolveCoordinatorPrivKeyStrategy(!!existing) === 'reuse-existing') {
+        finalPriv = existing!.priv
+        finalDerived = existing
+        console.log('Using existing coordinatorPrivKey from config.toml')
       } else {
-        const ans = readlineSync.question(
-          'No valid coordinatorPrivKey found in config. Generate a new MACI key now? (y/n): ',
-        )
-        if (ans.toLowerCase() !== 'y') {
-          console.error('Aborted: coordinatorPrivKey is required to set operator pubkey')
-          process.exit(1)
-        }
         const kp = genKeypair()
         finalPriv = String(kp.privKey)
         cfg.coordinatorPrivKey = finalPriv
         writeConfigToml(cfgPath, cfg)
         finalDerived = deriveFromPriv(finalPriv)
+        console.log('Generated and saved a new coordinatorPrivKey to config.toml')
       }
 
       if (!finalDerived) {
@@ -656,11 +651,23 @@ async function main(argv: string[]) {
       const finalPubkey =
         finalMode === 'legacy' ? finalDerived.legacy : finalDerived.padded
 
-      console.log(`Selected key generation mode: ${finalMode}`)
+      console.log('Ready to set operator MACI public key on-chain:')
+      console.log(`  key generation mode: ${finalMode}`)
+      console.log(`  pubkey: (${finalPubkey.x}, ${finalPubkey.y})`)
+      console.log('Derived coordinator pubkeys from the active private key:')
       console.log(`  legacy: (${finalDerived.legacy.x}, ${finalDerived.legacy.y})`)
       console.log(`  padded: (${finalDerived.padded.x}, ${finalDerived.padded.y})`)
+      const confirmation = readlineSync.question(
+        'Confirm sending this operator pubkey on-chain? (y/n): ',
+      )
+      if (!isAffirmativeAnswer(confirmation)) {
+        console.error('Aborted: operator pubkey was not submitted on-chain')
+        process.exit(1)
+      }
 
       // call registry with final pubkey
+      const { getRegistrySignerClient } = await import('../lib/client/utils.js')
+      const registry = await getRegistrySignerClient(cfg.registryContract)
       const res = await registry.setOperatorPubkey(
         finalPubkey.x,
         finalPubkey.y,
@@ -670,8 +677,6 @@ async function main(argv: string[]) {
       )
       process.exit(0)
     }
-    console.error('Unknown set-operator subcommand. Use maciPubkey')
-    process.exit(1)
   }
   console.error(`Unknown command: ${cmd}`)
   printHelp()
