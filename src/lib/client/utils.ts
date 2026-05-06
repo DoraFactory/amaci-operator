@@ -157,6 +157,10 @@ const defaultSigningClientOptions: SigningCosmWasmClientOptions = {
 }
 
 export async function getContractSignerClient(contract: string) {
+  const rpcEndpoint = process.env.RPC_ENDPOINT
+  if (!rpcEndpoint) {
+    throw new Error('RPC_ENDPOINT is not set')
+  }
   return withRetry(
     async () => {
       const contractAddress = contract
@@ -164,7 +168,7 @@ export async function getContractSignerClient(contract: string) {
 
       const signingCosmWasmClient =
         await SigningCosmWasmClient.connectWithSigner(
-          process.env.RPC_ENDPOINT,
+          rpcEndpoint,
           wallet,
           {
             ...defaultSigningClientOptions,
@@ -201,6 +205,10 @@ export async function getAccountBalance(
 }
 
 export async function getRegistrySignerClient(contract: string) {
+  const rpcEndpoint = process.env.RPC_ENDPOINT
+  if (!rpcEndpoint) {
+    throw new Error('RPC_ENDPOINT is not set')
+  }
   return withRetry(
     async () => {
       const contractAddress = contract
@@ -208,7 +216,7 @@ export async function getRegistrySignerClient(contract: string) {
 
       const signingCosmWasmClient =
         await SigningCosmWasmClient.connectWithSigner(
-          process.env.RPC_ENDPOINT,
+          rpcEndpoint,
           wallet,
           {
             ...defaultSigningClientOptions,

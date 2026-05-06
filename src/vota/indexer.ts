@@ -1,6 +1,6 @@
 import { withRetry } from '../lib/client/utils'
 
-const endpoint = process.env.IND_ENDPOINT
+const endpoint = process.env.IND_ENDPOINT || ''
 const codeIds = process.env.CODE_IDS
 
 interface SignUpEvent {

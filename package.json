@@ -23,6 +23,7 @@
         "init": " node --env-file=.env dist/init.js",
         "new-key": " node dist/generate_key.js",
         "benchmark:calculate": "tsx scripts/calculate-benchmark.ts",
+        "benchmark:inputgen": "tsx scripts/benchmark-msg-tally-inputgen.ts",
         "benchmark:proof-batches": "tsx scripts/analyze-proof-batch.ts",
         "test": "vitest run",
         "test:watch": "vitest watch",

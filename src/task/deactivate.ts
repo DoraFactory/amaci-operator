@@ -2,11 +2,17 @@ import fs from 'fs'
 import path from 'path'
 // proof generation is offloaded to worker pool
 
-import { getContractSignerClient, withRetry, withBroadcastRetry } from '../lib/client/utils'
+import {
+  getContractSignerClient,
+  withRetry,
+  withBroadcastRetry,
+} from '../lib/client/utils'
 import { resolveRoundCircuitArtifacts } from '../lib/circuitArtifacts'
 import { uploadDeactivateHistory } from '../lib/client/Deactivate.client'
 import { genDeacitveMaciInputs } from '../operator/genDeactivateInputs'
+import { runDeactivateRustShadow } from '../operator/deactivateShadow'
 import {
+  IContractLogs,
   MaciParams,
   ProofData,
   TaskAct,
@@ -16,7 +22,11 @@ import { fetchAllDeactivateLogs, fetchRound } from '../vota/indexer'
 // adaptToUncompressed is handled inside worker
 import { proveMany } from '../prover/pool'
 import { describeProverRuntime } from '../prover/prove'
-import { loadProofCache, saveProofCache, buildInputsSignature } from '../storage/proofCache'
+import {
+  loadProofCache,
+  saveProofCache,
+  buildInputsSignature,
+} from '../storage/proofCache'
 import {
   recordCacheResult,
   recordProofBatch,
@@ -41,8 +51,8 @@ import {
 import { createSubmitter } from './submitter'
 import { parseMessageNumbers } from './messageParsing'
 import {
-  deriveCoordinatorPubKeyVariants,
-  resolveKeyGenerationModeForPubKey,
+  assertCoordinatorPubKeyMatches,
+  deriveCoordinatorPubKey,
 } from '../lib/keypair'
 import {
   NetworkError,
@@ -51,7 +61,8 @@ import {
   categorizeError,
 } from '../error'
 import { getProverConcurrency } from '../prover/concurrency'
-const zkeyRoot = process.env.ZKEY_PATH || path.join(process.env.WORK_PATH || './work', 'zkey')
+const zkeyRoot =
+  process.env.ZKEY_PATH || path.join(process.env.WORK_PATH || './work', 'zkey')
 
 const deactivateInterval = Number(process.env.DEACTIVATE_INTERVAL || 60000)
 
@@ -79,12 +90,16 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
   try {
     const isAllProcessedError = (e: any) =>
       typeof e?.message === 'string' &&
-      e.message.toLowerCase().includes('all deactivate messages have been processed')
+      e.message
+        .toLowerCase()
+        .includes('all deactivate messages have been processed')
     const maciRound = await withRetry(() => fetchRound(id), {
       context: 'INDEXER-FETCH-ROUND',
       maxRetries: 3,
     })
-    updateTaskContext('deactivate', id, { circuitPower: maciRound.circuitPower })
+    updateTaskContext('deactivate', id, {
+      circuitPower: maciRound.circuitPower,
+    })
     info(`Indexer round period: ${maciRound.period}`, 'DEACTIVATE-TASK')
 
     info('Start round deactivate', 'DEACTIVATE-TASK')
@@ -93,19 +108,22 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
     const circuitConcurrency = getProverConcurrency(maciRound.circuitPower)
 
     const params = maciParamsFromCircuitPower(maciRound.circuitPower)
-    const coordinatorPubKeys = deriveCoordinatorPubKeyVariants(
-      BigInt(process.env.COORDINATOR_PRI_KEY),
-    )
-    const keyGenerationMode = resolveKeyGenerationModeForPubKey(
-      coordinatorPubKeys,
+    const coordinatorPriKeyRaw = process.env.COORDINATOR_PRI_KEY
+    if (!coordinatorPriKeyRaw) {
+      throw new DeactivateError(
+        'Missing COORDINATOR_PRI_KEY',
+        'missing_coordinator_private_key',
+        { roundId: id },
+      )
+    }
+    const coordinatorPriKey = BigInt(coordinatorPriKeyRaw)
+    const coordinatorPubKey = deriveCoordinatorPubKey(coordinatorPriKey)
+    assertCoordinatorPubKeyMatches(
+      coordinatorPubKey,
       [
         BigInt(maciRound.coordinatorPubkeyX),
         BigInt(maciRound.coordinatorPubkeyY),
       ],
-    )
-    info(
-      `Resolved coordinator key generation mode: ${keyGenerationMode}`,
-      'DEACTIVATE-TASK',
     )
     const maciClient = await getContractSignerClient(id)
     const [chainPeriod, processedDMsgCount, dmsgChainLength] =
@@ -196,6 +214,30 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
           maxRetries: 3,
         },
       )
+      const contractLogs: IContractLogs = {
+        states: logs.signup.map((s) => ({
+          idx: s.stateIdx,
+          balance: BigInt(s.balance),
+          pubkey: (s.pubKey.match(/\d+/g) || []).map((n: string) =>
+            BigInt(n),
+          ) as [bigint, bigint],
+          c: [BigInt(s.d0), BigInt(s.d1), BigInt(s.d2), BigInt(s.d3)],
+        })),
+        messages: [],
+        dmessages: logs.dmsg.map((m) => ({
+          idx: m.dmsgChainLength,
+          numSignUps: m.numSignUps,
+          msg: parseMessageNumbers(
+            m.message,
+            'dmsg',
+            m.dmsgChainLength,
+            'DEACTIVATE-TASK',
+          ),
+          pubkey: (m.encPubKey.match(/\d+/g) || []).map((n: string) =>
+            BigInt(n),
+          ) as [bigint, bigint],
+        })),
+      }
 
       // Try reuse cached inputs for deactivate
       const inputsSig = buildInputsSignature({
@@ -204,7 +246,6 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
         artifactVersion: artifact.version,
         artifactBundle: artifact.bundle,
         pollId,
-        keyGenerationMode,
         deactivateMessageArity,
         maxVoteOptions: Number(maxVoteOptions),
         signupCount: logs.signup.length,
@@ -227,35 +268,11 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
           const recompute = genDeacitveMaciInputs(
             {
               ...params,
-              coordPriKey: BigInt(process.env.COORDINATOR_PRI_KEY),
+              coordPriKey: coordinatorPriKey,
               maxVoteOptions: Number(maxVoteOptions),
               pollId,
-              keyGenerationMode,
             },
-            {
-              states: logs.signup.map((s) => ({
-                idx: s.stateIdx,
-                balance: BigInt(s.balance),
-                pubkey: (s.pubKey.match(/\d+/g) || []).map((n: string) =>
-                  BigInt(n),
-                ) as [bigint, bigint],
-                c: [BigInt(s.d0), BigInt(s.d1), BigInt(s.d2), BigInt(s.d3)],
-              })),
-              messages: [],
-              dmessages: logs.dmsg.map((m) => ({
-                idx: m.dmsgChainLength,
-                numSignUps: m.numSignUps,
-                msg: parseMessageNumbers(
-                  m.message,
-                  'dmsg',
-                  m.dmsgChainLength,
-                  'DEACTIVATE-TASK',
-                ),
-                pubkey: (m.encPubKey.match(/\d+/g) || []).map((n: string) =>
-                  BigInt(n),
-                ) as [bigint, bigint],
-              })),
-            },
+            contractLogs,
             Number(dc),
           )
           res.newDeactivates = recompute.newDeactivates
@@ -270,48 +287,42 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
         }
       } else {
         const computed = genDeacitveMaciInputs(
-        {
-          ...params,
-          coordPriKey: BigInt(process.env.COORDINATOR_PRI_KEY),
-          maxVoteOptions: Number(maxVoteOptions),
-          pollId,
-          keyGenerationMode,
-        },
-        {
-          states: logs.signup.map((s) => ({
-            idx: s.stateIdx,
-            balance: BigInt(s.balance),
-            pubkey: (s.pubKey.match(/\d+/g) || []).map((n: string) =>
-              BigInt(n),
-            ) as [bigint, bigint],
-            c: [BigInt(s.d0), BigInt(s.d1), BigInt(s.d2), BigInt(s.d3)],
-          })),
-          messages: [],
-          dmessages: logs.dmsg.map((m) => ({
-            idx: m.dmsgChainLength,
-            numSignUps: m.numSignUps,
-            msg: parseMessageNumbers(
-              m.message,
-              'dmsg',
-              m.dmsgChainLength,
-              'DEACTIVATE-TASK',
-            ),
-            pubkey: (m.encPubKey.match(/\d+/g) || []).map((n: string) =>
-              BigInt(n),
-            ) as [bigint, bigint],
-          })),
-        },
-        Number(dc),
-      )
+          {
+            ...params,
+            coordPriKey: coordinatorPriKey,
+            maxVoteOptions: Number(maxVoteOptions),
+            pollId,
+          },
+          contractLogs,
+          Number(dc),
+        )
         res = computed
         // Save inputs + signature for deactivate
         saveProofCache(id, {
           circuitPower: maciRound.circuitPower,
           inputsSig,
-          inputs: { dMsgInputs: computed.dMsgInputs, newDeactivates: computed.newDeactivates },
+          inputs: {
+            dMsgInputs: computed.dMsgInputs,
+            newDeactivates: computed.newDeactivates,
+          },
         })
       }
-      recordCacheResult('deactivate_inputs', maciRound.circuitPower, res ? 'hit' : 'miss')
+      await runDeactivateRustShadow({
+        id,
+        circuitPower: maciRound.circuitPower,
+        params,
+        coordPriKey: coordinatorPriKey,
+        maxVoteOptions: Number(maxVoteOptions),
+        pollId,
+        contractLogs,
+        processedDMsgCount: Number(dc),
+        jsResult: res,
+      })
+      recordCacheResult(
+        'deactivate_inputs',
+        maciRound.circuitPower,
+        res ? 'hit' : 'miss',
+      )
 
       const dmsg: (ProofData & { root: string; size: string })[] = []
 
@@ -325,10 +336,12 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
         period: maciRound.period,
         circuitPower: maciRound.circuitPower,
       })
-      const cached = (loadProofCache(id)?.deactivate?.proofs || []) as (ProofData & { root: string; size: string })[]
+      const cached = (loadProofCache(id)?.deactivate?.proofs ||
+        []) as (ProofData & { root: string; size: string })[]
       let start = 0
       for (let i = 0; i < Math.min(cached.length, res.dMsgInputs.length); i++) {
-        const expected = res.dMsgInputs[i].input.newDeactivateCommitment.toString()
+        const expected =
+          res.dMsgInputs[i].input.newDeactivateCommitment.toString()
         if (cached[i]?.commitment === expected) {
           dmsg.push(cached[i])
           start = i + 1
@@ -344,10 +357,10 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
       const phaseStart = Date.now()
       const bin = path.join(zkeyRoot, artifact.bundle, 'deactivate.bin')
       const zkey = path.join(zkeyRoot, artifact.bundle, 'deactivate.zkey')
-    const chunk = Math.max(
-      1,
-      Number(process.env.PROVER_SAVE_CHUNK || 0) || circuitConcurrency,
-    )
+      const chunk = Math.max(
+        1,
+        Number(process.env.PROVER_SAVE_CHUNK || 0) || circuitConcurrency,
+      )
       // If pipeline: submit cached prefix first
       const submitBatch = Math.max(
         1,
@@ -360,12 +373,9 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
       let deactSubmitter: any = null
       if (usePipeline) {
         deactSubmitter = createSubmitter(
-          (items: any[]) => maciClient.processDeactivateMessageBatch(items, 'auto'),
-          (item: any) =>
-            maciClient.processDeactivateMessage(
-              item,
-              'auto',
-            ),
+          (items: any[]) =>
+            maciClient.processDeactivateMessageBatch(items, 'auto'),
+          (item: any) => maciClient.processDeactivateMessage(item, 'auto'),
           {
             batchLimit: submitBatch,
             contextBatch: 'RPC-PROCESS-DEACTIVATE-BATCH',
@@ -407,7 +417,10 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
           },
         )
         const _pd = Date.now() - _p0
-        info(`Generated DEACTIVATE proof batch [${start}..${end - 1}] in ${_pd}ms`, 'DEACTIVATE-TASK')
+        info(
+          `Generated DEACTIVATE proof batch [${start}..${end - 1}] in ${_pd}ms`,
+          'DEACTIVATE-TASK',
+        )
         recordProofBatch(
           'deactivate',
           maciRound.circuitPower,
@@ -422,7 +435,10 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
           debug(`Generated deactivate proof #${start + i}`, 'DEACTIVATE-TASK')
           dmsg.push({ proofHex, commitment, root, size })
         }
-        saveProofCache(id, { circuitPower: maciRound.circuitPower, deactivate: { proofs: dmsg } })
+        saveProofCache(id, {
+          circuitPower: maciRound.circuitPower,
+          deactivate: { proofs: dmsg },
+        })
         if (usePipeline && deactSubmitter) {
           const submitStart = end - slice.length
           const items = dmsg.slice(submitStart, end).map((x) => ({
@@ -446,7 +462,10 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
       }
       // If not pipeline, submit remaining accumulated dmsg in one pass
       if (!usePipeline && dmsg.length > 0 && !stopSubmitting) {
-        info(`Prepare to send ${dmsg.length} deactivate messages`, 'DEACTIVATE-TASK')
+        info(
+          `Prepare to send ${dmsg.length} deactivate messages`,
+          'DEACTIVATE-TASK',
+        )
         let di = 0
         while (di < dmsg.length && !stopSubmitting) {
           const end = Math.min(di + submitBatch, dmsg.length)
@@ -474,31 +493,39 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
                 slice.length,
                 (Date.now() - submitStart) / 1000,
               )
-              info(`Processed deactivate batch [${di + left}..${di + right - 1}] ✅`, 'DEACTIVATE-TASK', { txHash: res.transactionHash })
+              info(
+                `Processed deactivate batch [${di + left}..${di + right - 1}] ✅`,
+                'DEACTIVATE-TASK',
+                { txHash: res.transactionHash },
+              )
               break
             } catch (e) {
               if (isAllProcessedError(e)) {
-                warn('All deactivate messages already processed on-chain, stopping submissions', 'DEACTIVATE-TASK')
+                warn(
+                  'All deactivate messages already processed on-chain, stopping submissions',
+                  'DEACTIVATE-TASK',
+                )
                 stopSubmitting = true
                 break
               }
               if (size === 1) {
                 const single = slice[0]
                 try {
-                const submitStart = Date.now()
-                const res = await withBroadcastRetry(
-                  () =>
-                    maciClient.processDeactivateMessage(
+                  const submitStart = Date.now()
+                  const res = await withBroadcastRetry(
+                    () =>
+                      maciClient.processDeactivateMessage(
                         {
                           groth16Proof: single.groth16Proof,
-                          newDeactivateCommitment: single.newDeactivateCommitment,
+                          newDeactivateCommitment:
+                            single.newDeactivateCommitment,
                           newDeactivateRoot: single.newDeactivateRoot,
                           size: single.size,
                         },
                         'auto',
                       ),
-                  { context: 'RPC-PROCESS-DEACTIVATE', maxRetries: 3 },
-                )
+                    { context: 'RPC-PROCESS-DEACTIVATE', maxRetries: 3 },
+                  )
                   recordSubmitBatch(
                     'deactivate',
                     maciRound.circuitPower,
@@ -506,11 +533,18 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
                     1,
                     (Date.now() - submitStart) / 1000,
                   )
-                  info(`Processed deactivate #${di + left} ✅`, 'DEACTIVATE-TASK', { txHash: res.transactionHash })
+                  info(
+                    `Processed deactivate #${di + left} ✅`,
+                    'DEACTIVATE-TASK',
+                    { txHash: res.transactionHash },
+                  )
                   break
                 } catch (e2) {
                   if (isAllProcessedError(e2)) {
-                    warn('All deactivate messages already processed on-chain, stopping submissions', 'DEACTIVATE-TASK')
+                    warn(
+                      'All deactivate messages already processed on-chain, stopping submissions',
+                      'DEACTIVATE-TASK',
+                    )
                     stopSubmitting = true
                     break
                   }
@@ -607,7 +641,10 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
   } finally {
     // Ensure submitter is closed on any exit path (if created)
     try {
-      if (deactSubmitterGlobal && typeof deactSubmitterGlobal.close === 'function') {
+      if (
+        deactSubmitterGlobal &&
+        typeof deactSubmitterGlobal.close === 'function'
+      ) {
         await deactSubmitterGlobal.close()
       }
     } catch {}

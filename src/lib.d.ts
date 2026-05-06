@@ -28,3 +28,14 @@ declare module 'blake-hash' {
   const createBlakeHash: any
   export default createBlakeHash
 }
+
+declare namespace NodeJS {
+  interface ProcessEnv {
+    RUST_INPUTGEN_SHADOW?: string
+    RUST_INPUTGEN_SHADOW_STRICT?: string
+    RUST_INPUTGEN_BIN?: string
+    RUST_INPUTGEN_SHADOW_CMD?: string
+    RUST_INPUTGEN_MSG_TALLY?: string
+    RUST_INPUTGEN_MSG_TALLY_TIMEOUT_MS?: string
+  }
+}

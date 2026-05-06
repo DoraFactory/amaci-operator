@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { mergeRoundsById } from './indexer'
 
 describe('mergeRoundsById', () => {
-  it('deduplicates rounds by id across legacy and padded lookups', () => {
+  it('deduplicates rounds by id across repeated lookups', () => {
     const rounds = mergeRoundsById([
       { id: 'round-1', period: 'Voting' } as any,
       { id: 'round-1', period: 'Processing' } as any,

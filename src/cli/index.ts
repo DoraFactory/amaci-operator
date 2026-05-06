@@ -31,6 +31,15 @@ type Config = {
     backend?: string
     witnesscalcPath?: string
   }
+  rustInputgen?: {
+    shadow?: number
+    strict?: number
+    msgTally?: number
+    msgTallyPrimary?: number
+    msgTallyTimeoutMs?: number
+    binPath?: string
+    shadowCmd?: string
+  }
   prover?: {
     backend?: string
     rapidsnarkPath?: string
@@ -84,6 +93,15 @@ function defaultConfig(workPath: string): Config {
       backend: 'snarkjs',
       witnesscalcPath: '',
     },
+    rustInputgen: {
+      shadow: 0,
+      strict: 0,
+      msgTally: 0,
+      msgTallyPrimary: 0,
+      msgTallyTimeoutMs: 20000,
+      binPath: '',
+      shadowCmd: '',
+    },
   }
 }
 
@@ -104,21 +122,33 @@ function writeConfigToml(cfgPath: string, cfg: Config) {
   lines.push('# Deactivate recorder contract address(registryContract)')
   lines.push(`registryContract = "${cfg.registryContract || ''}"`)
   lines.push('')
-  lines.push('# Operator identity (set on registry via: amaci set-operator identity <workDir>)')
+  lines.push(
+    '# Operator identity (set on registry via: amaci set-operator identity <workDir>)',
+  )
   lines.push(`identity = "${cfg.identity || ''}"`)
   lines.push('')
-  lines.push('# Round code IDs to exclude from inspection/processing (array of strings)')
+  lines.push(
+    '# Round code IDs to exclude from inspection/processing (array of strings)',
+  )
   const codeIds = (cfg.codeIds && cfg.codeIds.length ? cfg.codeIds : [''])
     .map((s) => `"${s}"`)
     .join(', ')
   lines.push(`codeIds = [${codeIds}]`)
   lines.push('')
   lines.push('# aMACI operator account mnemonic on vota chain.')
-  lines.push('# Please pay special attention that this operator must be used independently for the operator.')
-  lines.push('# Otherwise it will cause sequence conflicts. It is also necessary to monitor the account balance to ensure the operator can pay the on-chain fees.')
-  lines.push('# It is recommended to set an alert if it falls below 500 DORA and replenish funds in a timely manner.')
+  lines.push(
+    '# Please pay special attention that this operator must be used independently for the operator.',
+  )
+  lines.push(
+    '# Otherwise it will cause sequence conflicts. It is also necessary to monitor the account balance to ensure the operator can pay the on-chain fees.',
+  )
+  lines.push(
+    '# It is recommended to set an alert if it falls below 500 DORA and replenish funds in a timely manner.',
+  )
   lines.push(`mnemonic = "${cfg.mnemonic || ''}"`)
-  lines.push('# operator MACI PrivKey(generated locally when set MACI key, do not share it)')
+  lines.push(
+    '# operator MACI PrivKey(generated locally when set MACI key, do not share it)',
+  )
   lines.push(`coordinatorPrivKey = "${cfg.coordinatorPrivKey || ''}"`)
   lines.push('')
   lines.push('# Interval between deactivate tasks (ms)')
@@ -141,6 +171,25 @@ function writeConfigToml(cfgPath: string, cfg: Config) {
     `witnesscalcPath = "${cfg.witnessCalc?.witnesscalcPath || cfg.prover?.witnesscalcPath || ''}"`,
   )
   lines.push('')
+  lines.push('# Rust inputgen configuration')
+  lines.push('[rustInputgen]')
+  lines.push('# Enable Rust inputgen shadow mode for deactivate (0 | 1)')
+  lines.push(`shadow = ${cfg.rustInputgen?.shadow ?? 0}`)
+  lines.push('# Fail the task when JS/Rust diff is detected (0 | 1)')
+  lines.push(`strict = ${cfg.rustInputgen?.strict ?? 0}`)
+  lines.push('# Enable Rust msg/tally shadow mode in tally (0 | 1)')
+  lines.push(`msgTally = ${cfg.rustInputgen?.msgTally ?? 0}`)
+  lines.push('# Use Rust msg/tally inputs as the primary prover/submission inputs (0 | 1)')
+  lines.push(`msgTallyPrimary = ${cfg.rustInputgen?.msgTallyPrimary ?? 0}`)
+  lines.push('# Timeout for Rust msg/tally shadow in milliseconds')
+  lines.push(`msgTallyTimeoutMs = ${cfg.rustInputgen?.msgTallyTimeoutMs ?? 20000}`)
+  lines.push('# Path to maci-inputgen binary')
+  lines.push(`binPath = "${cfg.rustInputgen?.binPath || ''}"`)
+  lines.push(
+    '# Optional shell command prefix, e.g. cargo run -p maci-inputgen --',
+  )
+  lines.push(`shadowCmd = "${cfg.rustInputgen?.shadowCmd || ''}"`)
+  lines.push('')
   lines.push('# Prover configuration')
   lines.push('[prover]')
   lines.push('# Prover backend: snarkjs | rapidsnark')
@@ -151,10 +200,14 @@ function writeConfigToml(cfgPath: string, cfg: Config) {
   lines.push(`pipeline = ${cfg.prover?.pipeline ?? 1}`)
   lines.push('# Number of concurrent prover workers')
   lines.push(`concurrency = ${cfg.prover?.concurrency ?? 2}`)
-  lines.push('# Persist proofs/inputs in chunks (0 = use the number of concurrency)')
+  lines.push(
+    '# Persist proofs/inputs in chunks (0 = use the number of concurrency)',
+  )
   lines.push(`saveChunk = ${cfg.prover?.saveChunk ?? 0}`)
   lines.push('')
-  lines.push('# Per-circuit concurrency overrides (keys are circuit power without _v3/_v4 suffix)')
+  lines.push(
+    '# Per-circuit concurrency overrides (keys are circuit power without _v3/_v4 suffix)',
+  )
   lines.push('[prover.concurrencyByCircuit]')
   const concurrencyByCircuit = cfg.prover?.concurrencyByCircuit || {}
   const entries = Object.entries(concurrencyByCircuit)
@@ -169,7 +222,9 @@ function writeConfigToml(cfgPath: string, cfg: Config) {
     }
   }
   lines.push('')
-  lines.push('# Submission batch sizes (0 = use saveChunk if > 0, otherwise concurrency)')
+  lines.push(
+    '# Submission batch sizes (0 = use saveChunk if > 0, otherwise concurrency)',
+  )
   lines.push('[prover.submitBatch]')
   lines.push(`msg = ${cfg.prover?.submitBatch?.msg ?? 0}`)
   lines.push(`tally = ${cfg.prover?.submitBatch?.tally ?? 0}`)
@@ -182,6 +237,7 @@ function readConfigToml(cfgPath: string): Config {
   const lines = text.split(/\r?\n/)
   const cfg: any = {
     witnessCalc: {},
+    rustInputgen: {},
     prover: { submitBatch: {}, concurrencyByCircuit: {} },
   }
   let section = ''
@@ -237,6 +293,8 @@ function readConfigToml(cfgPath: string): Config {
       cfg.prover[key] = value
     } else if (section === 'witnessCalc') {
       cfg.witnessCalc[key] = value
+    } else if (section === 'rustInputgen') {
+      cfg.rustInputgen[key] = value
     } else if (section === 'prover.concurrencyByCircuit') {
       const map = cfg.prover.concurrencyByCircuit || {}
       const normalizedKey = key.replace(/^['"]|['"]$/g, '')
@@ -271,6 +329,24 @@ function applyEnvFromConfig(cfg: Config) {
   if (cfg.witnessCalc?.witnesscalcPath || cfg.prover?.witnesscalcPath)
     process.env.WITNESSCALC_PATH =
       cfg.witnessCalc?.witnesscalcPath || cfg.prover?.witnesscalcPath || ''
+  if (cfg.rustInputgen?.shadow != null)
+    process.env.RUST_INPUTGEN_SHADOW = String(cfg.rustInputgen.shadow)
+  if (cfg.rustInputgen?.strict != null)
+    process.env.RUST_INPUTGEN_SHADOW_STRICT = String(cfg.rustInputgen.strict)
+  if (cfg.rustInputgen?.msgTally != null)
+    process.env.RUST_INPUTGEN_MSG_TALLY = String(cfg.rustInputgen.msgTally)
+  if (cfg.rustInputgen?.msgTallyPrimary != null)
+    process.env.RUST_INPUTGEN_MSG_TALLY_PRIMARY = String(
+      cfg.rustInputgen.msgTallyPrimary,
+    )
+  if (cfg.rustInputgen?.msgTallyTimeoutMs != null)
+    process.env.RUST_INPUTGEN_MSG_TALLY_TIMEOUT_MS = String(
+      cfg.rustInputgen.msgTallyTimeoutMs,
+    )
+  if (cfg.rustInputgen?.binPath)
+    process.env.RUST_INPUTGEN_BIN = cfg.rustInputgen.binPath
+  if (cfg.rustInputgen?.shadowCmd)
+    process.env.RUST_INPUTGEN_SHADOW_CMD = cfg.rustInputgen.shadowCmd
   if (cfg.prover?.concurrencyByCircuit)
     process.env.PROVER_CONCURRENCY_BY_CIRCUIT = JSON.stringify(
       cfg.prover.concurrencyByCircuit,
@@ -306,9 +382,7 @@ function getVersion(): string {
 }
 
 function existingZkeyBundles(zkeyPath: string, bundles: string[]): string[] {
-  return bundles.filter((bundle) =>
-    fs.existsSync(path.join(zkeyPath, bundle)),
-  )
+  return bundles.filter((bundle) => fs.existsSync(path.join(zkeyPath, bundle)))
 }
 
 function readOptionValue(
@@ -334,11 +408,10 @@ function printHelp() {
   console.log(`  maci start <dir> [--zkey <path>]`)
   console.log(`  maci zkey download <dir> [--zkey <path>] [--force]`)
   console.log(`  maci set-operator identity <dir>`)
-  console.log(`  maci set-operator maciPubKey <dir> [--key-generation <legacy|padded>]`)
+  console.log(`  maci set-operator maciPubKey <dir>`)
   console.log(`\nOptions:`)
   console.log(`  -h, --help       Show this help message`)
   console.log(`  -v, --version    Show version number`)
-  console.log(`  -k, --key-generation  Key derivation mode: legacy|padded`)
 }
 
 async function main(argv: string[]) {
@@ -383,7 +456,10 @@ async function main(argv: string[]) {
     writeConfigToml(cfgPath, cfg)
     ensureDir(zkeyPath)
     let overwriteExistingBundles = !!force
-    const existingBundles = existingZkeyBundles(zkeyPath, SUPPORTED_ZKEY_BUNDLES)
+    const existingBundles = existingZkeyBundles(
+      zkeyPath,
+      SUPPORTED_ZKEY_BUNDLES,
+    )
     if (existingBundles.length > 0 && !force) {
       const choice = readlineSync.question(
         `Existing zkey bundles found at ${zkeyPath}: ${existingBundles.join(', ')}. Overwrite only these bundles? (y/n): `,
@@ -413,9 +489,9 @@ async function main(argv: string[]) {
       process.exit(1)
     }
     console.log(`Initialized work directory at ${workDir}`)
-        console.log(`- data/: inputs and proof cache`)
-        console.log(`- log/: daily rotated logs`)
-        console.log(`- round/: per-round logs`)
+    console.log(`- data/: inputs and proof cache`)
+    console.log(`- log/: daily rotated logs`)
+    console.log(`- round/: per-round logs`)
     console.log(`- config.toml: operator configuration`)
     console.log(`- zkey/: circuit files at ${zkeyPath}`)
     process.exit(0)
@@ -457,7 +533,10 @@ async function main(argv: string[]) {
     const missing = required.filter((r) => !isBundleComplete(zk, r))
     if (missing.length) {
       const details = missing
-        .map((bundle) => `${bundle}: ${listMissingBundleFiles(zk, bundle).join(', ')}`)
+        .map(
+          (bundle) =>
+            `${bundle}: ${listMissingBundleFiles(zk, bundle).join(', ')}`,
+        )
         .join('\n')
       console.error(
         `Missing required startup zkeys in ${zk}: ${missing.join(', ')}.\n` +
@@ -503,7 +582,10 @@ async function main(argv: string[]) {
       : cfgZkey || path.join(workDir, 'zkey')
     ensureDir(targetZkey)
     let overwriteExistingBundles = !!force
-    const existingBundles = existingZkeyBundles(targetZkey, SUPPORTED_ZKEY_BUNDLES)
+    const existingBundles = existingZkeyBundles(
+      targetZkey,
+      SUPPORTED_ZKEY_BUNDLES,
+    )
     if (existingBundles.length > 0 && !force) {
       const choice = readlineSync.question(
         `Existing zkey bundles found at ${targetZkey}: ${existingBundles.join(', ')}. Overwrite only these bundles? (y/n): `,
@@ -541,7 +623,9 @@ async function main(argv: string[]) {
     const workDir = path.resolve(dir)
     const cfgPath = path.join(workDir, 'config.toml')
     if (!fs.existsSync(cfgPath)) {
-      console.error(`config.toml not found in ${workDir}. Run: amaci init ${workDir}`)
+      console.error(
+        `config.toml not found in ${workDir}. Run: amaci init ${workDir}`,
+      )
       process.exit(1)
     }
     // load config
@@ -572,55 +656,29 @@ async function main(argv: string[]) {
       // load key utils lazily
       const {
         genKeypair,
-        deriveCoordinatorPubKeyVariants,
-        normalizeKeyGenerationMode,
-        pubKeysEqual,
+        deriveCoordinatorPubKey,
         serializePubKey,
       } = await import('../lib/keypair.js')
       const requestedModeRaw = readOptionValue(args, '--key-generation', '-k')
-      const requestedMode = normalizeKeyGenerationMode(requestedModeRaw)
-      if (requestedModeRaw && !requestedMode) {
+      if (requestedModeRaw) {
         console.error(
-          'Invalid --key-generation value. Use legacy, padded, old_key_generation, or new_key_generation',
+          '--key-generation is no longer needed. Operator pubkeys are always derived with the default padded mode.',
         )
         process.exit(1)
       }
-      // helper to validate and derive pubkey from an existing privKey
       const deriveFromPriv = (privStr: string | undefined) => {
         if (!privStr) return undefined
         try {
           if (!/^\d+$/.test(privStr)) return undefined
           const privKey = BigInt(privStr)
-          const variants = deriveCoordinatorPubKeyVariants(privKey)
+          const pubKey = deriveCoordinatorPubKey(privKey)
           return {
             priv: privStr,
-            legacy: serializePubKey(variants.legacy),
-            padded: serializePubKey(variants.padded),
-            identical: pubKeysEqual(variants.legacy, variants.padded),
+            padded: serializePubKey(pubKey),
           }
         } catch {
           return undefined
         }
-      }
-
-      const chooseMode = (
-        derived: NonNullable<ReturnType<typeof deriveFromPriv>>,
-      ) => {
-        if (requestedMode) return requestedMode
-        if (derived.identical) return 'padded'
-
-        console.log('Coordinator pubkeys derived from the configured private key:')
-        console.log(`  legacy: (${derived.legacy.x}, ${derived.legacy.y})`)
-        console.log(`  padded: (${derived.padded.x}, ${derived.padded.y})`)
-        const answer = readlineSync.question(
-          'Choose key generation mode for the on-chain operator pubkey [padded recommended / legacy]: ',
-        )
-        const normalizedAnswer = normalizeKeyGenerationMode(answer.trim())
-        if (answer.trim() && !normalizedAnswer) {
-          console.error('Invalid key generation mode selection')
-          process.exit(1)
-        }
-        return normalizedAnswer || 'padded'
       }
 
       const existing = deriveFromPriv(cfg.coordinatorPrivKey)
@@ -639,23 +697,23 @@ async function main(argv: string[]) {
         cfg.coordinatorPrivKey = finalPriv
         writeConfigToml(cfgPath, cfg)
         finalDerived = deriveFromPriv(finalPriv)
-        console.log('Generated and saved a new coordinatorPrivKey to config.toml')
+        console.log(
+          'Generated and saved a new coordinatorPrivKey to config.toml',
+        )
       }
 
       if (!finalDerived) {
-        console.error('Failed to derive operator pubkeys from coordinatorPrivKey')
+        console.error(
+          'Failed to derive operator pubkeys from coordinatorPrivKey',
+        )
         process.exit(1)
       }
 
-      const finalMode = chooseMode(finalDerived)
-      const finalPubkey =
-        finalMode === 'legacy' ? finalDerived.legacy : finalDerived.padded
+      const finalPubkey = finalDerived.padded
 
       console.log('Ready to set operator MACI public key on-chain:')
-      console.log(`  key generation mode: ${finalMode}`)
       console.log(`  pubkey: (${finalPubkey.x}, ${finalPubkey.y})`)
-      console.log('Derived coordinator pubkeys from the active private key:')
-      console.log(`  legacy: (${finalDerived.legacy.x}, ${finalDerived.legacy.y})`)
+      console.log('Derived coordinator pubkey from the active private key:')
       console.log(`  padded: (${finalDerived.padded.x}, ${finalDerived.padded.y})`)
       const confirmation = readlineSync.question(
         'Confirm sending this operator pubkey on-chain? (y/n): ',
@@ -668,12 +726,9 @@ async function main(argv: string[]) {
       // call registry with final pubkey
       const { getRegistrySignerClient } = await import('../lib/client/utils.js')
       const registry = await getRegistrySignerClient(cfg.registryContract)
-      const res = await registry.setOperatorPubkey(
-        finalPubkey.x,
-        finalPubkey.y,
-      )
+      const res = await registry.setOperatorPubkey(finalPubkey.x, finalPubkey.y)
       console.log(
-        `set_maci_operator_pubkey sent. mode=${finalMode} pubkey=(${finalPubkey.x}, ${finalPubkey.y}) tx=${res.transactionHash}`,
+        `set_maci_operator_pubkey sent. pubkey=(${finalPubkey.x}, ${finalPubkey.y}) tx=${res.transactionHash}`,
       )
       process.exit(0)
     }

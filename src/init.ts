@@ -3,8 +3,7 @@ import fs from 'fs'
 import { downloadAndExtractZKeys } from './lib/downloadZkeys'
 import path from 'path'
 import {
-  deriveCoordinatorPubKeyVariants,
-  pubKeysEqual,
+  deriveCoordinatorPubKey,
   serializePubKey,
 } from './lib/keypair'
 import { GenerateWallet } from './wallet'
@@ -73,26 +72,18 @@ export async function init() {
     ensure(root + '/round')
   } catch {}
 
-  const coordinatorPubKeys = deriveCoordinatorPubKeyVariants(
+  const coordinatorPubKey = deriveCoordinatorPubKey(
     BigInt(process.env.COORDINATOR_PRI_KEY!),
   )
   const wallet = await GenerateWallet(0)
   const [{ address }] = await wallet.getAccounts()
-  const legacy = serializePubKey(coordinatorPubKeys.legacy)
-  const padded = serializePubKey(coordinatorPubKeys.padded)
+  const padded = serializePubKey(coordinatorPubKey)
 
   info('************************************************', 'INIT')
-  info(`Coordinator Public key derivation🔑🔑🔑🔑:`, 'INIT')
-  info(`legacy X: ${legacy.x}`, 'INIT')
-  info(`legacy Y: ${legacy.y}`, 'INIT')
+  info(`Coordinator Public key derivation (padded)🔑🔑🔑🔑:`, 'INIT')
   info(`padded X: ${padded.x}`, 'INIT')
   info(`padded Y: ${padded.y}`, 'INIT')
-  info(
-    pubKeysEqual(coordinatorPubKeys.legacy, coordinatorPubKeys.padded)
-      ? 'legacy and padded pubkeys are identical; no rotation is required'
-      : 'legacy and padded pubkeys differ; operator will inspect both and resolve per-round mode automatically',
-    'INIT',
-  )
+  info('Operator key generation mode is fixed to padded', 'INIT')
   info(`Coordinator Vota address: ${address}`, 'INIT')
   info('************************************************', 'INIT')
 
