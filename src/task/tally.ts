@@ -3,7 +3,7 @@ import path from 'path'
 // proof generation is offloaded to worker pool
 import { GasPrice, calculateFee } from '@cosmjs/stargate'
 
-import { fetchAllDeactivateLogs, fetchAllVotesLogs, fetchRound, streamPublishMessageEvents } from '../vota/indexer'
+import { fetchAllVotesLogs, fetchAllVotesLogsStream, fetchRound, markActiveIndexerUnhealthy } from '../vota/indexer'
 import { getContractSignerClient, withRetry, withBroadcastRetry } from '../lib/client/utils'
 import { resolveRoundCircuitArtifacts } from '../lib/circuitArtifacts'
 import { maciParamsFromCircuitPower, ProofData, TaskAct } from '../types'
@@ -136,6 +136,23 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       }
     | undefined
 
+  const completeTallyTask = (message: string, txHash?: string) => {
+    failureStage = 'completed'
+    writeRoundJson(id, 'tally-state.json', {
+      status: 'completed',
+      round: roundSummary,
+      recordedAt: new Date().toISOString(),
+      finalizeTxHash: txHash,
+    })
+    info(message, 'TALLY-TASK')
+    endOperation('tally', true, operationContext)
+    recordTaskSuccess('tally', id)
+    recordRoundCompletion(id, roundSummary?.circuitPower || 'unknown')
+    markRoundTallyCompleted(id, { txHash })
+    recordTaskEnd('tally', id)
+    return {}
+  }
+
   // Metrics: Record the task start
   recordTaskStart('tally', id)
 
@@ -204,6 +221,12 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       `Chain round status: period=${initialChainSnapshot.chainPeriod}, processedMsgCount=${initialChainSnapshot.processedMsgCount}, msgChainLength=${initialChainSnapshot.msgChainLength}, processedUserCount=${initialChainSnapshot.processedUserCount}`,
       'TALLY-TASK',
     )
+    if (initialChainSnapshot.chainPeriod === 'ended') {
+      return completeTallyTask(
+        `Round ${id} already ended on-chain, marking tally completed and skipping tally flow`,
+      )
+    }
+
     if (
       !['pending', 'voting', 'processing', 'tallying'].includes(
         initialChainSnapshot.chainPeriod,
@@ -363,45 +386,51 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       let inferredMessageArity: number | undefined
 
       const loadLogsFromIndexer = async () => {
+        inferredMessageArity = undefined
         if (useMessageStore) {
-          const baseLogs = await withRetry(() => fetchAllDeactivateLogs(id), {
-            context: 'INDEXER-FETCH-VOTES-LOGS',
-            maxRetries: 3,
-          })
-          logs = baseLogs
-
           const messagesDir = path.join(inputsPath, 'messages', id)
           messageStore = new DiskMessageStore(messagesDir, params.batchSize)
-          messageStore.reset()
 
-          const streamResult = await withRetry(
+          const streamLogs = await withRetry(
             () =>
-              streamPublishMessageEvents(id, async (nodes) => {
-                for (const m of nodes) {
-                  const msg = parseMessageNumbers(
-                    m.message,
-                    'msg',
-                    m.msgChainLength,
-                    'TALLY-TASK',
-                  )
-                  if (inferredMessageArity === undefined && msg.length > 0) {
-                    inferredMessageArity = msg.length
+              fetchAllVotesLogsStream(
+                id,
+                async (nodes) => {
+                  for (const m of nodes) {
+                    const msg = parseMessageNumbers(
+                      m.message,
+                      'msg',
+                      m.msgChainLength,
+                      'TALLY-TASK',
+                    )
+                    if (inferredMessageArity === undefined && msg.length > 0) {
+                      inferredMessageArity = msg.length
+                    }
+                    const pubkey = (m.encPubKey.match(/\d+/g) || []).map(
+                      (n: string) => BigInt(n),
+                    ) as [bigint, bigint]
+                    messageStore?.appendMessage(msg, pubkey)
                   }
-                  const pubkey = (m.encPubKey.match(/\d+/g) || []).map(
-                    (n: string) => BigInt(n),
-                  ) as [bigint, bigint]
-                  messageStore?.appendMessage(msg, pubkey)
-                }
-              }),
+                },
+                () => {
+                  messageStore?.reset()
+                },
+              ),
             {
-              context: 'INDEXER-STREAM-MESSAGES',
+              context: 'INDEXER-STREAM-VOTES-LOGS',
               maxRetries: 3,
             },
           )
 
+          logs = {
+            signup: streamLogs.signup,
+            msg: [],
+            dmsg: streamLogs.dmsg,
+            indexerEndpoint: streamLogs.indexerEndpoint,
+          }
           messageStore.finalize()
-          msgCount = streamResult.count
-          lastMsgId = streamResult.lastId
+          msgCount = streamLogs.messageStream.count
+          lastMsgId = streamLogs.messageStream.lastId
           return
         }
 
@@ -413,33 +442,83 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         lastMsgId = logs.msg[logs.msg.length - 1]?.id || ''
       }
 
+      const isIndexerLagging = (
+        chainMsgLength: number,
+        chainDMsgLength: number,
+        chainSignupCount: number,
+      ) => {
+        if (!logs) return true
+        return (
+          msgCount < chainMsgLength ||
+          logs.dmsg.length < chainDMsgLength ||
+          logs.signup.length < chainSignupCount
+        )
+      }
+
+      const describeIndexerLag = (
+        chainMsgLength: number,
+        chainDMsgLength: number,
+        chainSignupCount: number,
+      ) =>
+        `indexer=${logs?.indexerEndpoint || 'unknown'}, msg=${msgCount}/${chainMsgLength}, dmsg=${logs?.dmsg.length || 0}/${chainDMsgLength}, signup=${logs?.signup.length || 0}/${chainSignupCount}`
+
       failureStage = 'load_indexer_logs'
-      const chainMsgLength = Number(
-        await withRetry(() => maciClient.getMsgChainLength(), {
-          context: 'RPC-GET-MSG-CHAIN-LENGTH-INDEXER-SYNC',
-          maxRetries: 3,
-        }),
-      )
+      const [chainMsgLength, chainDMsgLength, chainSignupCount] =
+        await Promise.all([
+          withRetry(() => maciClient.getMsgChainLength(), {
+            context: 'RPC-GET-MSG-CHAIN-LENGTH-INDEXER-SYNC',
+            maxRetries: 3,
+          }),
+          withRetry(() => maciClient.getDMsgChainLength(), {
+            context: 'RPC-GET-DMSG-CHAIN-LENGTH-INDEXER-SYNC',
+            maxRetries: 3,
+          }),
+          withRetry(() => maciClient.getNumSignUp(), {
+            context: 'RPC-GET-SIGNUP-COUNT-INDEXER-SYNC',
+            maxRetries: 3,
+          }),
+        ]).then(([msg, dmsg, signup]) => [
+          Number(msg),
+          Number(dmsg),
+          Number(signup),
+        ])
       await loadLogsFromIndexer()
 
       let syncAttempt = 0
-      while (msgCount < chainMsgLength && syncAttempt < indexerSyncRetries) {
+      while (
+        isIndexerLagging(chainMsgLength, chainDMsgLength, chainSignupCount) &&
+        syncAttempt < indexerSyncRetries
+      ) {
         syncAttempt += 1
+        const details = describeIndexerLag(
+          chainMsgLength,
+          chainDMsgLength,
+          chainSignupCount,
+        )
         warn(
-          `Indexer lagging behind chain messages: indexer=${msgCount}, chain=${chainMsgLength}, retry=${syncAttempt}/${indexerSyncRetries}`,
+          `Indexer lagging behind chain state: ${details}, retry=${syncAttempt}/${indexerSyncRetries}`,
           'TALLY-TASK',
         )
+        markActiveIndexerUnhealthy('tally_indexer_sync', details)
         await sleep(indexerSyncIntervalMs)
         await loadLogsFromIndexer()
       }
 
-      if (msgCount < chainMsgLength) {
-        throw new TallyError('Indexer not synced with message chain', 'CONTRACT_ERROR', {
-          roundId: id,
-          operation: 'tally',
-          timestamp: Date.now(),
-          details: `indexer_msg_count=${msgCount}, chain_msg_chain_length=${chainMsgLength}`,
-        })
+      if (isIndexerLagging(chainMsgLength, chainDMsgLength, chainSignupCount)) {
+        throw new TallyError(
+          'Indexer not synced with message chain',
+          'CONTRACT_ERROR',
+          {
+            roundId: id,
+            operation: 'tally',
+            timestamp: Date.now(),
+            details: describeIndexerLag(
+              chainMsgLength,
+              chainDMsgLength,
+              chainSignupCount,
+            ),
+          },
+        )
       }
 
       info(
@@ -504,7 +583,9 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         const zeroSalt = '0'
 
         // Ensure contract is in tallying period before finalization
-        const ensureTallyingNoSignup = async () => {
+        const ensureTallyingNoSignup = async (): Promise<
+          'tallying' | 'ended' | 'not_ready'
+        > => {
           const pollMax = 20
           const pollInterval = 3000
           try {
@@ -521,19 +602,31 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
               context: 'RPC-GET-PERIOD-TALLYING-NO-SIGNUP',
               maxRetries: 3,
             })
-            if (p.status === 'tallying') return true
+            if (p.status === 'tallying') return 'tallying'
+            if (p.status === 'ended') return 'ended'
             await sleep(pollInterval)
           }
-          return false
+          return 'not_ready'
         }
 
         const pBeforeNoSignup = await withRetry(() => maciClient.getPeriod(), {
           context: 'RPC-GET-PERIOD-BEFORE-TALLY-NO-SIGNUP',
           maxRetries: 3,
         })
+        if (pBeforeNoSignup.status === 'ended') {
+          return completeTallyTask(
+            `Round ${id} already ended on-chain, skipping no-signup finalize broadcast`,
+          )
+        }
+
         if (pBeforeNoSignup.status !== 'tallying') {
-          const ok = await ensureTallyingNoSignup()
-          if (!ok) {
+          const status = await ensureTallyingNoSignup()
+          if (status === 'ended') {
+            return completeTallyTask(
+              `Round ${id} already ended on-chain while waiting for tallying, skipping no-signup finalize broadcast`,
+            )
+          }
+          if (status !== 'tallying') {
             logError(
               new TallyError('Contract not in tallying period', 'CONTRACT_ERROR', {
                 roundId: id,

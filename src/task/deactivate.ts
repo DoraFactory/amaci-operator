@@ -18,7 +18,11 @@ import {
   TaskAct,
   maciParamsFromCircuitPower,
 } from '../types'
-import { fetchAllDeactivateLogs, fetchRound } from '../vota/indexer'
+import {
+  fetchAllDeactivateLogs,
+  fetchRound,
+  markActiveIndexerUnhealthy,
+} from '../vota/indexer'
 // adaptToUncompressed is handled inside worker
 import { proveMany } from '../prover/pool'
 import { describeProverRuntime } from '../prover/prove'
@@ -65,6 +69,9 @@ const zkeyRoot =
   process.env.ZKEY_PATH || path.join(process.env.WORK_PATH || './work', 'zkey')
 
 const deactivateInterval = Number(process.env.DEACTIVATE_INTERVAL || 60000)
+
+const sleep = async (ms: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms))
 
 const inferMessageArity = (messages: bigint[][]): number | undefined => {
   for (const msg of messages) {
@@ -118,15 +125,12 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
     }
     const coordinatorPriKey = BigInt(coordinatorPriKeyRaw)
     const coordinatorPubKey = deriveCoordinatorPubKey(coordinatorPriKey)
-    assertCoordinatorPubKeyMatches(
-      coordinatorPubKey,
-      [
-        BigInt(maciRound.coordinatorPubkeyX),
-        BigInt(maciRound.coordinatorPubkeyY),
-      ],
-    )
+    assertCoordinatorPubKeyMatches(coordinatorPubKey, [
+      BigInt(maciRound.coordinatorPubkeyX),
+      BigInt(maciRound.coordinatorPubkeyY),
+    ])
     const maciClient = await getContractSignerClient(id)
-    const [chainPeriod, processedDMsgCount, dmsgChainLength] =
+    const [chainPeriod, processedDMsgCount, dmsgChainLength, signupCount] =
       await Promise.all([
         withRetry(() => maciClient.getPeriod(), {
           context: 'RPC-GET-PERIOD-DEACTIVATE-INITIAL',
@@ -140,9 +144,13 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
           context: 'RPC-GET-DMSG-CHAIN-LENGTH-DEACTIVATE-INITIAL',
           maxRetries: 3,
         }),
+        withRetry(() => maciClient.getNumSignUp(), {
+          context: 'RPC-GET-SIGNUP-COUNT-DEACTIVATE-INITIAL',
+          maxRetries: 3,
+        }),
       ])
     info(
-      `Chain round status: period=${chainPeriod.status}, processedDMsgCount=${Number(processedDMsgCount)}, dmsgChainLength=${Number(dmsgChainLength)}`,
+      `Chain round status: period=${chainPeriod.status}, processedDMsgCount=${Number(processedDMsgCount)}, dmsgChainLength=${Number(dmsgChainLength)}, signupCount=${Number(signupCount)}`,
       'DEACTIVATE-TASK',
     )
 
@@ -174,10 +182,54 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
       maxRetries: 3,
     })
 
-    const logs = await withRetry(() => fetchAllDeactivateLogs(id), {
+    const indexerSyncRetries = Math.max(
+      0,
+      Number(process.env.INDEXER_SYNC_MAX_RETRIES || 10),
+    )
+    const indexerSyncIntervalMs = Math.max(
+      500,
+      Number(process.env.INDEXER_SYNC_INTERVAL_MS || 3000),
+    )
+    const chainDMsgLength = Number(dmsgChainLength)
+    const chainSignupCount = Number(signupCount)
+    let logs = await withRetry(() => fetchAllDeactivateLogs(id), {
       context: 'INDEXER-FETCH-DEACTIVATE-LOGS',
       maxRetries: 3,
     })
+    const isIndexerLagging = () =>
+      logs.dmsg.length < chainDMsgLength ||
+      logs.signup.length < chainSignupCount
+    const describeIndexerLag = () =>
+      `indexer=${logs.indexerEndpoint || 'unknown'}, dmsg=${logs.dmsg.length}/${chainDMsgLength}, signup=${logs.signup.length}/${chainSignupCount}`
+
+    let syncAttempt = 0
+    while (isIndexerLagging() && syncAttempt < indexerSyncRetries) {
+      syncAttempt += 1
+      const details = describeIndexerLag()
+      warn(
+        `Indexer lagging behind chain deactivate state: ${details}, retry=${syncAttempt}/${indexerSyncRetries}`,
+        'DEACTIVATE-TASK',
+      )
+      markActiveIndexerUnhealthy('deactivate_indexer_sync', details)
+      await sleep(indexerSyncIntervalMs)
+      logs = await withRetry(() => fetchAllDeactivateLogs(id), {
+        context: 'INDEXER-FETCH-DEACTIVATE-LOGS',
+        maxRetries: 3,
+      })
+    }
+
+    if (isIndexerLagging()) {
+      throw new DeactivateError(
+        'Indexer not synced with deactivate chain',
+        'CONTRACT_ERROR',
+        {
+          roundId: id,
+          operation: 'deactivate',
+          timestamp: Date.now(),
+          details: describeIndexerLag(),
+        },
+      )
+    }
 
     info('Fetched deactivate logs', 'DEACTIVATE-TASK', {
       signup: logs.signup.length,

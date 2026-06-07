@@ -2,14 +2,34 @@ import fs from 'fs'
 // import { Secp256k1HdWallet } from '@cosmjs/launchpad'
 import { downloadAndExtractZKeys } from './lib/downloadZkeys'
 import path from 'path'
-import {
-  deriveCoordinatorPubKey,
-  serializePubKey,
-} from './lib/keypair'
+import { deriveCoordinatorPubKey, serializePubKey } from './lib/keypair'
 import { GenerateWallet } from './wallet'
 import { info, error as logError } from './logger'
 import { STARTUP_REQUIRED_ZKEY_BUNDLES } from './types'
 import { isBundleComplete, listMissingBundleFiles } from './lib/bundlesZkey'
+
+const parseIndexerEndpoints = () => {
+  const raw = process.env.INDEXER_ENDPOINTS?.trim()
+  if (!raw) return []
+  let values: string[]
+  try {
+    const parsed = JSON.parse(raw)
+    values = Array.isArray(parsed) ? parsed.map((value) => String(value)) : []
+  } catch {
+    values = raw.split(',')
+  }
+
+  const endpoints = [
+    ...new Set(values.map((value) => value.trim()).filter(Boolean)),
+  ]
+  for (const endpoint of endpoints) {
+    const url = new URL(endpoint)
+    if (!['http:', 'https:'].includes(url.protocol)) {
+      throw new Error(`unsupported protocol ${url.protocol}`)
+    }
+  }
+  return endpoints
+}
 
 export async function init() {
   info('Init your coordinator info', 'INIT')
@@ -18,11 +38,17 @@ export async function init() {
   const hasPrivKey = !!process.env.COORDINATOR_PRI_KEY
   const hasMnemonic = !!process.env.MNEMONIC
   if (!hasPrivKey) {
-    logError('Missing coordinatorPrivKey in config.toml (MACI coordinator private key)', 'INIT')
+    logError(
+      'Missing coordinatorPrivKey in config.toml (MACI coordinator private key)',
+      'INIT',
+    )
     process.exit(1)
   }
   if (!hasMnemonic) {
-    logError('Missing mnemonic in config.toml (operator wallet mnemonic)', 'INIT')
+    logError(
+      'Missing mnemonic in config.toml (operator wallet mnemonic)',
+      'INIT',
+    )
     process.exit(1)
   }
 
@@ -31,13 +57,28 @@ export async function init() {
     process.exit(1)
   }
 
-  if (!process.env.IND_ENDPOINT) {
-    logError('Missing IND_ENDPOINT. Please set indexerEndpoint in config.toml')
+  let indexerEndpoints: string[] = []
+  try {
+    indexerEndpoints = parseIndexerEndpoints()
+  } catch (error) {
+    logError(
+      `Invalid INDEXER_ENDPOINTS. Please set indexerEndpoints in config.toml: ${error instanceof Error ? error.message : String(error)}`,
+      'INIT',
+    )
+    process.exit(1)
+  }
+
+  if (indexerEndpoints.length === 0) {
+    logError(
+      'Missing INDEXER_ENDPOINTS. Please set indexerEndpoints in config.toml',
+    )
     process.exit(1)
   }
 
   if (!process.env.DEACTIVATE_RECORDER) {
-    logError('Missing DEACTIVATE_RECORDER. Please set registryContract (or deactivateRecorder) in config.toml')
+    logError(
+      'Missing DEACTIVATE_RECORDER. Please set registryContract (or deactivateRecorder) in config.toml',
+    )
     process.exit(1)
   }
 
@@ -88,14 +129,23 @@ export async function init() {
   info('************************************************', 'INIT')
 
   info(`Excluded round code IDs: ${process.env.CODE_IDS}`, 'INIT')
+  info(
+    `Configured indexer endpoints: count=${indexerEndpoints.length}, primary=${indexerEndpoints[0]}`,
+    'INIT',
+  )
 
   info('Check your required zkey files🧐🧐🧐🧐', 'INIT')
 
-  const zkeyRoot = (process.env.ZKEY_PATH || path.join(process.env.WORK_PATH || './work', 'zkey'))
+  const zkeyRoot =
+    process.env.ZKEY_PATH ||
+    path.join(process.env.WORK_PATH || './work', 'zkey')
   for (const bundle of STARTUP_REQUIRED_ZKEY_BUNDLES) {
     const missing = listMissingBundleFiles(zkeyRoot, bundle)
     if (!isBundleComplete(zkeyRoot, bundle)) {
-      info(`download zkey: ${bundle}${missing.length ? ` (missing: ${missing.join(', ')})` : ''}`, 'INIT')
+      info(
+        `download zkey: ${bundle}${missing.length ? ` (missing: ${missing.join(', ')})` : ''}`,
+        'INIT',
+      )
       await downloadAndExtractZKeys(bundle, zkeyRoot, {
         force: fs.existsSync(path.join(zkeyRoot, bundle)),
       })

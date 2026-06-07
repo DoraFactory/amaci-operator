@@ -31,11 +31,18 @@ declare module 'blake-hash' {
 
 declare namespace NodeJS {
   interface ProcessEnv {
+    INDEXER_ENDPOINTS?: string
+    INDEXER_REQUEST_TIMEOUT_MS?: string
+    INDEXER_FAILOVER_COOLDOWN_MS?: string
+    INDEXER_HEIGHT_CHECK_ENABLED?: string
+    INDEXER_HEIGHT_CHECK_INTERVAL_MS?: string
+    INDEXER_HEIGHT_LAG_THRESHOLD?: string
     RUST_INPUTGEN_SHADOW?: string
     RUST_INPUTGEN_SHADOW_STRICT?: string
     RUST_INPUTGEN_BIN?: string
     RUST_INPUTGEN_SHADOW_CMD?: string
     RUST_INPUTGEN_MSG_TALLY?: string
+    RUST_INPUTGEN_MSG_TALLY_PRIMARY?: string
     RUST_INPUTGEN_MSG_TALLY_TIMEOUT_MS?: string
   }
 }

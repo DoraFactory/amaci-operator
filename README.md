@@ -68,7 +68,8 @@ maci --help                        # Show help
 After running `maci init`, edit `config.toml` to configure:
 
 - `rpcEndpoint` - Chain RPC endpoint
-- `indexerEndpoint` - GraphQL indexer endpoint
+- `indexerEndpoints` - GraphQL indexer endpoints, ordered by failover priority
+- `INDEXER_HEIGHT_LAG_THRESHOLD` - Optional max allowed indexer height lag in blocks before failover, default `10`
 - `registryContract` - Registry contract address
 - `identity` - Your operator identity
 - `mnemonic` - Operator wallet mnemonic

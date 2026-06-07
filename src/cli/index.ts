@@ -21,7 +21,7 @@ function ensureDir(p: string) {
 type Config = {
   workPath: string
   rpcEndpoint?: string
-  indexerEndpoint?: string
+  indexerEndpoints?: string[]
   registryContract?: string
   identity?: string
   coordinatorPrivKey?: string
@@ -65,7 +65,7 @@ function defaultConfig(workPath: string): Config {
   return {
     workPath,
     rpcEndpoint: '',
-    indexerEndpoint: '',
+    indexerEndpoints: [''],
     registryContract: '',
     identity: '',
     coordinatorPrivKey: '',
@@ -117,8 +117,15 @@ function writeConfigToml(cfgPath: string, cfg: Config) {
   lines.push('')
   lines.push('# RPC endpoint of chain (e.g., https://rpc.node:26657)')
   lines.push(`rpcEndpoint = "${cfg.rpcEndpoint || ''}"`)
-  lines.push('# Indexer endpoint (GraphQL)')
-  lines.push(`indexerEndpoint = "${cfg.indexerEndpoint || ''}"`)
+  lines.push(
+    '# Indexer endpoints (GraphQL). The operator fails over in this order.',
+  )
+  const indexerEndpoints = cfg.indexerEndpoints?.length
+    ? cfg.indexerEndpoints
+    : ['']
+  lines.push(
+    `indexerEndpoints = [${indexerEndpoints.map((s) => `"${s}"`).join(', ')}]`,
+  )
   lines.push('# Deactivate recorder contract address(registryContract)')
   lines.push(`registryContract = "${cfg.registryContract || ''}"`)
   lines.push('')
@@ -179,10 +186,14 @@ function writeConfigToml(cfgPath: string, cfg: Config) {
   lines.push(`strict = ${cfg.rustInputgen?.strict ?? 0}`)
   lines.push('# Enable Rust msg/tally shadow mode in tally (0 | 1)')
   lines.push(`msgTally = ${cfg.rustInputgen?.msgTally ?? 0}`)
-  lines.push('# Use Rust msg/tally inputs as the primary prover/submission inputs (0 | 1)')
+  lines.push(
+    '# Use Rust msg/tally inputs as the primary prover/submission inputs (0 | 1)',
+  )
   lines.push(`msgTallyPrimary = ${cfg.rustInputgen?.msgTallyPrimary ?? 0}`)
   lines.push('# Timeout for Rust msg/tally shadow in milliseconds')
-  lines.push(`msgTallyTimeoutMs = ${cfg.rustInputgen?.msgTallyTimeoutMs ?? 20000}`)
+  lines.push(
+    `msgTallyTimeoutMs = ${cfg.rustInputgen?.msgTallyTimeoutMs ?? 20000}`,
+  )
   lines.push('# Path to maci-inputgen binary')
   lines.push(`binPath = "${cfg.rustInputgen?.binPath || ''}"`)
   lines.push(
@@ -244,7 +255,7 @@ function readConfigToml(cfgPath: string): Config {
   const topKeys = new Set([
     'workPath',
     'rpcEndpoint',
-    'indexerEndpoint',
+    'indexerEndpoints',
     'registryContract',
     'identity',
     'deactivateRecorder',
@@ -256,7 +267,8 @@ function readConfigToml(cfgPath: string): Config {
     'metricsPort',
     'zkeyPath',
   ])
-  for (const raw of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i]
     const line = raw.trim()
     if (!line || line.startsWith('#')) continue
     if (line.startsWith('[') && line.endsWith(']')) {
@@ -267,6 +279,16 @@ function readConfigToml(cfgPath: string): Config {
     if (eq < 0) continue
     const key = line.slice(0, eq).trim()
     let val = line.slice(eq + 1).trim()
+    if (val.startsWith('[') && !val.endsWith(']')) {
+      const chunks = [val]
+      while (i + 1 < lines.length) {
+        i += 1
+        const next = lines[i].trim()
+        chunks.push(next)
+        if (next.endsWith(']')) break
+      }
+      val = chunks.join(' ')
+    }
     const parseVal = (v: string): any => {
       if (v.startsWith('[') && v.endsWith(']')) {
         const inner = v.slice(1, -1).trim()
@@ -309,10 +331,25 @@ function readConfigToml(cfgPath: string): Config {
   return cfg as Config
 }
 
+const normalizeStringArray = (values?: string[] | string) => {
+  const rawValues = Array.isArray(values)
+    ? values
+    : typeof values === 'string'
+      ? [values]
+      : []
+  return [
+    ...new Set(rawValues.map((value) => String(value).trim()).filter(Boolean)),
+  ]
+}
+
 function applyEnvFromConfig(cfg: Config) {
   process.env.WORK_PATH = cfg.workPath
   if (cfg.rpcEndpoint) process.env.RPC_ENDPOINT = cfg.rpcEndpoint
-  if (cfg.indexerEndpoint) process.env.IND_ENDPOINT = cfg.indexerEndpoint
+  const indexerEndpoints = normalizeStringArray(cfg.indexerEndpoints)
+  if (indexerEndpoints.length > 0) {
+    process.env.INDEXER_ENDPOINTS = JSON.stringify(indexerEndpoints)
+    process.env.IND_ENDPOINT = indexerEndpoints[0]
+  }
   if (cfg.registryContract)
     process.env.DEACTIVATE_RECORDER = cfg.registryContract
   if (cfg.coordinatorPrivKey)
@@ -654,11 +691,8 @@ async function main(argv: string[]) {
     }
     if (normalizedSub === 'maciPubkey') {
       // load key utils lazily
-      const {
-        genKeypair,
-        deriveCoordinatorPubKey,
-        serializePubKey,
-      } = await import('../lib/keypair.js')
+      const { genKeypair, deriveCoordinatorPubKey, serializePubKey } =
+        await import('../lib/keypair.js')
       const requestedModeRaw = readOptionValue(args, '--key-generation', '-k')
       if (requestedModeRaw) {
         console.error(
@@ -714,7 +748,9 @@ async function main(argv: string[]) {
       console.log('Ready to set operator MACI public key on-chain:')
       console.log(`  pubkey: (${finalPubkey.x}, ${finalPubkey.y})`)
       console.log('Derived coordinator pubkey from the active private key:')
-      console.log(`  padded: (${finalDerived.padded.x}, ${finalDerived.padded.y})`)
+      console.log(
+        `  padded: (${finalDerived.padded.x}, ${finalDerived.padded.y})`,
+      )
       const confirmation = readlineSync.question(
         'Confirm sending this operator pubkey on-chain? (y/n): ',
       )
