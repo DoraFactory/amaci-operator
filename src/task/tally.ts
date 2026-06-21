@@ -6,6 +6,7 @@ import { GasPrice, calculateFee } from '@cosmjs/stargate'
 import { fetchAllVotesLogs, fetchAllVotesLogsStream, fetchRound, markActiveIndexerUnhealthy } from '../vota/indexer'
 import { getContractSignerClient, withRetry, withBroadcastRetry } from '../lib/client/utils'
 import { resolveRoundCircuitArtifacts } from '../lib/circuitArtifacts'
+import { resolveBundleProofFiles } from '../lib/bundlesZkey'
 import { maciParamsFromCircuitPower, ProofData, TaskAct } from '../types'
 import {
   info,
@@ -559,7 +560,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       )
       const pollId = artifact.pollId
       info(
-        `Resolved circuit artifacts: bundle=${artifact.bundle}, version=${artifact.version}, pollId=${String(pollId ?? '')}, messageArity=${String(messageArity ?? '')}, deactivateMessageArity=${String(deactivateMessageArity ?? '')}`,
+        `Resolved circuit artifacts: bundle=${artifact.bundle}, version=${artifact.version}, hasRoundVkeys=${String(!!artifact.hasRoundVkeys)}, pollId=${String(pollId ?? '')}, messageArity=${String(messageArity ?? '')}, deactivateMessageArity=${String(deactivateMessageArity ?? '')}`,
         'TALLY-TASK',
       )
 
@@ -1000,8 +1001,11 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         period: maciRound.period,
         circuitPower: maciRound.circuitPower,
       })
-      const msgBin = path.join(zkeyRoot, artifact.bundle, 'msg.bin')
-      const msgZkey = path.join(zkeyRoot, artifact.bundle, 'msg.zkey')
+      const { witnessPath: msgBin, zkeyPath: msgZkey } = resolveBundleProofFiles(
+        zkeyRoot,
+        artifact.bundle,
+        'msg',
+      )
       const cachedMsg = inputCacheMatches ? cache?.msg?.proofs || [] : []
       let startMsg = 0
       for (let i = 0; i < Math.min(cachedMsg.length, res.msgInputs.length); i++) {
@@ -1188,8 +1192,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         period: maciRound.period,
         circuitPower: maciRound.circuitPower,
       })
-      const tallyBin = path.join(zkeyRoot, artifact.bundle, 'tally.bin')
-      const tallyZkey = path.join(zkeyRoot, artifact.bundle, 'tally.zkey')
+      const { witnessPath: tallyBin, zkeyPath: tallyZkey } =
+        resolveBundleProofFiles(zkeyRoot, artifact.bundle, 'tally')
       const cachedTally = inputCacheMatches ? cache?.tally?.proofs || [] : []
       let startTally = 0
       for (let i = 0; i < Math.min(cachedTally.length, res.tallyInputs.length); i++) {

@@ -1,29 +1,48 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import * as https from 'https'
+import { createHash } from 'node:crypto'
 import * as tar from 'tar'
 import ProgressBar from 'progress'
 import { MaciType } from '../types'
+import { getRequiredBundleFiles, isBundleDirectoryComplete } from './bundlesZkey'
 
-const REQUIRED_FILES = [
-  'msg.wasm',
-  'msg.zkey',
-  'tally.wasm',
-  'tally.zkey',
-  'deactivate.wasm',
-  'deactivate.zkey',
-] as const
+const ZKEY_ARCHIVE_SHA256: Partial<Record<MaciType, string>> = {
+  '9-4-3-125_v5':
+    '792352fddaaaab9ac16befe8dbabff1757598b55640f0476be1d2f8b935f9904',
+}
 
 function ensureDir(dir: string) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
 }
 
-function hasRequiredFiles(dir: string): boolean {
-  return REQUIRED_FILES.every((file) => fs.existsSync(path.join(dir, file)))
+async function sha256File(filePath: string): Promise<string> {
+  return await new Promise((resolve, reject) => {
+    const hash = createHash('sha256')
+    const stream = fs.createReadStream(filePath)
+    stream.on('data', (chunk) => hash.update(chunk))
+    stream.on('error', reject)
+    stream.on('end', () => resolve(hash.digest('hex')))
+  })
+}
+
+async function verifyArchiveChecksum(
+  circuitPower: MaciType,
+  archivePath: string,
+) {
+  const expected = ZKEY_ARCHIVE_SHA256[circuitPower]
+  if (!expected) return
+
+  const actual = await sha256File(archivePath)
+  if (actual !== expected) {
+    throw new Error(
+      `SHA256 mismatch for ${circuitPower}: expected ${expected}, got ${actual}`,
+    )
+  }
 }
 
 function bundleAliases(circuitPower: MaciType): string[] {
-  const powerOnly = circuitPower.replace(/_v[34]$/, '')
+  const powerOnly = circuitPower.replace(/_v\d+$/, '')
   return [
     circuitPower,
     powerOnly,
@@ -45,11 +64,13 @@ function walkDirectories(root: string): string[] {
 
 function locateBundleDirectory(extractRoot: string, circuitPower: MaciType): string {
   const aliases = new Set(bundleAliases(circuitPower))
-  const candidates = walkDirectories(extractRoot).filter((dir) => hasRequiredFiles(dir))
+  const candidates = walkDirectories(extractRoot).filter((dir) =>
+    isBundleDirectoryComplete(dir),
+  )
 
   if (candidates.length === 0) {
     throw new Error(
-      `Extracted archive for ${circuitPower} does not contain a valid bundle directory. Expected files: ${REQUIRED_FILES.join(', ')}`,
+      `Extracted archive for ${circuitPower} does not contain a valid bundle directory. Expected files: ${getRequiredBundleFiles(circuitPower).join(', ')}`,
     )
   }
 
@@ -111,7 +132,7 @@ export async function downloadAndExtractZKeys(
 ) {
   const fileName = `amaci_${circuitPower}_zkeys.tar.gz`
   const bundleRoot = path.join(targetZkeyRoot, circuitPower)
-  const shouldReplace = opts.force || !hasRequiredFiles(bundleRoot)
+  const shouldReplace = opts.force || !isBundleDirectoryComplete(bundleRoot)
 
   if (!shouldReplace) return
 
@@ -126,13 +147,14 @@ export async function downloadAndExtractZKeys(
 
   try {
     await downloadZKeysWithRetry(archivePath, fileName, 3)
+    await verifyArchiveChecksum(circuitPower, archivePath)
     await new Promise((resolve) => setTimeout(resolve, 500))
     await extractZKeys(archivePath, extractRoot)
 
     const sourceBundleDir = locateBundleDirectory(extractRoot, circuitPower)
     copyDirectoryContents(sourceBundleDir, stagedBundleDir)
 
-    if (!hasRequiredFiles(stagedBundleDir)) {
+    if (!isBundleDirectoryComplete(stagedBundleDir)) {
       throw new Error(
         `Normalized bundle for ${circuitPower} is incomplete after extraction`,
       )

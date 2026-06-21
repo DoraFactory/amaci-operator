@@ -8,6 +8,7 @@ import {
   withBroadcastRetry,
 } from '../lib/client/utils'
 import { resolveRoundCircuitArtifacts } from '../lib/circuitArtifacts'
+import { resolveBundleProofFiles } from '../lib/bundlesZkey'
 import { uploadDeactivateHistory } from '../lib/client/Deactivate.client'
 import { genDeacitveMaciInputs } from '../operator/genDeactivateInputs'
 import { runDeactivateRustShadow } from '../operator/deactivateShadow'
@@ -254,7 +255,7 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
     )
     const pollId = artifact.pollId
     info(
-      `Resolved circuit artifacts: bundle=${artifact.bundle}, version=${artifact.version}, pollId=${String(pollId ?? '')}, deactivateMessageArity=${String(deactivateMessageArity ?? '')}`,
+      `Resolved circuit artifacts: bundle=${artifact.bundle}, version=${artifact.version}, hasRoundVkeys=${String(!!artifact.hasRoundVkeys)}, pollId=${String(pollId ?? '')}, deactivateMessageArity=${String(deactivateMessageArity ?? '')}`,
       'DEACTIVATE-TASK',
     )
 
@@ -407,8 +408,11 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
         start > 0 ? 'hit' : 'miss',
       )
       const phaseStart = Date.now()
-      const bin = path.join(zkeyRoot, artifact.bundle, 'deactivate.bin')
-      const zkey = path.join(zkeyRoot, artifact.bundle, 'deactivate.zkey')
+      const { witnessPath: bin, zkeyPath: zkey } = resolveBundleProofFiles(
+        zkeyRoot,
+        artifact.bundle,
+        'deactivate',
+      )
       const chunk = Math.max(
         1,
         Number(process.env.PROVER_SAVE_CHUNK || 0) || circuitConcurrency,

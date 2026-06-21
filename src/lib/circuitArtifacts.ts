@@ -9,11 +9,22 @@ export type ResolvedCircuitArtifacts = {
   bundle: MaciType
   version: CircuitArtifactVersion
   pollId?: number
+  hasRoundVkeys?: boolean
 }
 
 export type CircuitArtifactHints = {
   messageArity?: number
   deactivateMessageArity?: number
+}
+
+function isUnsupportedQueryError(err: any, queryName: string): boolean {
+  const message = String(err?.message || err).toLowerCase()
+  return (
+    message.includes(queryName.toLowerCase()) ||
+    message.includes('unknown request') ||
+    message.includes('unknown variant') ||
+    message.includes('unknown query')
+  )
 }
 
 async function queryPollId(maciClient: any): Promise<number | undefined> {
@@ -34,15 +45,24 @@ async function queryPollId(maciClient: any): Promise<number | undefined> {
 
     return parsed
   } catch (err: any) {
-    const message = err?.message || String(err)
-    if (
-      message.includes('get_poll_id') ||
-      message.includes('unknown request') ||
-      message.includes('unknown variant') ||
-      message.includes('not found') ||
-      message.includes('does not exist')
-    ) {
+    if (isUnsupportedQueryError(err, 'get_poll_id')) {
       return undefined
+    }
+
+    throw err
+  }
+}
+
+async function queryHasRoundVkeys(maciClient: any): Promise<boolean> {
+  try {
+    await maciClient.client.queryContractSmart(
+      maciClient.contractAddress,
+      { get_vkeys: {} },
+    )
+    return true
+  } catch (err: any) {
+    if (isUnsupportedQueryError(err, 'get_vkeys')) {
+      return false
     }
 
     throw err
@@ -86,12 +106,35 @@ export async function resolveRoundCircuitArtifacts(
   circuitPower: string,
   hints?: CircuitArtifactHints,
 ): Promise<ResolvedCircuitArtifacts> {
+  const supportsV3 = supportsCircuitArtifactVersion(circuitPower, 'v3')
+  const supportsV4 = supportsCircuitArtifactVersion(circuitPower, 'v4')
+  const supportsV5 = supportsCircuitArtifactVersion(circuitPower, 'v5')
+  if (!supportsV3 && !supportsV4 && !supportsV5) {
+    throw new Error(
+      `Unsupported circuit power: circuitPower=${circuitPower}, hints=${JSON.stringify(hints || {})}`,
+    )
+  }
+
+  const hasRoundVkeys = supportsV5
+    ? await queryHasRoundVkeys(maciClient)
+    : false
   const pollId = await queryPollId(maciClient)
-  const version = resolveVersionByHints(circuitPower, hints, pollId)
+  const version: CircuitArtifactVersion = hasRoundVkeys
+    ? 'v5'
+    : resolveVersionByHints(circuitPower, hints, pollId)
   if (!supportsCircuitArtifactVersion(circuitPower, version)) {
     throw new Error(
       `Unsupported circuit bundle: circuitPower=${circuitPower}, version=${version}, hints=${JSON.stringify(hints || {})}`,
     )
+  }
+
+  if (version === 'v5') {
+    return {
+      bundle: toCircuitBundleName(circuitPower, 'v5'),
+      version,
+      pollId,
+      hasRoundVkeys,
+    }
   }
 
   if (version === 'v4') {
@@ -99,11 +142,13 @@ export async function resolveRoundCircuitArtifacts(
       bundle: toCircuitBundleName(circuitPower, 'v4'),
       version,
       pollId,
+      hasRoundVkeys,
     }
   }
 
   return {
     bundle: toCircuitBundleName(circuitPower, 'v3'),
     version,
+    hasRoundVkeys,
   }
 }

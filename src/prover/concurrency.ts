@@ -6,6 +6,7 @@ const builtinCircuitConcurrency: CircuitConcurrencyMap = {
 }
 
 const normalizeCircuitKey = (value: string) => {
+  if (value.endsWith('_v5')) return value.slice(0, -3)
   if (value.endsWith('_v4')) return value.slice(0, -3)
   if (value.endsWith('_v3')) return value.slice(0, -3)
   return value

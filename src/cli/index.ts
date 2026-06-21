@@ -5,7 +5,7 @@ import fs from 'fs'
 import path from 'path'
 // note: import heavy deps lazily inside subcommands to avoid keeping the process alive
 import * as readlineSync from 'readline-sync'
-import { STARTUP_REQUIRED_ZKEY_BUNDLES, SUPPORTED_ZKEY_BUNDLES } from '../types'
+import { STARTUP_REQUIRED_ZKEY_BUNDLES } from '../types'
 import { isBundleComplete, listMissingBundleFiles } from '../lib/bundlesZkey'
 import {
   isAffirmativeAnswer,
@@ -166,7 +166,7 @@ function writeConfigToml(cfgPath: string, cfg: Config) {
   lines.push(`metricsPort = ${cfg.metricsPort ?? 3001}`)
   lines.push('')
   lines.push(
-    '# Path to zkey folder containing circuit packs (2-1-1-5_v3/v4, 4-2-2-25_v3/v4, 6-3-3-125_v3/v4, 9-4-3-125_v4)',
+    '# Path to zkey folder containing circuit packs (v3/v4/v5 bundles as supported by this operator)',
   )
   lines.push(`zkeyPath = "${cfg.zkeyPath || path.join(cfg.workPath, 'zkey')}"`)
   lines.push('')
@@ -217,7 +217,7 @@ function writeConfigToml(cfgPath: string, cfg: Config) {
   lines.push(`saveChunk = ${cfg.prover?.saveChunk ?? 0}`)
   lines.push('')
   lines.push(
-    '# Per-circuit concurrency overrides (keys are circuit power without _v3/_v4 suffix)',
+    '# Per-circuit concurrency overrides (keys are circuit power without _v3/_v4/_v5 suffix)',
   )
   lines.push('[prover.concurrencyByCircuit]')
   const concurrencyByCircuit = cfg.prover?.concurrencyByCircuit || {}
@@ -495,7 +495,7 @@ async function main(argv: string[]) {
     let overwriteExistingBundles = !!force
     const existingBundles = existingZkeyBundles(
       zkeyPath,
-      SUPPORTED_ZKEY_BUNDLES,
+      STARTUP_REQUIRED_ZKEY_BUNDLES,
     )
     if (existingBundles.length > 0 && !force) {
       const choice = readlineSync.question(
@@ -507,8 +507,8 @@ async function main(argv: string[]) {
       const { downloadAndExtractZKeys } = await import(
         '../lib/downloadZkeys.js'
       )
-      // Download all supported circuit packs by default
-      for (const bundle of SUPPORTED_ZKEY_BUNDLES) {
+      // Download only required production circuit packs by default.
+      for (const bundle of STARTUP_REQUIRED_ZKEY_BUNDLES) {
         const exists = fs.existsSync(path.join(zkeyPath, bundle))
         const complete = isBundleComplete(zkeyPath, bundle)
         if (exists && complete && !overwriteExistingBundles) {
@@ -621,7 +621,7 @@ async function main(argv: string[]) {
     let overwriteExistingBundles = !!force
     const existingBundles = existingZkeyBundles(
       targetZkey,
-      SUPPORTED_ZKEY_BUNDLES,
+      STARTUP_REQUIRED_ZKEY_BUNDLES,
     )
     if (existingBundles.length > 0 && !force) {
       const choice = readlineSync.question(
@@ -630,7 +630,7 @@ async function main(argv: string[]) {
       overwriteExistingBundles = choice.toLowerCase() === 'y'
     }
     const { downloadAndExtractZKeys } = await import('../lib/downloadZkeys.js')
-    for (const bundle of SUPPORTED_ZKEY_BUNDLES) {
+    for (const bundle of STARTUP_REQUIRED_ZKEY_BUNDLES) {
       const exists = fs.existsSync(path.join(targetZkey, bundle))
       const complete = isBundleComplete(targetZkey, bundle)
       if (exists && complete && !overwriteExistingBundles) {
