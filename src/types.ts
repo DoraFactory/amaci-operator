@@ -14,11 +14,12 @@ export type MaciType =
   | '2-1-1-5_v3'
   | '9-4-3-125_v4'
   | '9-4-3-125_v5'
+  | '9-4-3-125_v6'
   | '6-3-3-125_v4'
   | '4-2-2-25_v4'
   | '2-1-1-5_v4'
 
-export type CircuitArtifactVersion = 'v3' | 'v4' | 'v5'
+export type CircuitArtifactVersion = 'v3' | 'v4' | 'v5' | 'v6'
 
 export const SUPPORTED_ZKEY_BUNDLES: MaciType[] = [
   '2-1-1-5_v3',
@@ -30,11 +31,10 @@ export const SUPPORTED_ZKEY_BUNDLES: MaciType[] = [
   '6-3-3-125_v4',
   '9-4-3-125_v4',
   '9-4-3-125_v5',
+  '9-4-3-125_v6',
 ]
 
-export const STARTUP_REQUIRED_ZKEY_BUNDLES: MaciType[] = [
-  '9-4-3-125_v5',
-]
+export const STARTUP_REQUIRED_ZKEY_BUNDLES: MaciType[] = ['9-4-3-125_v6']
 
 const V3_CIRCUIT_POWERS = new Set(['2-1-1-5', '4-2-2-25', '6-3-3-125'])
 const V4_CIRCUIT_POWERS = new Set([
@@ -45,6 +45,7 @@ const V4_CIRCUIT_POWERS = new Set([
   '9-4-3-125',
 ])
 const V5_CIRCUIT_POWERS = new Set(['9-4-3-125'])
+const V6_CIRCUIT_POWERS = new Set(['9-4-3-125'])
 
 export const supportsCircuitArtifactVersion = (
   circuitPower: string,
@@ -52,7 +53,8 @@ export const supportsCircuitArtifactVersion = (
 ) => {
   if (version === 'v3') return V3_CIRCUIT_POWERS.has(circuitPower)
   if (version === 'v4') return V4_CIRCUIT_POWERS.has(circuitPower)
-  return V5_CIRCUIT_POWERS.has(circuitPower)
+  if (version === 'v5') return V5_CIRCUIT_POWERS.has(circuitPower)
+  return V6_CIRCUIT_POWERS.has(circuitPower)
 }
 
 export const toCircuitBundleName = (
@@ -105,6 +107,12 @@ export const MaciParams: Record<
     voteOptionTreeDepth: 3,
   },
   '9-4-3-125_v5': {
+    stateTreeDepth: 9,
+    intStateTreeDepth: 4,
+    batchSize: 125,
+    voteOptionTreeDepth: 3,
+  },
+  '9-4-3-125_v6': {
     stateTreeDepth: 9,
     intStateTreeDepth: 4,
     batchSize: 125,

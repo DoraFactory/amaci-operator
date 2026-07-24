@@ -6,7 +6,11 @@ import { GasPrice, calculateFee } from '@cosmjs/stargate'
 import { fetchAllVotesLogs, fetchAllVotesLogsStream, fetchRound, markActiveIndexerUnhealthy } from '../vota/indexer'
 import { getContractSignerClient, withRetry, withBroadcastRetry } from '../lib/client/utils'
 import { resolveRoundCircuitArtifacts } from '../lib/circuitArtifacts'
-import { resolveBundleProofFiles } from '../lib/bundlesZkey'
+import {
+  isBundleComplete,
+  resolveBundleProofFiles,
+} from '../lib/bundlesZkey'
+import { ensureZkeyBundle } from '../lib/downloadZkeys'
 import { maciParamsFromCircuitPower, ProofData, TaskAct } from '../types'
 import {
   info,
@@ -1001,6 +1005,13 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         period: maciRound.period,
         circuitPower: maciRound.circuitPower,
       })
+      if (!isBundleComplete(zkeyRoot, artifact.bundle)) {
+        info(
+          `Downloading required zkey bundle: ${artifact.bundle}`,
+          'TALLY-TASK',
+        )
+        await ensureZkeyBundle(artifact.bundle, zkeyRoot)
+      }
       const { witnessPath: msgBin, zkeyPath: msgZkey } = resolveBundleProofFiles(
         zkeyRoot,
         artifact.bundle,

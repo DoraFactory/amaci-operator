@@ -8,7 +8,8 @@ import {
   withBroadcastRetry,
 } from '../lib/client/utils'
 import { resolveRoundCircuitArtifacts } from '../lib/circuitArtifacts'
-import { resolveBundleProofFiles } from '../lib/bundlesZkey'
+import { isBundleComplete, resolveBundleProofFiles } from '../lib/bundlesZkey'
+import { ensureZkeyBundle } from '../lib/downloadZkeys'
 import { uploadDeactivateHistory } from '../lib/client/Deactivate.client'
 import { genDeacitveMaciInputs } from '../operator/genDeactivateInputs'
 import { runDeactivateRustShadow } from '../operator/deactivateShadow'
@@ -408,6 +409,13 @@ export const deactivate: TaskAct = async (_, { id }: { id: string }) => {
         start > 0 ? 'hit' : 'miss',
       )
       const phaseStart = Date.now()
+      if (!isBundleComplete(zkeyRoot, artifact.bundle)) {
+        info(
+          `Downloading required zkey bundle: ${artifact.bundle}`,
+          'DEACTIVATE-TASK',
+        )
+        await ensureZkeyBundle(artifact.bundle, zkeyRoot)
+      }
       const { witnessPath: bin, zkeyPath: zkey } = resolveBundleProofFiles(
         zkeyRoot,
         artifact.bundle,

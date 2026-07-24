@@ -166,7 +166,7 @@ function writeConfigToml(cfgPath: string, cfg: Config) {
   lines.push(`metricsPort = ${cfg.metricsPort ?? 3001}`)
   lines.push('')
   lines.push(
-    '# Path to zkey folder containing circuit packs (v3/v4/v5 bundles as supported by this operator)',
+    '# Path to zkey folder containing circuit packs (v3/v4/v5/v6 bundles as supported by this operator)',
   )
   lines.push(`zkeyPath = "${cfg.zkeyPath || path.join(cfg.workPath, 'zkey')}"`)
   lines.push('')
@@ -217,7 +217,7 @@ function writeConfigToml(cfgPath: string, cfg: Config) {
   lines.push(`saveChunk = ${cfg.prover?.saveChunk ?? 0}`)
   lines.push('')
   lines.push(
-    '# Per-circuit concurrency overrides (keys are circuit power without _v3/_v4/_v5 suffix)',
+    '# Per-circuit concurrency overrides (keys are circuit power without a version suffix such as _v6)',
   )
   lines.push('[prover.concurrencyByCircuit]')
   const concurrencyByCircuit = cfg.prover?.concurrencyByCircuit || {}
@@ -575,13 +575,23 @@ async function main(argv: string[]) {
             `${bundle}: ${listMissingBundleFiles(zk, bundle).join(', ')}`,
         )
         .join('\n')
-      console.error(
+      console.log(
         `Missing required startup zkeys in ${zk}: ${missing.join(', ')}.\n` +
           `${details}\n` +
-          `Please verify that zkeyPath is correct and the required startup circuit packs exist.\n` +
-          `Download them first with: maci zkey download ${workDir} --zkey ${zk} --force`,
+          'Downloading the missing bundles automatically...',
       )
-      process.exit(1)
+      try {
+        const { ensureZkeyBundle } = await import('../lib/downloadZkeys.js')
+        for (const bundle of missing) {
+          await ensureZkeyBundle(bundle, zk)
+        }
+      } catch (e: any) {
+        console.error(`ZKey download failed: ${e?.message || e}`)
+        console.error(
+          `You can retry with: maci zkey download ${workDir} --zkey ${zk} --force`,
+        )
+        process.exit(1)
+      }
     }
     applyEnvFromConfig(cfg)
     require('..')

@@ -12,6 +12,12 @@ const ZKEY_ARCHIVE_SHA256: Partial<Record<MaciType, string>> = {
     '792352fddaaaab9ac16befe8dbabff1757598b55640f0476be1d2f8b935f9904',
 }
 
+const ZKEY_ARCHIVE_SIZE: Partial<Record<MaciType, number>> = {
+  '9-4-3-125_v6': 8_490_961_031,
+}
+
+const activeBundleDownloads = new Map<string, Promise<void>>()
+
 function ensureDir(dir: string) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
 }
@@ -37,6 +43,18 @@ async function verifyArchiveChecksum(
   if (actual !== expected) {
     throw new Error(
       `SHA256 mismatch for ${circuitPower}: expected ${expected}, got ${actual}`,
+    )
+  }
+}
+
+function verifyArchiveSize(circuitPower: MaciType, archivePath: string) {
+  const expected = ZKEY_ARCHIVE_SIZE[circuitPower]
+  if (!expected) return
+
+  const actual = fs.statSync(archivePath).size
+  if (actual !== expected) {
+    throw new Error(
+      `Archive size mismatch for ${circuitPower}: expected ${expected}, got ${actual}`,
     )
   }
 }
@@ -147,8 +165,8 @@ export async function downloadAndExtractZKeys(
 
   try {
     await downloadZKeysWithRetry(archivePath, fileName, 3)
+    verifyArchiveSize(circuitPower, archivePath)
     await verifyArchiveChecksum(circuitPower, archivePath)
-    await new Promise((resolve) => setTimeout(resolve, 500))
     await extractZKeys(archivePath, extractRoot)
 
     const sourceBundleDir = locateBundleDirectory(extractRoot, circuitPower)
@@ -166,10 +184,41 @@ export async function downloadAndExtractZKeys(
   }
 }
 
+export async function ensureZkeyBundle(
+  circuitPower: MaciType,
+  targetZkeyRoot: string,
+) {
+  const bundleRoot = path.join(targetZkeyRoot, circuitPower)
+  if (isBundleDirectoryComplete(bundleRoot)) return
+
+  const downloadKey = path.resolve(bundleRoot)
+  const activeDownload = activeBundleDownloads.get(downloadKey)
+  if (activeDownload) {
+    await activeDownload
+    return
+  }
+
+  const download = downloadAndExtractZKeys(circuitPower, targetZkeyRoot, {
+    force: fs.existsSync(bundleRoot),
+  }).then(() => {
+    if (!isBundleDirectoryComplete(bundleRoot)) {
+      throw new Error(`Downloaded zkey bundle is incomplete: ${circuitPower}`)
+    }
+  })
+  activeBundleDownloads.set(downloadKey, download)
+
+  try {
+    await download
+  } finally {
+    if (activeBundleDownloads.get(downloadKey) === download) {
+      activeBundleDownloads.delete(downloadKey)
+    }
+  }
+}
+
 async function downloadZKeys(archivePath: string, fileName: string) {
   const url = `https://vota-zkey.s3.ap-southeast-1.amazonaws.com/${fileName}`
   console.log(url)
-  const file = fs.createWriteStream(archivePath)
 
   // Initialize progress bar
   const progressBar = new ProgressBar('Downloading [:bar] :percent :etas', {
@@ -180,37 +229,50 @@ async function downloadZKeys(archivePath: string, fileName: string) {
   })
 
   await new Promise<void>((resolve, reject) => {
-    https
-      .get(url, (response) => {
-        if (response.statusCode !== 200) {
-          console.error('Invalid status code:', response.statusCode)
-          reject(new Error(`Invalid status code: ${response.statusCode}`))
+    let settled = false
+    let file: fs.WriteStream | undefined
+
+    const fail = (error: Error) => {
+      if (settled) return
+      settled = true
+      file?.destroy()
+      try {
+        fs.rmSync(archivePath, { force: true })
+      } catch {}
+      reject(error)
+    }
+
+    const request = https.get(url, (response) => {
+      if (response.statusCode !== 200) {
+        response.resume()
+        fail(new Error(`Invalid status code: ${response.statusCode}`))
+        return
+      }
+
+      const totalSize = parseInt(response.headers['content-length'] || '0', 10)
+      progressBar.total = totalSize
+
+      file = fs.createWriteStream(archivePath, { flags: 'w' })
+      response.on('data', (chunk) => progressBar.tick(chunk.length))
+      response.on('aborted', () => fail(new Error('Download aborted')))
+      response.on('error', fail)
+      file.on('error', fail)
+      file.on('finish', () => {
+        if (settled) return
+        if (!response.complete) {
+          fail(new Error('Download ended before the response was complete'))
           return
         }
-
-        // Update progress bar total based on content length
-        const totalSize = parseInt(
-          response.headers['content-length'] || '0',
-          10,
-        )
-        progressBar.total = totalSize
-
-        // Update progress bar with each received data chunk
-        response.on('data', (chunk) => {
-          progressBar.tick(chunk.length)
-          file.write(chunk)
-        })
-
-        response.on('end', () => {
-          file.end()
-          resolve()
-        })
+        settled = true
+        file?.close(() => resolve())
       })
-      .on('error', (err) => {
-        console.error('Error during download:', err)
-        try { fs.unlinkSync(archivePath) } catch {}
-        reject(err)
-      })
+      response.pipe(file)
+    })
+
+    request.on('error', (error) => {
+      console.error('Error during download:', error)
+      fail(error)
+    })
   })
 }
 

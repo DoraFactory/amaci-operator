@@ -1,28 +1,44 @@
 import { describe, expect, it } from 'vitest'
-import { resolveRoundCircuitArtifacts } from './circuitArtifacts'
+import {
+  ROUND_VKEY_FINGERPRINTS,
+  resolveRoundCircuitArtifacts,
+} from './circuitArtifacts'
+
+const makeRoundVkeys = (
+  version: keyof typeof ROUND_VKEY_FINGERPRINTS,
+  encoding: 'bytes' | 'hex' = 'bytes',
+) =>
+  Object.fromEntries(
+    Object.entries(ROUND_VKEY_FINGERPRINTS[version]).map(
+      ([kind, fingerprint]) => [
+        kind,
+        Object.fromEntries(
+          Object.entries(fingerprint).map(([field, value]) => [
+            field,
+            encoding === 'bytes' ? [...Buffer.from(value, 'hex')] : value,
+          ]),
+        ),
+      ],
+    ),
+  )
 
 const makeClient = ({
   pollId,
-  hasVkeys = false,
+  roundVkeys,
   pollIdUnsupported = false,
 }: {
   pollId?: unknown
-  hasVkeys?: boolean
+  roundVkeys?: unknown
   pollIdUnsupported?: boolean
 }) => ({
   contractAddress: 'round-contract',
   client: {
     queryContractSmart: async (_contract: string, query: any) => {
       if (query?.get_vkeys) {
-        if (!hasVkeys) {
+        if (roundVkeys === undefined) {
           throw new Error('unknown request get_vkeys')
         }
-        return {
-          process_vkey: {},
-          tally_vkey: {},
-          deactivate_vkey: {},
-          add_key_vkey: {},
-        }
+        return roundVkeys
       }
 
       if (query?.get_poll_id) {
@@ -38,9 +54,25 @@ const makeClient = ({
 })
 
 describe('resolveRoundCircuitArtifacts', () => {
-  it('uses v5 when the round exposes get_vkeys', async () => {
+  it('uses v6 when the round vkeys match the v6 fingerprints', async () => {
     const artifact = await resolveRoundCircuitArtifacts(
-      makeClient({ pollId: 42, hasVkeys: true }),
+      makeClient({ pollId: 43, roundVkeys: makeRoundVkeys('v6') }),
+      '9-4-3-125',
+      {},
+    )
+
+    expect(artifact.version).toBe('v6')
+    expect(artifact.bundle).toBe('9-4-3-125_v6')
+    expect(artifact.pollId).toBe(43)
+    expect(artifact.hasRoundVkeys).toBe(true)
+  })
+
+  it('keeps v5 rounds on the v5 bundle', async () => {
+    const artifact = await resolveRoundCircuitArtifacts(
+      makeClient({
+        pollId: 42,
+        roundVkeys: makeRoundVkeys('v5', 'hex'),
+      }),
       '9-4-3-125',
       {},
     )
@@ -51,7 +83,7 @@ describe('resolveRoundCircuitArtifacts', () => {
     expect(artifact.hasRoundVkeys).toBe(true)
   })
 
-  it('skips get_vkeys when the circuit power has no v5 bundle', async () => {
+  it('skips get_vkeys when the circuit power has no fingerprinted bundle', async () => {
     const queries: string[] = []
     const client = {
       contractAddress: 'round-contract',
@@ -127,6 +159,16 @@ describe('resolveRoundCircuitArtifacts', () => {
     await expect(
       resolveRoundCircuitArtifacts(client, '9-4-3-125', {}),
     ).rejects.toThrow('rpc unavailable')
+  })
+
+  it('rejects unknown round verification keys', async () => {
+    await expect(
+      resolveRoundCircuitArtifacts(
+        makeClient({ pollId: 44, roundVkeys: { process_vkey: {} } }),
+        '9-4-3-125',
+        {},
+      ),
+    ).rejects.toThrow('Unsupported round verification keys')
   })
 
   it('does not treat contract lookup failures as old rounds', async () => {

@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v2.4.0-beta.1] - 2026-07-24
+
+### Added
+
+- Added the `9-4-3-125_v6` circuit bundle and made it the default zkey
+  download for new operator workspaces.
+- Added round verification-key fingerprinting so v5 and v6 rounds select the
+  matching zkey bundle.
+- Added on-demand zkey downloads when an active round requires a supported
+  bundle that is not present locally.
+
 ## [v2.2.0] - 2026-03-25
 
 ### Added

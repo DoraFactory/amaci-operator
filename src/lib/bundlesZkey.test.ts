@@ -8,7 +8,7 @@ import {
   resolveBundleProofFiles,
 } from './bundlesZkey'
 
-const bundle = '9-4-3-125_v5'
+const bundle = '9-4-3-125_v6'
 let tmpDir = ''
 
 function writeBundleFile(file: string) {
@@ -23,7 +23,7 @@ describe('bundlesZkey', () => {
     tmpDir = ''
   })
 
-  it('accepts process.* as the message circuit alias for v5 bundles', () => {
+  it('accepts process.* as the message circuit alias for v6 bundles', () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'amaci-zkey-test-'))
     for (const file of [
       'process.wasm',
