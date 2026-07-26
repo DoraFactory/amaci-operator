@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v2.4.0-beta.2] - 2026-07-26
+
+### Fixed
+
+- Added v6 `max_votes_per_option` contract queries and packed the value into
+  bits 96-127 of `packedVals` for process-message proofs.
+- Matched the v6 circuit behavior by treating `0` as unlimited and rejecting
+  vote weights above a non-zero per-option cap.
+- Added cap-aware input cache signatures so stale v6 inputs and proofs are not
+  reused after upgrading.
+- Preserved v5 compatibility and fall back to TypeScript input generation for
+  capped rounds until the Rust input generator supports the new field.
+
 ## [v2.4.0-beta.1] - 2026-07-24
 
 ### Added

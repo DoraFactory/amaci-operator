@@ -139,6 +139,7 @@ export function buildInputsSignature(args: {
   messageArity?: number
   deactivateMessageArity?: number
   maxVoteOptions: number
+  maxVotesPerOption?: bigint | number | string
   signupCount: number
   lastSignupId?: string
   msgCount: number
@@ -157,6 +158,9 @@ export function buildInputsSignature(args: {
     `ma:${args.messageArity ?? ''}`,
     `dma:${args.deactivateMessageArity ?? ''}`,
     String(args.maxVoteOptions),
+    ...(args.maxVotesPerOption === undefined
+      ? []
+      : [`mvpo:${args.maxVotesPerOption}`]),
     `su:${args.signupCount}:${args.lastSignupId || ''}`,
     `m:${args.msgCount}:${args.lastMsgId || ''}`,
     `dm:${args.dmsgCount}:${args.lastDmsgId || ''}`,

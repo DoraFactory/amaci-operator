@@ -51,6 +51,16 @@ const SNARK_FIELD_SIZE =
 const UINT96 = 2n ** 96n
 const UINT32 = 2n ** 32n
 
+export const normalizeMaxVotesPerOption = (
+  value: bigint | number | string = 0n,
+): bigint => {
+  const normalized = BigInt(value)
+  if (normalized < 0n || normalized >= UINT32) {
+    throw new Error('maxVotesPerOption must fit in 32 bits (0 = no limit)')
+  }
+  return normalized
+}
+
 export enum MACI_STATES {
   FILLING, // sign up & publish message
   PROCESSING, // batch process message
@@ -71,6 +81,7 @@ export class MACI {
   public states: MACI_STATES
 
   protected maxVoteOptions: number
+  protected maxVotesPerOption: bigint
   protected voSize: number
   protected numSignUps: number
 
@@ -146,6 +157,7 @@ export class MACI {
     numSignUps: number,
     isQuadraticCost: boolean,
     pollId?: bigint,
+    maxVotesPerOption: bigint | number | string = 0n,
   ) {
     const deactivateTreeDepth = stateTreeDepth + 2
     this.stateTreeDepth = stateTreeDepth
@@ -154,6 +166,7 @@ export class MACI {
     this.batchSize = batchSize
     this.deactivateTreeDepth = deactivateTreeDepth
     this.maxVoteOptions = maxVoteOptions
+    this.maxVotesPerOption = normalizeMaxVotesPerOption(maxVotesPerOption)
     this.voSize = 5 ** voteOptionTreeDepth
     this.numSignUps = numSignUps
     this.isQuadraticCost = isQuadraticCost
@@ -695,6 +708,9 @@ export class MACI {
     if (!verified) {
       return 'signature error'
     }
+    if (this.maxVotesPerOption > 0n && cmd.newVotes > this.maxVotesPerOption) {
+      return 'votes per option overflow'
+    }
     const currVotes = s.voTree.leaf(voIdx)
     if (this.isQuadraticCost) {
       if (s.balance + currVotes * currVotes < cmd.newVotes * cmd.newVotes) {
@@ -836,7 +852,8 @@ export class MACI {
     const packedVals =
       BigInt(this.maxVoteOptions) +
       (BigInt(this.numSignUps) << 32n) +
-      (this.isQuadraticCost ? 1n << 64n : 0n)
+      (this.isQuadraticCost ? 1n << 64n : 0n) +
+      (this.maxVotesPerOption << 96n)
     const batchStartHash =
       rawMessages.length > 0 ? rawMessages[0].prevHash : 0n
     const batchEndHash =

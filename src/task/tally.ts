@@ -59,6 +59,7 @@ import {
   generateMsgTallyRustInputs,
   runMsgTallyRustShadow,
 } from '../operator/rustMsgTally'
+import { normalizeMaxVotesPerOption } from '../lib/Maci'
 
 const zkeyRoot = process.env.ZKEY_PATH || path.join(process.env.WORK_PATH || './work', 'zkey')
 const highScaleCircuitPowers = new Set(['6-3-3-125', '9-4-3-125'])
@@ -575,6 +576,32 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
           maxRetries: 3,
         },
       )
+      const maxVotesPerOption =
+        artifact.version === 'v6'
+          ? normalizeMaxVotesPerOption(
+              await withRetry(() => maciClient.maxVotesPerOption(), {
+                context: 'RPC-GET-MAX-VOTES-PER-OPTION',
+                maxRetries: 3,
+              }),
+            )
+          : 0n
+      const useRustMsgTallyPrimaryForRound =
+        useRustMsgTallyPrimary && maxVotesPerOption === 0n
+      const useRustMsgTallyForRound =
+        useRustMsgTally && maxVotesPerOption === 0n
+      if (
+        maxVotesPerOption > 0n &&
+        (useRustMsgTally || useRustMsgTallyPrimary)
+      ) {
+        warn(
+          'maxVotesPerOption is not supported by the Rust input generator yet; using the TypeScript input generator for this round',
+          'TALLY-TASK',
+        )
+      }
+      info(
+        `Round vote limits: maxVoteOptions=${String(maxVoteOptions)}, maxVotesPerOption=${maxVotesPerOption}`,
+        'TALLY-TASK',
+      )
 
       // Fast-path: if there are votes but NO signups, skip proving and finalize directly
       if (logs.signup.length === 0) {
@@ -791,13 +818,14 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       const inputsSig = buildInputsSignature({
         circuitPower: maciRound.circuitPower,
         circuitType: maciRound.circuitType,
-        inputGenerator: useRustMsgTallyPrimary ? 'rust' : 'ts',
+        inputGenerator: useRustMsgTallyPrimaryForRound ? 'rust' : 'ts',
         artifactVersion: artifact.version,
         artifactBundle: artifact.bundle,
         pollId,
         messageArity,
         deactivateMessageArity,
         maxVoteOptions: Number(maxVoteOptions),
+        ...(artifact.version === 'v6' ? { maxVotesPerOption } : {}),
         signupCount: logs.signup.length,
         lastSignupId: logs.signup[logs.signup.length - 1]?.id,
         msgCount,
@@ -840,7 +868,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         if (useMessageStore && !messageStore) {
           throw new Error('Message store not initialized')
         }
-        if (useRustMsgTallyPrimary) {
+        if (useRustMsgTallyPrimaryForRound) {
           failureStage = 'generate_rust_inputs'
           const rustResult = await generateMsgTallyRustInputs({
             id,
@@ -877,6 +905,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
                   ...params,
                   coordPriKey: coordinatorPriKey,
                   maxVoteOptions: Number(maxVoteOptions),
+                  maxVotesPerOption,
                   isQuadraticCost: !!Number(maciRound.circuitType),
                   pollId,
                 },
@@ -893,6 +922,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
                   ...params,
                   coordPriKey: coordinatorPriKey,
                   maxVoteOptions: Number(maxVoteOptions),
+                  maxVotesPerOption,
                   isQuadraticCost: !!Number(maciRound.circuitType),
                   pollId,
                 },
@@ -916,7 +946,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
               mode: 'files',
               msgCount: res.msgInputs.length,
               tallyCount: res.tallyInputs.length,
-              source: useRustMsgTallyPrimary ? 'rust' : 'ts',
+              source: useRustMsgTallyPrimaryForRound ? 'rust' : 'ts',
             },
             result: res.result.map((x: any) => x.toString()),
             salt: (res.salt || (res.tallyInputs.length ? res.tallyInputs[res.tallyInputs.length - 1].newResultsRootSalt.toString() : '0')),
@@ -928,7 +958,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
             inputs: { msgInputs: res.msgInputs, tallyInputs: res.tallyInputs },
             inputsMeta: {
               mode: 'inline',
-              source: useRustMsgTallyPrimary ? 'rust' : 'ts',
+              source: useRustMsgTallyPrimaryForRound ? 'rust' : 'ts',
             },
             result: res.result.map((x: any) => x.toString()),
             salt: (res.salt || (res.tallyInputs.length ? res.tallyInputs[res.tallyInputs.length - 1].newResultsRootSalt.toString() : '0')),
@@ -953,7 +983,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         ? cache.salt
         : (res.salt || (lastTallyInput ? lastTallyInput.newResultsRootSalt.toString() : '0'))
 
-      if (useRustMsgTally && !useRustMsgTallyPrimary) {
+      if (useRustMsgTallyForRound && !useRustMsgTallyPrimaryForRound) {
         failureStage = 'rust_msg_tally_shadow'
         const shadowParams = {
           id,
