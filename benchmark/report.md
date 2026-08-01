@@ -1,24 +1,24 @@
 # Benchmark Cost Report
 
-**Generated:** 8/1/2026, 01:25:32 (Beijing Time)
+**Generated:** 8/2/2026, 24:55:34 (Beijing Time)
 
 ## DORA Price
 
 **Current Price:** $0.0030
-**24h Change:** +1.46% 📈
+**24h Change:** -1.19% 📉
 
 **Comparison with Previous Report:**
-- Previous Price: $0.0029
-- Previous Time: 7/31/2026, 01:22:10
-- Price Change: +3.45%
+- Previous Price: $0.0030
+- Previous Time: 8/1/2026, 01:25:32
+- Price Change: 0.00%
 
 ## 12c-128G-Bare-metal
 
 | Scale | Base Cost (USD) | Multiplier | Final Cost (USD) | DORA Amount | Change |
 |-------|----------------|------------|------------------|-------------|--------|
-| 2-1-1-5 | $0.02 | 10x | $0.20 | 67.28 DORA | |
-| 4-2-2-25 | $0.50 | 10x | $5.00 | 1681.91 DORA | |
-| 6-3-3-125 | $1.00 | 10x | $10.00 | 3363.82 DORA | |
+| 2-1-1-5 | $0.02 | 10x | $0.20 | 67.46 DORA | |
+| 4-2-2-25 | $0.50 | 10x | $5.00 | 1686.53 DORA | |
+| 6-3-3-125 | $1.00 | 10x | $10.00 | 3373.07 DORA | |
 
 ## Calculation Formula
 
