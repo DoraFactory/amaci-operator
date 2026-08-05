@@ -10,6 +10,8 @@ import { getRequiredBundleFiles, isBundleDirectoryComplete } from './bundlesZkey
 const ZKEY_ARCHIVE_SHA256: Partial<Record<MaciType, string>> = {
   '9-4-3-125_v5':
     '792352fddaaaab9ac16befe8dbabff1757598b55640f0476be1d2f8b935f9904',
+  '9-4-3-125_v6':
+    '0a0a983ca9cd15aaae1272b7e5f43392b93011856407d614b096398e4c833936',
 }
 
 const ZKEY_ARCHIVE_SIZE: Partial<Record<MaciType, number>> = {
@@ -32,7 +34,7 @@ async function sha256File(filePath: string): Promise<string> {
   })
 }
 
-async function verifyArchiveChecksum(
+export async function verifyArchiveChecksum(
   circuitPower: MaciType,
   archivePath: string,
 ) {

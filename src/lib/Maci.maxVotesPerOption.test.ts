@@ -6,12 +6,14 @@ import { bigInt2BufferPadded, genPubKey } from './keypair'
 const makeCommand = ({
   voterPrivKey,
   newVotes,
+  voIdx = 0n,
 }: {
   voterPrivKey: bigint
   newVotes: bigint
+  voIdx?: bigint
 }) => {
   const voterPubKey = genPubKey(voterPrivKey)
-  const packaged = 1n + (newVotes << 96n) + (1n << 192n)
+  const packaged = 1n + (voIdx << 64n) + (newVotes << 96n) + (1n << 192n)
   const msgHash = poseidon([packaged, voterPubKey[0], voterPubKey[1]])
 
   return {
@@ -19,7 +21,7 @@ const makeCommand = ({
     command: {
       nonce: 1n,
       stateIdx: 0n,
-      voIdx: 0n,
+      voIdx,
       newVotes,
       newPubKey: voterPubKey,
       pollId: 1n,
@@ -76,6 +78,27 @@ describe('MACI maxVotesPerOption', () => {
     const unlimited = new MACI(2, 1, 1, 5, 111n, 5, 1, false, 1n, 0n)
     unlimited.initStateTree(0, voterPubKey, 100n)
     expect(unlimited.checkCommandNow(unlimitedCommand)).toBeUndefined()
+  })
+
+  it('rejects a vote option index equal to maxVoteOptions', () => {
+    const voterPrivKey = 789n
+    const valid = makeCommand({
+      voterPrivKey,
+      newVotes: 1n,
+      voIdx: 4n,
+    })
+    const overflow = makeCommand({
+      voterPrivKey,
+      newVotes: 1n,
+      voIdx: 5n,
+    })
+    const maci = new MACI(2, 1, 1, 5, 111n, 5, 1, false, 1n, 0n)
+    maci.initStateTree(0, valid.voterPubKey, 100n)
+
+    expect(maci.checkCommandNow(valid.command)).toBeUndefined()
+    expect(maci.checkCommandNow(overflow.command)).toBe(
+      'vote option index overflow',
+    )
   })
 
   it('rejects values that do not fit in the 32-bit packedVals slot', () => {

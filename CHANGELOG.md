@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v2.4.0-beta.3] - 2026-08-05
+
+### Fixed
+
+- Pinned and verified the SHA-256 checksum of the production
+  `9-4-3-125_v6` zkey archive before extraction.
+- Rejected vote option indices equal to `maxVoteOptions`, matching the
+  circuit requirement that `voteOptionIndex < maxVoteOptions`.
+- Added regression coverage for v6 archive checksum enforcement and the vote
+  option index boundary.
+
 ## [v2.4.0-beta.2] - 2026-07-26
 
 ### Fixed
