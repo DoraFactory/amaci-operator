@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v2.4.0] - 2026-08-06
+
+### Added
+
+- Added production support for v6 circuit artifacts, including automatic
+  on-demand zkey downloads and round verification-key matching.
+
+### Changed
+
+- Select v5 or v6 proving artifacts for each round while preserving v5
+  compatibility.
+
+### Fixed
+
+- Enforced v6 `max_votes_per_option` limits during message processing.
+- Rejected vote option indices greater than or equal to `maxVoteOptions` to
+  match the circuit boundary.
+- Verified v6 zkey archives against pinned SHA-256 checksums before extraction.
+
 ## [v2.4.0-beta.3] - 2026-08-05
 
 ### Fixed
