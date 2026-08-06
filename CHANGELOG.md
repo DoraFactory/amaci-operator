@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v2.4.1] - 2026-08-06
+
+### Added
+
+- Added download progress reporting for both interactive terminals and
+  systemd/journal environments.
+- Added persistent partial archives and HTTP Range requests so interrupted
+  zkey downloads resume across retries and operator restarts.
+
 ## [v2.4.0] - 2026-08-06
 
 ### Added
