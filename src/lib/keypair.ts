@@ -11,16 +11,6 @@ const BABYJUB_SUBORDER =
   2736030358979909402780800718157159386076813972158567259200215660948447373041n
 
 type BabyJubKeyFormat = 'legacy-v154' | 'poll-aware'
-export type KeyGenerationMode = 'legacy' | 'padded'
-export type KeyGenerationModeInput =
-  | KeyGenerationMode
-  | 'old_key_generation'
-  | 'new_key_generation'
-
-export interface CoordinatorPubKeyVariants {
-  legacy: [bigint, bigint]
-  padded: [bigint, bigint]
-}
 
 export const stringizing = (o: any, path: any[] = []): any => {
   if (path.includes(o)) {
@@ -41,10 +31,6 @@ export const stringizing = (o: any, path: any[] = []): any => {
   }
 }
 
-export const bigInt2BufferLegacy = (i: bigint) => {
-  return Buffer.from(i.toString(16), 'hex')
-}
-
 export const bigInt2BufferPadded = (i: bigint) => {
   let hex = i.toString(16)
   if (hex.length % 2 === 1) {
@@ -53,29 +39,8 @@ export const bigInt2BufferPadded = (i: bigint) => {
   return Buffer.from(hex, 'hex')
 }
 
-export const normalizeKeyGenerationMode = (
-  mode?: string,
-): KeyGenerationMode | undefined => {
-  if (!mode) return undefined
-  switch (mode) {
-    case 'legacy':
-    case 'old_key_generation':
-      return 'legacy'
-    case 'padded':
-    case 'new_key_generation':
-      return 'padded'
-    default:
-      return undefined
-  }
-}
-
-export const bigInt2Buffer = (
-  i: bigint,
-  keyGenerationMode: KeyGenerationMode = 'legacy',
-) => {
-  return keyGenerationMode === 'padded'
-    ? bigInt2BufferPadded(i)
-    : bigInt2BufferLegacy(i)
+export const bigInt2Buffer = (i: bigint) => {
+  return bigInt2BufferPadded(i)
 }
 
 export const genRandomKey = () => {
@@ -120,13 +85,10 @@ export const genStaticRandomKey = (
   return privKey
 }
 
-export const genPubKey = (
-  privKey: bigint,
-  keyGenerationMode: KeyGenerationMode = 'legacy',
-) => {
+export const genPubKey = (privKey: bigint) => {
   // Check whether privKey is a field element
   privKey = BigInt(privKey.toString())
-  return eddsa.prv2pub(bigInt2Buffer(privKey, keyGenerationMode))
+  return eddsa.prv2pub(bigInt2Buffer(privKey))
 }
 
 export const pubKeysEqual = (
@@ -139,39 +101,29 @@ export const serializePubKey = (pubKey: [bigint, bigint]) => ({
   y: pubKey[1].toString(),
 })
 
-export const deriveCoordinatorPubKeyVariants = (
+export const deriveCoordinatorPubKey = (
   privKey: bigint,
-): CoordinatorPubKeyVariants => ({
-  legacy: genPubKey(privKey, 'legacy'),
-  padded: genPubKey(privKey, 'padded'),
-})
+): [bigint, bigint] => genPubKey(privKey)
 
-export const resolveKeyGenerationModeForPubKey = (
-  coordinatorPubKeys: CoordinatorPubKeyVariants,
+export const assertCoordinatorPubKeyMatches = (
+  coordinatorPubKey: [bigint, bigint],
   roundPubKey: [bigint, bigint],
-): KeyGenerationMode => {
-  if (pubKeysEqual(roundPubKey, coordinatorPubKeys.legacy)) {
-    return 'legacy'
-  }
-  if (pubKeysEqual(roundPubKey, coordinatorPubKeys.padded)) {
-    return 'padded'
+) => {
+  if (pubKeysEqual(roundPubKey, coordinatorPubKey)) {
+    return
   }
 
-  const legacy = serializePubKey(coordinatorPubKeys.legacy)
-  const padded = serializePubKey(coordinatorPubKeys.padded)
+  const padded = serializePubKey(coordinatorPubKey)
   const round = serializePubKey(roundPubKey)
   throw new Error(
-    `Round coordinator pubkey (${round.x}, ${round.y}) does not match the local coordinator private key under legacy (${legacy.x}, ${legacy.y}) or padded (${padded.x}, ${padded.y}) derivation`,
+    `Round coordinator pubkey (${round.x}, ${round.y}) does not match the local coordinator private key under padded (${padded.x}, ${padded.y}) derivation`,
   )
 }
 
-export const genKeypair = (
-  pkey?: bigint,
-  keyGenerationMode: KeyGenerationMode = 'legacy',
-): IKeypair => {
+export const genKeypair = (pkey?: bigint): IKeypair => {
   const privKey = pkey || genRandomKey()
-  const pubKey = genPubKey(privKey, keyGenerationMode)
-  const formatedPrivKey = formatPrivKeyForBabyJub(privKey, undefined, keyGenerationMode)
+  const pubKey = genPubKey(privKey)
+  const formatedPrivKey = formatPrivKeyForBabyJub(privKey, undefined)
 
   return { privKey, pubKey, formatedPrivKey }
 }
@@ -185,11 +137,10 @@ const resolveBabyJubKeyFormat = (
 const formatPrivKeyForBabyJub = (
   privKey: bigint,
   pollId?: number | bigint,
-  keyGenerationMode: KeyGenerationMode = 'legacy',
 ): bigint => {
   const sBuff = eddsa.pruneBuffer(
     createBlakeHash('blake512')
-      .update(bigInt2Buffer(privKey, keyGenerationMode))
+      .update(bigInt2Buffer(privKey))
       .digest()
       .slice(0, 32),
   )
@@ -206,11 +157,10 @@ const formatPrivKeyForBabyJub = (
 export const genRoundKeypair = (
   pkey: bigint,
   pollId?: number | bigint,
-  keyGenerationMode: KeyGenerationMode = 'legacy',
 ): IKeypair => {
   const privKey = BigInt(pkey.toString())
-  const pubKey = genPubKey(privKey, keyGenerationMode)
-  const formatedPrivKey = formatPrivKeyForBabyJub(privKey, pollId, keyGenerationMode)
+  const pubKey = genPubKey(privKey)
+  const formatedPrivKey = formatPrivKeyForBabyJub(privKey, pollId)
 
   return { privKey, pubKey, formatedPrivKey }
 }
@@ -219,10 +169,9 @@ export const genEcdhSharedKey = (
   privKey: bigint,
   pubKey: [bigint, bigint],
   pollId?: number | bigint,
-  keyGenerationMode: KeyGenerationMode = 'legacy',
 ): [bigint, bigint] => {
   return babyJub.mulPointEscalar(
     pubKey,
-    formatPrivKeyForBabyJub(privKey, pollId, keyGenerationMode),
+    formatPrivKeyForBabyJub(privKey, pollId),
   )
 }

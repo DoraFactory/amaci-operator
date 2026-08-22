@@ -32,7 +32,13 @@ Edit `config.toml` and fill in the required fields:
 
 ```toml
 rpcEndpoint = "https://vota-rpc.dorafactory.org"
-indexerEndpoint = "https://vota-indexer.dorafactory.org/v1/graphql"
+indexerEndpoints = [
+  "https://vota-indexer.dorafactory.org/v1/graphql",
+  "https://backup-indexer.example.org/v1/graphql"
+]
+# Optional env overrides:
+# INDEXER_HEIGHT_CHECK_INTERVAL_MS=30000
+# INDEXER_HEIGHT_LAG_THRESHOLD=10
 registryContract = "dora1..."
 identity = "your-operator-identity"
 mnemonic = "your wallet mnemonic..."
@@ -147,10 +153,7 @@ my-operator/
 ├── data/                 # Daily rotated logs
 ├── round/                # Per-round logs
 └── zkey/                 # Circuit files (or custom path from config.toml)
-    ├── 2-1-1-5_v4/
-    ├── 4-2-2-25_v4/
-    ├── 6-3-3-125_v4/
-    └── 9-4-3-125_v4/
+    └── 9-4-3-125_v6/
 ```
 
 ## Volume Mounts
