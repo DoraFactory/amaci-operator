@@ -58,6 +58,7 @@ export interface MaciReadOnlyInterface {
   isWhiteList: ({ sender }: { sender: string }) => Promise<Boolean>
   voteOptionMap: () => Promise<ArrayOfString>
   maxVoteOptions: () => Promise<Uint256>
+  maxVotesPerOption: () => Promise<Uint256>
   queryTotalFeeGrant: () => Promise<Uint128>
   queryCircuitType: () => Promise<Uint256>
   queryCertSystem: () => Promise<Uint256>
@@ -86,6 +87,7 @@ export class MaciQueryClient implements MaciReadOnlyInterface {
     this.isWhiteList = this.isWhiteList.bind(this)
     this.voteOptionMap = this.voteOptionMap.bind(this)
     this.maxVoteOptions = this.maxVoteOptions.bind(this)
+    this.maxVotesPerOption = this.maxVotesPerOption.bind(this)
     this.queryTotalFeeGrant = this.queryTotalFeeGrant.bind(this)
     this.queryCircuitType = this.queryCircuitType.bind(this)
     this.queryCertSystem = this.queryCertSystem.bind(this)
@@ -207,6 +209,11 @@ export class MaciQueryClient implements MaciReadOnlyInterface {
   maxVoteOptions = async (): Promise<Uint256> => {
     return this.client.queryContractSmart(this.contractAddress, {
       max_vote_options: {},
+    })
+  }
+  maxVotesPerOption = async (): Promise<Uint256> => {
+    return this.client.queryContractSmart(this.contractAddress, {
+      max_votes_per_option: {},
     })
   }
   queryTotalFeeGrant = async (): Promise<Uint128> => {
