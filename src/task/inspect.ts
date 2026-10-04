@@ -2,8 +2,7 @@ import { fetchRounds } from '../vota/indexer'
 import { Task, TaskAct } from '../types'
 import { Timer } from '../storage/timer'
 import {
-  deriveCoordinatorPubKeyVariants,
-  pubKeysEqual,
+  deriveCoordinatorPubKey,
   serializePubKey,
 } from '../lib/keypair'
 import { clearRoundStatus, loadRoundStatus } from '../storage/roundStatus'
@@ -46,23 +45,17 @@ export const inspect: TaskAct = async () => {
 
   try {
     const now = Date.now()
-    const coordinatorPubKeys = deriveCoordinatorPubKeyVariants(
-      BigInt(process.env.COORDINATOR_PRI_KEY),
-    )
-    const legacy = serializePubKey(coordinatorPubKeys.legacy)
-    const padded = serializePubKey(coordinatorPubKeys.padded)
-    const rounds = await fetchRounds([
-      [legacy.x, legacy.y],
-      [padded.x, padded.y],
-    ])
-    const roundStatus = loadRoundStatus()
-
-    if (!pubKeysEqual(coordinatorPubKeys.legacy, coordinatorPubKeys.padded)) {
-      debug(
-        `Coordinator pubkey compatibility mode enabled. legacy=(${legacy.x}, ${legacy.y}) padded=(${padded.x}, ${padded.y})`,
-        'INSPECT',
-      )
+    const coordinatorPriKeyEnv = process.env.COORDINATOR_PRI_KEY
+    if (!coordinatorPriKeyEnv) {
+      throw new Error('COORDINATOR_PRI_KEY is not set')
     }
+    const coordinatorPubKey = deriveCoordinatorPubKey(
+      BigInt(coordinatorPriKeyEnv),
+    )
+    const padded = serializePubKey(coordinatorPubKey)
+    const rounds = await fetchRounds([padded.x, padded.y])
+    const roundStatus = loadRoundStatus()
+    debug(`Coordinator pubkey mode=padded (${padded.x}, ${padded.y})`, 'INSPECT')
 
     const stats = {
       totalRounds: rounds.length,
