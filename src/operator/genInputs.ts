@@ -1,4 +1,4 @@
-import { genStaticRandomKey, KeyGenerationMode } from '../lib/keypair'
+import { genStaticRandomKey } from '../lib/keypair'
 import { MACI, MACI_STATES, MsgInput, TallyInput } from '../lib/Maci'
 import { IContractLogs } from '../types'
 import { info } from '../logger'
@@ -11,9 +11,34 @@ interface IGenMaciInputsParams {
   batchSize: number
   coordPriKey: bigint
   maxVoteOptions: number
+  maxVotesPerOption?: bigint | number
   isQuadraticCost: boolean
   pollId?: number | bigint
-  keyGenerationMode?: KeyGenerationMode
+}
+
+const getBenchmarkHeartbeatMs = () => {
+  const value = Number(process.env.INPUTGEN_BENCHMARK_HEARTBEAT_MS || 0)
+  return Number.isFinite(value) && value > 0 ? value : 0
+}
+
+const logBenchmarkHeartbeat = ({
+  phase,
+  produced,
+  total,
+  startedAt,
+  force = false,
+}: {
+  phase: 'MSG' | 'TALLY'
+  produced: number
+  total?: number
+  startedAt: number
+  force?: boolean
+}) => {
+  const totalText = total === undefined ? '' : `/${total}`
+  const prefix = force ? '[progress]' : '[heartbeat]'
+  console.log(
+    `${prefix} TS ${phase} inputgen produced ${produced}${totalText} inputs in ${Date.now() - startedAt}ms`,
+  )
 }
 
 export const genMaciInputs = (
@@ -24,9 +49,9 @@ export const genMaciInputs = (
     batchSize,
     coordPriKey,
     maxVoteOptions,
+    maxVotesPerOption = 0n,
     isQuadraticCost,
     pollId,
-    keyGenerationMode,
   }: IGenMaciInputsParams,
   contractLogs: IContractLogs,
   // deactivates: bigint[][],
@@ -42,7 +67,7 @@ export const genMaciInputs = (
     contractLogs.states.length,
     isQuadraticCost,
     pollId !== undefined ? BigInt(pollId) : undefined,
-    keyGenerationMode,
+    maxVotesPerOption,
   )
 
   for (const state of contractLogs.states) {
@@ -79,6 +104,9 @@ export const genMaciInputs = (
 
   // PROCESSING (generate msgInputs)
   const msgInputsStart = Date.now()
+  let lastMsgHeartbeatAt = msgInputsStart
+  const benchmarkHeartbeatMs = getBenchmarkHeartbeatMs()
+  const expectedMsgInputs = Math.ceil(contractLogs.messages.length / batchSize)
   const msgInputs: MsgInput[] = []
   while (maci.states === MACI_STATES.PROCESSING) {
     const input = maci.processMessage(
@@ -86,12 +114,34 @@ export const genMaciInputs = (
     )
 
     msgInputs.push(input)
+    if (
+      benchmarkHeartbeatMs > 0 &&
+      Date.now() - lastMsgHeartbeatAt >= benchmarkHeartbeatMs
+    ) {
+      logBenchmarkHeartbeat({
+        phase: 'MSG',
+        produced: msgInputs.length,
+        total: expectedMsgInputs,
+        startedAt: msgInputsStart,
+      })
+      lastMsgHeartbeatAt = Date.now()
+    }
   }
   const msgInputsMs = Date.now() - msgInputsStart
+  if (benchmarkHeartbeatMs > 0) {
+    logBenchmarkHeartbeat({
+      phase: 'MSG',
+      produced: msgInputs.length,
+      total: expectedMsgInputs,
+      startedAt: msgInputsStart,
+      force: true,
+    })
+  }
   info(`GenInputs MSG produced ${msgInputs.length} inputs in ${msgInputsMs}ms`, 'TALLY-TASK')
 
   // TALLYING (generate tallyInputs)
   const tallyInputsStart = Date.now()
+  let lastTallyHeartbeatAt = tallyInputsStart
   const tallyInputs: TallyInput[] = []
   while (maci.states === MACI_STATES.TALLYING) {
     const input = maci.processTally(
@@ -99,8 +149,27 @@ export const genMaciInputs = (
     )
 
     tallyInputs.push(input)
+    if (
+      benchmarkHeartbeatMs > 0 &&
+      Date.now() - lastTallyHeartbeatAt >= benchmarkHeartbeatMs
+    ) {
+      logBenchmarkHeartbeat({
+        phase: 'TALLY',
+        produced: tallyInputs.length,
+        startedAt: tallyInputsStart,
+      })
+      lastTallyHeartbeatAt = Date.now()
+    }
   }
   const tallyInputsMs = Date.now() - tallyInputsStart
+  if (benchmarkHeartbeatMs > 0) {
+    logBenchmarkHeartbeat({
+      phase: 'TALLY',
+      produced: tallyInputs.length,
+      startedAt: tallyInputsStart,
+      force: true,
+    })
+  }
   info(`GenInputs TALLY produced ${tallyInputs.length} inputs in ${tallyInputsMs}ms`, 'TALLY-TASK')
 
   // RESULT
@@ -121,9 +190,9 @@ export const genMaciInputsFromStore = (
     batchSize,
     coordPriKey,
     maxVoteOptions,
+    maxVotesPerOption = 0n,
     isQuadraticCost,
     pollId,
-    keyGenerationMode,
   }: IGenMaciInputsParams,
   contractLogs: Omit<IContractLogs, 'messages'>,
   messageStore: MessageStoreReader,
@@ -140,7 +209,7 @@ export const genMaciInputsFromStore = (
     contractLogs.states.length,
     isQuadraticCost,
     pollId !== undefined ? BigInt(pollId) : undefined,
-    keyGenerationMode,
+    maxVotesPerOption,
   )
 
   maci.setMessageStore(messageStore, messageCount)
@@ -172,6 +241,9 @@ export const genMaciInputsFromStore = (
   let nonce = 1n
 
   const msgInputsStart = Date.now()
+  let lastMsgHeartbeatAt = msgInputsStart
+  const benchmarkHeartbeatMs = getBenchmarkHeartbeatMs()
+  const expectedMsgInputs = Math.ceil(messageCount / batchSize)
   const msgInputs: MsgInput[] = []
   while (maci.states === MACI_STATES.PROCESSING) {
     const input = maci.processMessage(
@@ -179,11 +251,33 @@ export const genMaciInputsFromStore = (
     )
 
     msgInputs.push(input)
+    if (
+      benchmarkHeartbeatMs > 0 &&
+      Date.now() - lastMsgHeartbeatAt >= benchmarkHeartbeatMs
+    ) {
+      logBenchmarkHeartbeat({
+        phase: 'MSG',
+        produced: msgInputs.length,
+        total: expectedMsgInputs,
+        startedAt: msgInputsStart,
+      })
+      lastMsgHeartbeatAt = Date.now()
+    }
   }
   const msgInputsMs = Date.now() - msgInputsStart
+  if (benchmarkHeartbeatMs > 0) {
+    logBenchmarkHeartbeat({
+      phase: 'MSG',
+      produced: msgInputs.length,
+      total: expectedMsgInputs,
+      startedAt: msgInputsStart,
+      force: true,
+    })
+  }
   info(`GenInputs MSG produced ${msgInputs.length} inputs in ${msgInputsMs}ms`, 'TALLY-TASK')
 
   const tallyInputsStart = Date.now()
+  let lastTallyHeartbeatAt = tallyInputsStart
   const tallyInputs: TallyInput[] = []
   while (maci.states === MACI_STATES.TALLYING) {
     const input = maci.processTally(
@@ -191,8 +285,27 @@ export const genMaciInputsFromStore = (
     )
 
     tallyInputs.push(input)
+    if (
+      benchmarkHeartbeatMs > 0 &&
+      Date.now() - lastTallyHeartbeatAt >= benchmarkHeartbeatMs
+    ) {
+      logBenchmarkHeartbeat({
+        phase: 'TALLY',
+        produced: tallyInputs.length,
+        startedAt: tallyInputsStart,
+      })
+      lastTallyHeartbeatAt = Date.now()
+    }
   }
   const tallyInputsMs = Date.now() - tallyInputsStart
+  if (benchmarkHeartbeatMs > 0) {
+    logBenchmarkHeartbeat({
+      phase: 'TALLY',
+      produced: tallyInputs.length,
+      startedAt: tallyInputsStart,
+      force: true,
+    })
+  }
   info(`GenInputs TALLY produced ${tallyInputs.length} inputs in ${tallyInputsMs}ms`, 'TALLY-TASK')
 
   const result = maci.tallyResultsLeaves.slice(0, maxVoteOptions)

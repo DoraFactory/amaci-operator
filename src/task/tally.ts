@@ -3,9 +3,14 @@ import path from 'path'
 // proof generation is offloaded to worker pool
 import { GasPrice, calculateFee } from '@cosmjs/stargate'
 
-import { fetchAllDeactivateLogs, fetchAllVotesLogs, fetchRound, streamPublishMessageEvents } from '../vota/indexer'
+import { fetchAllVotesLogs, fetchAllVotesLogsStream, fetchRound, markActiveIndexerUnhealthy } from '../vota/indexer'
 import { getContractSignerClient, withRetry, withBroadcastRetry } from '../lib/client/utils'
 import { resolveRoundCircuitArtifacts } from '../lib/circuitArtifacts'
+import {
+  isBundleComplete,
+  resolveBundleProofFiles,
+} from '../lib/bundlesZkey'
+import { ensureZkeyBundle } from '../lib/downloadZkeys'
 import { maciParamsFromCircuitPower, ProofData, TaskAct } from '../types'
 import {
   info,
@@ -45,11 +50,16 @@ import { markRoundTallyCompleted } from '../storage/roundStatus'
 import { clearInputsDir, loadInputFiles, saveInputFiles } from '../storage/inputFiles'
 import { DiskMessageStore } from '../storage/messageStore'
 import {
-  deriveCoordinatorPubKeyVariants,
-  resolveKeyGenerationModeForPubKey,
+  assertCoordinatorPubKeyMatches,
+  deriveCoordinatorPubKey,
 } from '../lib/keypair'
 import { createSubmitter } from './submitter'
 import { parseMessageNumbers } from './messageParsing'
+import {
+  generateMsgTallyRustInputs,
+  runMsgTallyRustShadow,
+} from '../operator/rustMsgTally'
+import { normalizeMaxVotesPerOption } from '../lib/Maci'
 
 const zkeyRoot = process.env.ZKEY_PATH || path.join(process.env.WORK_PATH || './work', 'zkey')
 const highScaleCircuitPowers = new Set(['6-3-3-125', '9-4-3-125'])
@@ -58,6 +68,17 @@ const highScaleCircuitPowers = new Set(['6-3-3-125', '9-4-3-125'])
 const inputsPath = path.join(process.env.WORK_PATH || './work', 'data')
 if (!fs.existsSync(inputsPath)) {
   fs.mkdirSync(inputsPath, { recursive: true })
+}
+
+const getRoundDataDir = (id: string) => path.join(inputsPath, id)
+
+const writeRoundJson = (id: string, fileName: string, payload: unknown) => {
+  const dir = getRoundDataDir(id)
+  fs.mkdirSync(dir, { recursive: true })
+  const file = path.join(dir, fileName)
+  const tmp = `${file}.tmp`
+  fs.writeFileSync(tmp, JSON.stringify(payload, null, 2))
+  fs.renameSync(tmp, file)
 }
 
 interface AllData {
@@ -112,17 +133,53 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
   let globalTallySubmitter: any = null
   let finalized = false
   let finalizeTxHash: string | undefined
+  let failureStage = 'init'
+  let lastChainSnapshot: Partial<TallyChainSnapshot> | undefined
+  let roundSummary:
+    | {
+        circuitPower?: string
+        indexerPeriod?: string
+      }
+    | undefined
+
+  const completeTallyTask = (message: string, txHash?: string) => {
+    failureStage = 'completed'
+    writeRoundJson(id, 'tally-state.json', {
+      status: 'completed',
+      round: roundSummary,
+      recordedAt: new Date().toISOString(),
+      finalizeTxHash: txHash,
+    })
+    info(message, 'TALLY-TASK')
+    endOperation('tally', true, operationContext)
+    recordTaskSuccess('tally', id)
+    recordRoundCompletion(id, roundSummary?.circuitPower || 'unknown')
+    markRoundTallyCompleted(id, { txHash })
+    recordTaskEnd('tally', id)
+    return {}
+  }
 
   // Metrics: Record the task start
   recordTaskStart('tally', id)
 
   try {
+    fs.mkdirSync(getRoundDataDir(id), { recursive: true })
     let getChainSnapshot:
       | ((contextSuffix: string) => Promise<TallyChainSnapshot>)
       | undefined
+    failureStage = 'fetch_round'
     const maciRound = await withRetry(() => fetchRound(id), {
       context: 'INDEXER-FETCH-ROUND',
       maxRetries: 3,
+    })
+    roundSummary = {
+      circuitPower: maciRound.circuitPower,
+      indexerPeriod: maciRound.period,
+    }
+    writeRoundJson(id, 'tally-state.json', {
+      status: 'started',
+      round: roundSummary,
+      recordedAt: new Date().toISOString(),
     })
     updateTaskContext('tally', id, { circuitPower: maciRound.circuitPower })
     info(`Indexer round period: ${maciRound.period}`, 'TALLY-TASK')
@@ -163,11 +220,19 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         processedUserCount: Number(processedUserCount),
       }
     }
+    failureStage = 'initial_chain_snapshot'
     const initialChainSnapshot = await getChainSnapshot('INITIAL')
+    lastChainSnapshot = initialChainSnapshot
     info(
       `Chain round status: period=${initialChainSnapshot.chainPeriod}, processedMsgCount=${initialChainSnapshot.processedMsgCount}, msgChainLength=${initialChainSnapshot.msgChainLength}, processedUserCount=${initialChainSnapshot.processedUserCount}`,
       'TALLY-TASK',
     )
+    if (initialChainSnapshot.chainPeriod === 'ended') {
+      return completeTallyTask(
+        `Round ${id} already ended on-chain, marking tally completed and skipping tally flow`,
+      )
+    }
+
     if (
       !['pending', 'voting', 'processing', 'tallying'].includes(
         initialChainSnapshot.chainPeriod,
@@ -190,6 +255,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
 
     // If the round is pending or voting, start the process period
     if (['pending', 'voting'].includes(initialChainSnapshot.chainPeriod)) {
+      failureStage = 'start_process_period'
+      try {
         const startProcessRes = await withBroadcastRetry(
           () => maciClient.startProcessPeriod(1.5),
           {
@@ -201,22 +268,37 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         await sleep(6000)
 
         debug(`startProcessRes: ${startProcessRes}`, 'TALLY-TASK')
+      } catch (startProcessError) {
+        const refreshedChainSnapshot = await getChainSnapshot(
+          'POST-START-PROCESS-FAILURE',
+        )
+        lastChainSnapshot = refreshedChainSnapshot
+        if (
+          ['processing', 'tallying'].includes(refreshedChainSnapshot.chainPeriod)
+        ) {
+          warn(
+            `startProcessPeriod failed but chain already advanced to ${refreshedChainSnapshot.chainPeriod}; continuing with tally flow`,
+            'TALLY-TASK',
+          )
+        } else {
+          throw startProcessError
+        }
+      }
     }
 
     const params = maciParamsFromCircuitPower(maciRound.circuitPower)
-    const coordinatorPubKeys = deriveCoordinatorPubKeyVariants(
-      BigInt(process.env.COORDINATOR_PRI_KEY),
-    )
-    const keyGenerationMode = resolveKeyGenerationModeForPubKey(
-      coordinatorPubKeys,
+    const coordinatorPriKeyEnv = process.env.COORDINATOR_PRI_KEY
+    if (!coordinatorPriKeyEnv) {
+      throw new Error('COORDINATOR_PRI_KEY is not set')
+    }
+    const coordinatorPriKey = BigInt(coordinatorPriKeyEnv)
+    const coordinatorPubKey = deriveCoordinatorPubKey(coordinatorPriKey)
+    assertCoordinatorPubKeyMatches(
+      coordinatorPubKey,
       [
         BigInt(maciRound.coordinatorPubkeyX),
         BigInt(maciRound.coordinatorPubkeyY),
       ],
-    )
-    info(
-      `Resolved coordinator key generation mode: ${keyGenerationMode}`,
-      'TALLY-TASK',
     )
 
     /**
@@ -289,6 +371,11 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
 
     if (!allData) {
       const useMessageStore = highScaleCircuitPowers.has(maciRound.circuitPower)
+      const useRustMsgTally = Number(process.env.RUST_INPUTGEN_MSG_TALLY || 0) > 0
+      const useRustMsgTallyPrimary =
+        Number(process.env.RUST_INPUTGEN_MSG_TALLY_PRIMARY || 0) > 0
+      const strictRustMsgTally =
+        Number(process.env.RUST_INPUTGEN_SHADOW_STRICT || 0) > 0
       const env = process.env as Record<string, string | undefined>
       const indexerSyncRetries = Math.max(
         0,
@@ -305,45 +392,51 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       let inferredMessageArity: number | undefined
 
       const loadLogsFromIndexer = async () => {
+        inferredMessageArity = undefined
         if (useMessageStore) {
-          const baseLogs = await withRetry(() => fetchAllDeactivateLogs(id), {
-            context: 'INDEXER-FETCH-VOTES-LOGS',
-            maxRetries: 3,
-          })
-          logs = baseLogs
-
           const messagesDir = path.join(inputsPath, 'messages', id)
           messageStore = new DiskMessageStore(messagesDir, params.batchSize)
-          messageStore.reset()
 
-          const streamResult = await withRetry(
+          const streamLogs = await withRetry(
             () =>
-              streamPublishMessageEvents(id, async (nodes) => {
-                for (const m of nodes) {
-                  const msg = parseMessageNumbers(
-                    m.message,
-                    'msg',
-                    m.msgChainLength,
-                    'TALLY-TASK',
-                  )
-                  if (inferredMessageArity === undefined && msg.length > 0) {
-                    inferredMessageArity = msg.length
+              fetchAllVotesLogsStream(
+                id,
+                async (nodes) => {
+                  for (const m of nodes) {
+                    const msg = parseMessageNumbers(
+                      m.message,
+                      'msg',
+                      m.msgChainLength,
+                      'TALLY-TASK',
+                    )
+                    if (inferredMessageArity === undefined && msg.length > 0) {
+                      inferredMessageArity = msg.length
+                    }
+                    const pubkey = (m.encPubKey.match(/\d+/g) || []).map(
+                      (n: string) => BigInt(n),
+                    ) as [bigint, bigint]
+                    messageStore?.appendMessage(msg, pubkey)
                   }
-                  const pubkey = (m.encPubKey.match(/\d+/g) || []).map(
-                    (n: string) => BigInt(n),
-                  ) as [bigint, bigint]
-                  messageStore?.appendMessage(msg, pubkey)
-                }
-              }),
+                },
+                () => {
+                  messageStore?.reset()
+                },
+              ),
             {
-              context: 'INDEXER-STREAM-MESSAGES',
+              context: 'INDEXER-STREAM-VOTES-LOGS',
               maxRetries: 3,
             },
           )
 
+          logs = {
+            signup: streamLogs.signup,
+            msg: [],
+            dmsg: streamLogs.dmsg,
+            indexerEndpoint: streamLogs.indexerEndpoint,
+          }
           messageStore.finalize()
-          msgCount = streamResult.count
-          lastMsgId = streamResult.lastId
+          msgCount = streamLogs.messageStream.count
+          lastMsgId = streamLogs.messageStream.lastId
           return
         }
 
@@ -355,32 +448,83 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         lastMsgId = logs.msg[logs.msg.length - 1]?.id || ''
       }
 
-      const chainMsgLength = Number(
-        await withRetry(() => maciClient.getMsgChainLength(), {
-          context: 'RPC-GET-MSG-CHAIN-LENGTH-INDEXER-SYNC',
-          maxRetries: 3,
-        }),
-      )
+      const isIndexerLagging = (
+        chainMsgLength: number,
+        chainDMsgLength: number,
+        chainSignupCount: number,
+      ) => {
+        if (!logs) return true
+        return (
+          msgCount < chainMsgLength ||
+          logs.dmsg.length < chainDMsgLength ||
+          logs.signup.length < chainSignupCount
+        )
+      }
+
+      const describeIndexerLag = (
+        chainMsgLength: number,
+        chainDMsgLength: number,
+        chainSignupCount: number,
+      ) =>
+        `indexer=${logs?.indexerEndpoint || 'unknown'}, msg=${msgCount}/${chainMsgLength}, dmsg=${logs?.dmsg.length || 0}/${chainDMsgLength}, signup=${logs?.signup.length || 0}/${chainSignupCount}`
+
+      failureStage = 'load_indexer_logs'
+      const [chainMsgLength, chainDMsgLength, chainSignupCount] =
+        await Promise.all([
+          withRetry(() => maciClient.getMsgChainLength(), {
+            context: 'RPC-GET-MSG-CHAIN-LENGTH-INDEXER-SYNC',
+            maxRetries: 3,
+          }),
+          withRetry(() => maciClient.getDMsgChainLength(), {
+            context: 'RPC-GET-DMSG-CHAIN-LENGTH-INDEXER-SYNC',
+            maxRetries: 3,
+          }),
+          withRetry(() => maciClient.getNumSignUp(), {
+            context: 'RPC-GET-SIGNUP-COUNT-INDEXER-SYNC',
+            maxRetries: 3,
+          }),
+        ]).then(([msg, dmsg, signup]) => [
+          Number(msg),
+          Number(dmsg),
+          Number(signup),
+        ])
       await loadLogsFromIndexer()
 
       let syncAttempt = 0
-      while (msgCount < chainMsgLength && syncAttempt < indexerSyncRetries) {
+      while (
+        isIndexerLagging(chainMsgLength, chainDMsgLength, chainSignupCount) &&
+        syncAttempt < indexerSyncRetries
+      ) {
         syncAttempt += 1
+        const details = describeIndexerLag(
+          chainMsgLength,
+          chainDMsgLength,
+          chainSignupCount,
+        )
         warn(
-          `Indexer lagging behind chain messages: indexer=${msgCount}, chain=${chainMsgLength}, retry=${syncAttempt}/${indexerSyncRetries}`,
+          `Indexer lagging behind chain state: ${details}, retry=${syncAttempt}/${indexerSyncRetries}`,
           'TALLY-TASK',
         )
+        markActiveIndexerUnhealthy('tally_indexer_sync', details)
         await sleep(indexerSyncIntervalMs)
         await loadLogsFromIndexer()
       }
 
-      if (msgCount < chainMsgLength) {
-        throw new TallyError('Indexer not synced with message chain', 'CONTRACT_ERROR', {
-          roundId: id,
-          operation: 'tally',
-          timestamp: Date.now(),
-          details: `indexer_msg_count=${msgCount}, chain_msg_chain_length=${chainMsgLength}`,
-        })
+      if (isIndexerLagging(chainMsgLength, chainDMsgLength, chainSignupCount)) {
+        throw new TallyError(
+          'Indexer not synced with message chain',
+          'CONTRACT_ERROR',
+          {
+            roundId: id,
+            operation: 'tally',
+            timestamp: Date.now(),
+            details: describeIndexerLag(
+              chainMsgLength,
+              chainDMsgLength,
+              chainSignupCount,
+            ),
+          },
+        )
       }
 
       info(
@@ -421,7 +565,7 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       )
       const pollId = artifact.pollId
       info(
-        `Resolved circuit artifacts: bundle=${artifact.bundle}, version=${artifact.version}, pollId=${String(pollId ?? '')}, messageArity=${String(messageArity ?? '')}, deactivateMessageArity=${String(deactivateMessageArity ?? '')}`,
+        `Resolved circuit artifacts: bundle=${artifact.bundle}, version=${artifact.version}, hasRoundVkeys=${String(!!artifact.hasRoundVkeys)}, pollId=${String(pollId ?? '')}, messageArity=${String(messageArity ?? '')}, deactivateMessageArity=${String(deactivateMessageArity ?? '')}`,
         'TALLY-TASK',
       )
 
@@ -431,6 +575,32 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
           context: 'RPC-GET-MAX-VOTE-OPTIONS',
           maxRetries: 3,
         },
+      )
+      const maxVotesPerOption =
+        artifact.version === 'v6'
+          ? normalizeMaxVotesPerOption(
+              await withRetry(() => maciClient.maxVotesPerOption(), {
+                context: 'RPC-GET-MAX-VOTES-PER-OPTION',
+                maxRetries: 3,
+              }),
+            )
+          : 0n
+      const useRustMsgTallyPrimaryForRound =
+        useRustMsgTallyPrimary && maxVotesPerOption === 0n
+      const useRustMsgTallyForRound =
+        useRustMsgTally && maxVotesPerOption === 0n
+      if (
+        maxVotesPerOption > 0n &&
+        (useRustMsgTally || useRustMsgTallyPrimary)
+      ) {
+        warn(
+          'maxVotesPerOption is not supported by the Rust input generator yet; using the TypeScript input generator for this round',
+          'TALLY-TASK',
+        )
+      }
+      info(
+        `Round vote limits: maxVoteOptions=${String(maxVoteOptions)}, maxVotesPerOption=${maxVotesPerOption}`,
+        'TALLY-TASK',
       )
 
       // Fast-path: if there are votes but NO signups, skip proving and finalize directly
@@ -445,7 +615,9 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         const zeroSalt = '0'
 
         // Ensure contract is in tallying period before finalization
-        const ensureTallyingNoSignup = async () => {
+        const ensureTallyingNoSignup = async (): Promise<
+          'tallying' | 'ended' | 'not_ready'
+        > => {
           const pollMax = 20
           const pollInterval = 3000
           try {
@@ -462,19 +634,31 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
               context: 'RPC-GET-PERIOD-TALLYING-NO-SIGNUP',
               maxRetries: 3,
             })
-            if (p.status === 'tallying') return true
+            if (p.status === 'tallying') return 'tallying'
+            if (p.status === 'ended') return 'ended'
             await sleep(pollInterval)
           }
-          return false
+          return 'not_ready'
         }
 
         const pBeforeNoSignup = await withRetry(() => maciClient.getPeriod(), {
           context: 'RPC-GET-PERIOD-BEFORE-TALLY-NO-SIGNUP',
           maxRetries: 3,
         })
+        if (pBeforeNoSignup.status === 'ended') {
+          return completeTallyTask(
+            `Round ${id} already ended on-chain, skipping no-signup finalize broadcast`,
+          )
+        }
+
         if (pBeforeNoSignup.status !== 'tallying') {
-          const ok = await ensureTallyingNoSignup()
-          if (!ok) {
+          const status = await ensureTallyingNoSignup()
+          if (status === 'ended') {
+            return completeTallyTask(
+              `Round ${id} already ended on-chain while waiting for tallying, skipping no-signup finalize broadcast`,
+            )
+          }
+          if (status !== 'tallying') {
             logError(
               new TallyError('Contract not in tallying period', 'CONTRACT_ERROR', {
                 roundId: id,
@@ -596,16 +780,52 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       }
 
       // Try reuse cached inputs (skip genMaciInputs if signature matches)
+      const normalizedStates = logs.signup.map((s: any) => ({
+        idx: s.stateIdx,
+        balance: BigInt(s.balance),
+        pubkey: (s.pubKey.match(/\d+/g) || []).map((n: string) =>
+          BigInt(n),
+        ) as [bigint, bigint],
+        c: [BigInt(s.d0), BigInt(s.d1), BigInt(s.d2), BigInt(s.d3)],
+      }))
+      const normalizedDMessages = logs.dmsg.map((m: any) => ({
+        idx: m.dmsgChainLength,
+        numSignUps: m.numSignUps,
+        msg: parseMessageNumbers(
+          m.message,
+          'dmsg',
+          m.dmsgChainLength,
+          'TALLY-TASK',
+        ),
+        pubkey: (m.encPubKey.match(/\d+/g) || []).map((n: string) =>
+          BigInt(n),
+        ) as [bigint, bigint],
+      }))
+      const normalizedMessages = useMessageStore
+        ? undefined
+        : logs.msg.map((m: any) => ({
+            idx: m.msgChainLength,
+            msg: parseMessageNumbers(
+              m.message,
+              'msg',
+              m.msgChainLength,
+              'TALLY-TASK',
+            ),
+            pubkey: (m.encPubKey.match(/\d+/g) || []).map((n: string) =>
+              BigInt(n),
+            ) as [bigint, bigint],
+          }))
       const inputsSig = buildInputsSignature({
         circuitPower: maciRound.circuitPower,
         circuitType: maciRound.circuitType,
+        inputGenerator: useRustMsgTallyPrimaryForRound ? 'rust' : 'ts',
         artifactVersion: artifact.version,
         artifactBundle: artifact.bundle,
         pollId,
-        keyGenerationMode,
         messageArity,
         deactivateMessageArity,
         maxVoteOptions: Number(maxVoteOptions),
+        ...(artifact.version === 'v6' ? { maxVotesPerOption } : {}),
         signupCount: logs.signup.length,
         lastSignupId: logs.signup[logs.signup.length - 1]?.id,
         msgCount,
@@ -614,9 +834,10 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         lastDmsgId: logs.dmsg[logs.dmsg.length - 1]?.id,
         processedDMsgCount: Number(dc),
       })
+      const inputCacheMatches = cache?.inputsSig === inputsSig
       let res: any
       const useFileInputs = highScaleCircuitPowers.has(maciRound.circuitPower)
-      if (cache && cache.inputsSig === inputsSig && cache.result && cache.salt) {
+      if (inputCacheMatches && cache?.result && cache.salt) {
         if (
           useFileInputs &&
           cache.inputsMeta?.mode === 'files' &&
@@ -625,8 +846,8 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         ) {
           try {
             res = {
-              msgInputs: loadInputFiles(id, 'msg', cache.inputsMeta.msgCount),
-              tallyInputs: loadInputFiles(id, 'tally', cache.inputsMeta.tallyCount),
+              msgInputs: loadInputFiles(id, 'msg', Number(cache.inputsMeta.msgCount)),
+              tallyInputs: loadInputFiles(id, 'tally', Number(cache.inputsMeta.tallyCount)),
               result: cache.result,
             }
           } catch (e) {
@@ -647,89 +868,72 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         if (useMessageStore && !messageStore) {
           throw new Error('Message store not initialized')
         }
-        res = useMessageStore
-          ? genMaciInputsFromStore(
-              {
-                ...params,
-                coordPriKey: BigInt(process.env.COORDINATOR_PRI_KEY),
-                maxVoteOptions: Number(maxVoteOptions),
-                isQuadraticCost: !!Number(maciRound.circuitType),
-                pollId,
-                keyGenerationMode,
-              },
-              {
-                states: logs.signup.map((s: any) => ({
-                  idx: s.stateIdx,
-                  balance: BigInt(s.balance),
-                  pubkey: (s.pubKey.match(/\d+/g) || []).map((n: string) =>
-                    BigInt(n),
-                  ) as [bigint, bigint],
-                  c: [BigInt(s.d0), BigInt(s.d1), BigInt(s.d2), BigInt(s.d3)],
-                })),
-                dmessages: logs.dmsg.map((m: any) => ({
-                  idx: m.dmsgChainLength,
-                  numSignUps: m.numSignUps,
-                  msg: parseMessageNumbers(
-                    m.message,
-                    'dmsg',
-                    m.dmsgChainLength,
-                    'TALLY-TASK',
-                  ),
-                  pubkey: (m.encPubKey.match(/\d+/g) || []).map((n: string) =>
-                    BigInt(n),
-                  ) as [bigint, bigint],
-                })),
-              },
-              messageStore!,
-              msgCount,
-              Number(dc),
-            )
-          : genMaciInputs(
-              {
-                ...params,
-                coordPriKey: BigInt(process.env.COORDINATOR_PRI_KEY),
-                maxVoteOptions: Number(maxVoteOptions),
-                isQuadraticCost: !!Number(maciRound.circuitType),
-                pollId,
-                keyGenerationMode,
-              },
-              {
-                states: logs.signup.map((s: any) => ({
-                  idx: s.stateIdx,
-                  balance: BigInt(s.balance),
-                  pubkey: (s.pubKey.match(/\d+/g) || []).map((n: string) =>
-                    BigInt(n),
-                  ) as [bigint, bigint],
-                  c: [BigInt(s.d0), BigInt(s.d1), BigInt(s.d2), BigInt(s.d3)],
-                })),
-                messages: logs.msg.map((m: any) => ({
-                  idx: m.msgChainLength,
-                  msg: parseMessageNumbers(
-                    m.message,
-                    'msg',
-                    m.msgChainLength,
-                    'TALLY-TASK',
-                  ),
-                  pubkey: (m.encPubKey.match(/\d+/g) || []).map((n: string) =>
-                    BigInt(n),
-                  ) as [bigint, bigint],
-                })),
-                dmessages: logs.dmsg.map((m: any) => ({
-                  idx: m.dmsgChainLength,
-                  numSignUps: m.numSignUps,
-                  msg: parseMessageNumbers(
-                    m.message,
-                    'dmsg',
-                    m.dmsgChainLength,
-                    'TALLY-TASK',
-                  ),
-                  pubkey: (m.encPubKey.match(/\d+/g) || []).map((n: string) =>
-                    BigInt(n),
-                  ) as [bigint, bigint],
-                })),
-              },
-              Number(dc),
-            )
+        if (useRustMsgTallyPrimaryForRound) {
+          failureStage = 'generate_rust_inputs'
+          const rustResult = await generateMsgTallyRustInputs({
+            id,
+            circuitPower: maciRound.circuitPower,
+            circuitType: maciRound.circuitType,
+            params,
+            coordPriKey: coordinatorPriKey,
+            maxVoteOptions: Number(maxVoteOptions),
+            pollId,
+            contractLogs: {
+              states: normalizedStates,
+              messages: normalizedMessages,
+              dmessages: normalizedDMessages,
+            },
+            messageStore: useMessageStore ? messageStore || undefined : undefined,
+            messageCount: useMessageStore ? msgCount : normalizedMessages?.length,
+            processedDMsgCount: Number(dc),
+          })
+          res = {
+            msgInputs: rustResult.msgInputs,
+            tallyInputs: rustResult.tallyInputs,
+            result: rustResult.result,
+            salt: rustResult.salt,
+          }
+          info(
+            `Rust msg/tally primary selected for proof submission: msgInputs=${res.msgInputs.length}, tallyInputs=${res.tallyInputs.length}, outDir=${rustResult.outDir}`,
+            'TALLY-TASK',
+          )
+        } else {
+          failureStage = 'generate_ts_inputs'
+          res = useMessageStore
+            ? genMaciInputsFromStore(
+                {
+                  ...params,
+                  coordPriKey: coordinatorPriKey,
+                  maxVoteOptions: Number(maxVoteOptions),
+                  maxVotesPerOption,
+                  isQuadraticCost: !!Number(maciRound.circuitType),
+                  pollId,
+                },
+                {
+                  states: normalizedStates,
+                  dmessages: normalizedDMessages,
+                },
+                messageStore!,
+                msgCount,
+                Number(dc),
+              )
+            : genMaciInputs(
+                {
+                  ...params,
+                  coordPriKey: coordinatorPriKey,
+                  maxVoteOptions: Number(maxVoteOptions),
+                  maxVotesPerOption,
+                  isQuadraticCost: !!Number(maciRound.circuitType),
+                  pollId,
+                },
+                {
+                  states: normalizedStates,
+                  messages: normalizedMessages || [],
+                  dmessages: normalizedDMessages,
+                },
+                Number(dc),
+              )
+        }
         // Save inputs + signature immediately to speed up restarts
         if (useFileInputs) {
           clearInputsDir(id)
@@ -742,17 +946,22 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
               mode: 'files',
               msgCount: res.msgInputs.length,
               tallyCount: res.tallyInputs.length,
+              source: useRustMsgTallyPrimaryForRound ? 'rust' : 'ts',
             },
             result: res.result.map((x: any) => x.toString()),
-            salt: (res.tallyInputs.length ? res.tallyInputs[res.tallyInputs.length - 1].newResultsRootSalt.toString() : '0'),
+            salt: (res.salt || (res.tallyInputs.length ? res.tallyInputs[res.tallyInputs.length - 1].newResultsRootSalt.toString() : '0')),
           })
         } else {
           saveProofCache(id, {
             circuitPower: maciRound.circuitPower,
             inputsSig,
             inputs: { msgInputs: res.msgInputs, tallyInputs: res.tallyInputs },
+            inputsMeta: {
+              mode: 'inline',
+              source: useRustMsgTallyPrimaryForRound ? 'rust' : 'ts',
+            },
             result: res.result.map((x: any) => x.toString()),
-            salt: (res.tallyInputs.length ? res.tallyInputs[res.tallyInputs.length - 1].newResultsRootSalt.toString() : '0'),
+            salt: (res.salt || (res.tallyInputs.length ? res.tallyInputs[res.tallyInputs.length - 1].newResultsRootSalt.toString() : '0')),
           })
         }
       }
@@ -769,16 +978,54 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       }
 
       const lastTallyInput = res.tallyInputs[res.tallyInputs.length - 1]
-      const result = (cache && cache.inputsSig === inputsSig && cache.result) ? cache.result : res.result.map((i: any) => i.toString())
-      const salt = (cache && cache.inputsSig === inputsSig && cache.salt)
+      const result = (inputCacheMatches && cache?.result) ? cache.result : res.result.map((i: any) => i.toString())
+      const salt = (inputCacheMatches && cache?.salt)
         ? cache.salt
-        : (lastTallyInput ? lastTallyInput.newResultsRootSalt.toString() : '0')
+        : (res.salt || (lastTallyInput ? lastTallyInput.newResultsRootSalt.toString() : '0'))
+
+      if (useRustMsgTallyForRound && !useRustMsgTallyPrimaryForRound) {
+        failureStage = 'rust_msg_tally_shadow'
+        const shadowParams = {
+          id,
+          circuitPower: maciRound.circuitPower,
+          circuitType: maciRound.circuitType,
+          params,
+          coordPriKey: coordinatorPriKey,
+          maxVoteOptions: Number(maxVoteOptions),
+          pollId,
+          contractLogs: {
+            states: normalizedStates,
+            messages: normalizedMessages,
+            dmessages: normalizedDMessages,
+          },
+          messageStore: useMessageStore ? messageStore || undefined : undefined,
+          messageCount: useMessageStore ? msgCount : normalizedMessages?.length,
+          processedDMsgCount: Number(dc),
+          jsResult: {
+            msgInputs: res.msgInputs,
+            tallyInputs: res.tallyInputs,
+            result,
+            salt,
+          },
+        }
+        if (strictRustMsgTally) {
+          await runMsgTallyRustShadow(shadowParams)
+        } else {
+          void runMsgTallyRustShadow(shadowParams).catch((shadowError) => {
+            warn(
+              `Rust msg/tally shadow background task failed: ${shadowError instanceof Error ? shadowError.message : String(shadowError)}`,
+              'TALLY-TASK',
+            )
+          })
+        }
+      }
 
       const msg: ProofData[] = []
       const tally: ProofData[] = []
 
       // Sequential phases; each internally parallel via worker pool
       // usePipeline is determined at function scope
+      failureStage = 'prove_messages'
       info(describeProverRuntime(), 'PROVER', {
         round: id,
         period: maciRound.period,
@@ -788,9 +1035,19 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         period: maciRound.period,
         circuitPower: maciRound.circuitPower,
       })
-      const msgBin = path.join(zkeyRoot, artifact.bundle, 'msg.bin')
-      const msgZkey = path.join(zkeyRoot, artifact.bundle, 'msg.zkey')
-      const cachedMsg = cache?.msg?.proofs || []
+      if (!isBundleComplete(zkeyRoot, artifact.bundle)) {
+        info(
+          `Downloading required zkey bundle: ${artifact.bundle}`,
+          'TALLY-TASK',
+        )
+        await ensureZkeyBundle(artifact.bundle, zkeyRoot)
+      }
+      const { witnessPath: msgBin, zkeyPath: msgZkey } = resolveBundleProofFiles(
+        zkeyRoot,
+        artifact.bundle,
+        'msg',
+      )
+      const cachedMsg = inputCacheMatches ? cache?.msg?.proofs || [] : []
       let startMsg = 0
       for (let i = 0; i < Math.min(cachedMsg.length, res.msgInputs.length); i++) {
         const expected = res.msgInputs[i].newStateCommitment.toString()
@@ -976,9 +1233,9 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
         period: maciRound.period,
         circuitPower: maciRound.circuitPower,
       })
-      const tallyBin = path.join(zkeyRoot, artifact.bundle, 'tally.bin')
-      const tallyZkey = path.join(zkeyRoot, artifact.bundle, 'tally.zkey')
-      const cachedTally = cache?.tally?.proofs || []
+      const { witnessPath: tallyBin, zkeyPath: tallyZkey } =
+        resolveBundleProofFiles(zkeyRoot, artifact.bundle, 'tally')
+      const cachedTally = inputCacheMatches ? cache?.tally?.proofs || [] : []
       let startTally = 0
       for (let i = 0; i < Math.min(cachedTally.length, res.tallyInputs.length); i++) {
         const expected = res.tallyInputs[i].newTallyCommitment.toString()
@@ -1553,6 +1810,13 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
       }
     }
 
+    failureStage = 'completed'
+    writeRoundJson(id, 'tally-state.json', {
+      status: 'completed',
+      round: roundSummary,
+      recordedAt: new Date().toISOString(),
+      finalizeTxHash,
+    })
     info(`Completed round Tally for ${id}`, 'TALLY-TASK')
 
     // logger: end the operation - 使用保存的上下文
@@ -1573,6 +1837,23 @@ export const tally: TaskAct = async (_, { id }: { id: string }) => {
     }
 
     const categorizedError = categorizeError(err)
+    writeRoundJson(id, 'tally-error.json', {
+      stage: failureStage,
+      errorType: categorizedError.name || 'Error',
+      message:
+        categorizedError instanceof Error
+          ? categorizedError.message
+          : String(categorizedError),
+      round: roundSummary,
+      chainSnapshot: lastChainSnapshot,
+      recordedAt: new Date().toISOString(),
+    })
+    writeRoundJson(id, 'tally-state.json', {
+      status: 'failed',
+      stage: failureStage,
+      round: roundSummary,
+      recordedAt: new Date().toISOString(),
+    })
 
     // Record network error
     if (categorizedError instanceof NetworkError) {
