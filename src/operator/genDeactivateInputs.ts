@@ -1,5 +1,4 @@
 import { DMsgInput, MACI } from '../lib/Maci'
-import { KeyGenerationMode } from '../lib/keypair'
 import { IContractLogs } from '../types'
 import { info } from '../logger'
 
@@ -11,7 +10,6 @@ interface IGenMaciInputsParams {
   coordPriKey: bigint
   maxVoteOptions: number
   pollId?: number | bigint
-  keyGenerationMode?: KeyGenerationMode
 }
 
 export const genDeacitveMaciInputs = (
@@ -23,7 +21,6 @@ export const genDeacitveMaciInputs = (
     coordPriKey,
     maxVoteOptions,
     pollId,
-    keyGenerationMode,
   }: IGenMaciInputsParams,
   contractLogs: IContractLogs,
   // deactivates: bigint[][],
@@ -40,7 +37,6 @@ export const genDeacitveMaciInputs = (
     contractLogs.states.length,
     false, // 处理 deacitvate 的时候不需要关心 isQuadraticCost 的状态
     pollId !== undefined ? BigInt(pollId) : undefined,
-    keyGenerationMode,
   )
 
   for (const state of contractLogs.states) {
