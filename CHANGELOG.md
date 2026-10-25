@@ -2,6 +2,60 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v2.4.0] - 2026-08-06
+
+### Added
+
+- Added production support for v6 circuit artifacts, including automatic
+  on-demand zkey downloads and round verification-key matching.
+
+### Changed
+
+- Select v5 or v6 proving artifacts for each round while preserving v5
+  compatibility.
+
+### Fixed
+
+- Enforced v6 `max_votes_per_option` limits during message processing.
+- Rejected vote option indices greater than or equal to `maxVoteOptions` to
+  match the circuit boundary.
+- Verified v6 zkey archives against pinned SHA-256 checksums before extraction.
+
+## [v2.4.0-beta.3] - 2026-08-05
+
+### Fixed
+
+- Pinned and verified the SHA-256 checksum of the production
+  `9-4-3-125_v6` zkey archive before extraction.
+- Rejected vote option indices equal to `maxVoteOptions`, matching the
+  circuit requirement that `voteOptionIndex < maxVoteOptions`.
+- Added regression coverage for v6 archive checksum enforcement and the vote
+  option index boundary.
+
+## [v2.4.0-beta.2] - 2026-07-26
+
+### Fixed
+
+- Added v6 `max_votes_per_option` contract queries and packed the value into
+  bits 96-127 of `packedVals` for process-message proofs.
+- Matched the v6 circuit behavior by treating `0` as unlimited and rejecting
+  vote weights above a non-zero per-option cap.
+- Added cap-aware input cache signatures so stale v6 inputs and proofs are not
+  reused after upgrading.
+- Preserved v5 compatibility and fall back to TypeScript input generation for
+  capped rounds until the Rust input generator supports the new field.
+
+## [v2.4.0-beta.1] - 2026-07-24
+
+### Added
+
+- Added the `9-4-3-125_v6` circuit bundle and made it the default zkey
+  download for new operator workspaces.
+- Added round verification-key fingerprinting so v5 and v6 rounds select the
+  matching zkey bundle.
+- Added on-demand zkey downloads when an active round requires a supported
+  bundle that is not present locally.
+
 ## [v2.2.0] - 2026-03-25
 
 ### Added

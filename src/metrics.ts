@@ -242,6 +242,34 @@ const externalRetryExhaustedCounter = new client.Counter({
   registers: [register],
 })
 
+const indexerFailoverCounter = new client.Counter({
+  name: 'amaci_operator_indexer_failover_total',
+  help: 'Total number of indexer failovers by operation and reason',
+  labelNames: ['operation', 'from', 'to', 'reason'],
+  registers: [register],
+})
+
+const activeIndexerGauge = new client.Gauge({
+  name: 'amaci_operator_active_indexer',
+  help: 'Active indexer endpoint selected by the failover client',
+  labelNames: ['endpoint'],
+  registers: [register],
+})
+
+const indexerHeightGauge = new client.Gauge({
+  name: 'amaci_operator_indexer_height',
+  help: 'Observed indexer and reference heights by endpoint',
+  labelNames: ['endpoint', 'source'],
+  registers: [register],
+})
+
+const indexerHeightLagGauge = new client.Gauge({
+  name: 'amaci_operator_indexer_height_lag',
+  help: 'Indexer height lag in blocks compared with the selected reference height',
+  labelNames: ['endpoint'],
+  registers: [register],
+})
+
 const proverPoolSize = new client.Gauge({
   name: 'amaci_prover_pool_children',
   help: 'Number of child processes in the prover pool',
@@ -672,6 +700,55 @@ export const recordApiRetryExhausted = (context: string) => {
 
   const { dependency, operation } = inferExternalLabels(context)
   externalRetryExhaustedCounter.inc({ dependency, operation })
+}
+
+const sanitizeEndpointLabel = (endpoint: string) =>
+  sanitizeLabelValue(endpoint.replace(/^https?:\/\//, ''), 'unknown')
+
+export const recordIndexerFailover = (
+  operation: string,
+  from: string,
+  to: string,
+  reason: string,
+) => {
+  indexerFailoverCounter.inc({
+    operation: sanitizeLabelValue(operation, 'unknown'),
+    from: sanitizeEndpointLabel(from),
+    to: sanitizeEndpointLabel(to),
+    reason: sanitizeLabelValue(reason, 'unknown'),
+  })
+}
+
+export const updateActiveIndexer = (endpoint: string) => {
+  activeIndexerGauge.reset()
+  activeIndexerGauge.set({ endpoint: sanitizeEndpointLabel(endpoint) }, 1)
+}
+
+export const updateIndexerHeightHealth = (
+  endpoint: string,
+  indexerHeight: number,
+  referenceHeight: number,
+  targetHeight?: number,
+) => {
+  const sanitizedEndpoint = sanitizeEndpointLabel(endpoint)
+  indexerHeightGauge.set(
+    { endpoint: sanitizedEndpoint, source: 'indexer' },
+    indexerHeight,
+  )
+  indexerHeightGauge.set(
+    { endpoint: sanitizedEndpoint, source: 'reference' },
+    referenceHeight,
+  )
+  if (typeof targetHeight === 'number' && Number.isFinite(targetHeight)) {
+    indexerHeightGauge.set(
+      { endpoint: sanitizedEndpoint, source: 'target' },
+      targetHeight,
+    )
+  }
+  indexerHeightLagGauge.set(
+    { endpoint: sanitizedEndpoint },
+    Math.max(0, referenceHeight - indexerHeight),
+  )
 }
 
 export const updateOperatorStatus = (isUp: boolean) => {
