@@ -12,6 +12,10 @@ export const uploadDeactivateHistory = async (
   contract: string,
   deactivate: string[][],
 ) => {
+  const rpcEndpoint = process.env.RPC_ENDPOINT
+  if (!rpcEndpoint) {
+    throw new Error('RPC_ENDPOINT is not set')
+  }
   return withRetry(
     async () => {
       const defaultSigningClientOptions: SigningCosmWasmClientOptions = {
@@ -23,7 +27,7 @@ export const uploadDeactivateHistory = async (
       const wallet = await GenerateWallet(0)
       const signingCosmWasmClient =
         await SigningCosmWasmClient.connectWithSigner(
-          process.env.RPC_ENDPOINT,
+          rpcEndpoint,
           wallet,
           {
             ...defaultSigningClientOptions,

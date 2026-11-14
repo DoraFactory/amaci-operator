@@ -4,7 +4,13 @@ declare global {
       COORDINATOR_PRI_KEY: string
 
       RPC_ENDPOINT: string
-      IND_ENDPOINT: string
+      INDEXER_ENDPOINTS: string
+      IND_ENDPOINT?: string
+      INDEXER_REQUEST_TIMEOUT_MS?: string
+      INDEXER_FAILOVER_COOLDOWN_MS?: string
+      INDEXER_HEIGHT_CHECK_ENABLED?: string
+      INDEXER_HEIGHT_CHECK_INTERVAL_MS?: string
+      INDEXER_HEIGHT_LAG_THRESHOLD?: string
       DEACTIVATE_RECORDER: string
       DEACTIVATE_INTERVAL: string
       CODE_IDS: string

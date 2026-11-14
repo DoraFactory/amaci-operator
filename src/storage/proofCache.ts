@@ -23,16 +23,17 @@ export interface ProofCache {
     newDeactivates?: any[]
   }
   inputsMeta?: {
-    mode: 'files'
-    msgCount: number
-    tallyCount: number
+    mode: 'files' | 'inline'
+    msgCount?: number
+    tallyCount?: number
+    source?: 'ts' | 'rust'
   }
   inputsSig?: string
 }
 
-// Bump cache schema after key-generation compatibility and v4 no-message
-// artifact resolution changes so stale proofs/inputs are not reused.
-const VERSION = 4
+// Bump cache schema after padded-only coordinator key generation cleanup
+// so stale proofs/inputs are not reused.
+const VERSION = 5
 
 function getCachePath(id: string) {
   // New layout: use 'data' directory for caches
@@ -131,13 +132,14 @@ function sanitizeInputs(inputs: ProofCache['inputs']): ProofCache['inputs'] {
 export function buildInputsSignature(args: {
   circuitPower: string
   circuitType: string | number
+  inputGenerator?: string
   artifactVersion?: string
   artifactBundle?: string
   pollId?: string | number
-  keyGenerationMode?: string
   messageArity?: number
   deactivateMessageArity?: number
   maxVoteOptions: number
+  maxVotesPerOption?: bigint | number | string
   signupCount: number
   lastSignupId?: string
   msgCount: number
@@ -149,13 +151,16 @@ export function buildInputsSignature(args: {
   const parts = [
     String(args.circuitPower),
     String(args.circuitType),
+    String(args.inputGenerator ?? 'ts'),
     String(args.artifactVersion ?? ''),
     String(args.artifactBundle ?? ''),
     String(args.pollId ?? ''),
-    String(args.keyGenerationMode ?? ''),
     `ma:${args.messageArity ?? ''}`,
     `dma:${args.deactivateMessageArity ?? ''}`,
     String(args.maxVoteOptions),
+    ...(args.maxVotesPerOption === undefined
+      ? []
+      : [`mvpo:${args.maxVotesPerOption}`]),
     `su:${args.signupCount}:${args.lastSignupId || ''}`,
     `m:${args.msgCount}:${args.lastMsgId || ''}`,
     `dm:${args.dmsgCount}:${args.lastDmsgId || ''}`,

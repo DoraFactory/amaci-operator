@@ -6,7 +6,6 @@ import {
   genStaticRandomKey,
   genRoundKeypair,
   genEcdhSharedKey,
-  KeyGenerationMode,
 } from './keypair'
 import { Tree } from './Tree'
 
@@ -52,6 +51,16 @@ const SNARK_FIELD_SIZE =
 const UINT96 = 2n ** 96n
 const UINT32 = 2n ** 32n
 
+export const normalizeMaxVotesPerOption = (
+  value: bigint | number | string = 0n,
+): bigint => {
+  const normalized = BigInt(value)
+  if (normalized < 0n || normalized >= UINT32) {
+    throw new Error('maxVotesPerOption must fit in 32 bits (0 = no limit)')
+  }
+  return normalized
+}
+
 export enum MACI_STATES {
   FILLING, // sign up & publish message
   PROCESSING, // batch process message
@@ -72,6 +81,7 @@ export class MACI {
   public states: MACI_STATES
 
   protected maxVoteOptions: number
+  protected maxVotesPerOption: bigint
   protected voSize: number
   protected numSignUps: number
 
@@ -111,8 +121,6 @@ export class MACI {
 
   protected logs: any[]
   protected pollId?: bigint
-  protected keyGenerationMode: KeyGenerationMode
-
   get stateCommitment() {
     return this._stateCommitment
   }
@@ -149,7 +157,7 @@ export class MACI {
     numSignUps: number,
     isQuadraticCost: boolean,
     pollId?: bigint,
-    keyGenerationMode: KeyGenerationMode = 'legacy',
+    maxVotesPerOption: bigint | number | string = 0n,
   ) {
     const deactivateTreeDepth = stateTreeDepth + 2
     this.stateTreeDepth = stateTreeDepth
@@ -158,16 +166,16 @@ export class MACI {
     this.batchSize = batchSize
     this.deactivateTreeDepth = deactivateTreeDepth
     this.maxVoteOptions = maxVoteOptions
+    this.maxVotesPerOption = normalizeMaxVotesPerOption(maxVotesPerOption)
     this.voSize = 5 ** voteOptionTreeDepth
     this.numSignUps = numSignUps
     this.isQuadraticCost = isQuadraticCost
 
     this.pollId = pollId
-    this.keyGenerationMode = keyGenerationMode
     this.coordinator =
       pollId === undefined
-        ? genRoundKeypair(coordPriKey, undefined, keyGenerationMode)
-        : genRoundKeypair(coordPriKey, pollId, keyGenerationMode)
+        ? genRoundKeypair(coordPriKey, undefined)
+        : genRoundKeypair(coordPriKey, pollId)
     this.pubKeyHasher = poseidon(this.coordinator.pubKey)
 
     const emptyVOTree = new Tree(5, voteOptionTreeDepth, 0n)
@@ -256,7 +264,6 @@ export class MACI {
       this.coordinator.privKey,
       encPubKey,
       this.pollId,
-      this.keyGenerationMode,
     )
     try {
       if (this.pollId === undefined) {
@@ -550,7 +557,6 @@ export class MACI {
         this.coordinator.privKey,
         s.pubKey,
         this.pollId,
-        this.keyGenerationMode,
       )
 
       const deactivate = encryptOdevity(
@@ -671,7 +677,7 @@ export class MACI {
     if (cmd.stateIdx > BigInt(this.numSignUps)) {
       return 'state leaf index overflow'
     }
-    if (cmd.voIdx > BigInt(this.maxVoteOptions)) {
+    if (cmd.voIdx >= BigInt(this.maxVoteOptions)) {
       return 'vote option index overflow'
     }
     if (this.pollId !== undefined && cmd.pollId !== this.pollId) {
@@ -701,6 +707,9 @@ export class MACI {
     const verified = eddsa.verifyPoseidon(cmd.msgHash, cmd.signature, s.pubKey)
     if (!verified) {
       return 'signature error'
+    }
+    if (this.maxVotesPerOption > 0n && cmd.newVotes > this.maxVotesPerOption) {
+      return 'votes per option overflow'
     }
     const currVotes = s.voTree.leaf(voIdx)
     if (this.isQuadraticCost) {
@@ -843,7 +852,8 @@ export class MACI {
     const packedVals =
       BigInt(this.maxVoteOptions) +
       (BigInt(this.numSignUps) << 32n) +
-      (this.isQuadraticCost ? 1n << 64n : 0n)
+      (this.isQuadraticCost ? 1n << 64n : 0n) +
+      (this.maxVotesPerOption << 96n)
     const batchStartHash =
       rawMessages.length > 0 ? rawMessages[0].prevHash : 0n
     const batchEndHash =
