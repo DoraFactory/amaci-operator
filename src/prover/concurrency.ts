@@ -5,11 +5,7 @@ const builtinCircuitConcurrency: CircuitConcurrencyMap = {
   '9-4-3-125': 1,
 }
 
-const normalizeCircuitKey = (value: string) => {
-  if (value.endsWith('_v4')) return value.slice(0, -3)
-  if (value.endsWith('_v3')) return value.slice(0, -3)
-  return value
-}
+const normalizeCircuitKey = (value: string) => value.replace(/_v\d+$/, '')
 
 const loadCircuitConcurrencyMap = (): CircuitConcurrencyMap => {
   const raw = process.env.PROVER_CONCURRENCY_BY_CIRCUIT

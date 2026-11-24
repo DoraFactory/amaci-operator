@@ -36,7 +36,7 @@ services:
     # environment:
       # Uncomment to override config.toml settings
       # - RPC_ENDPOINT=${RPC_ENDPOINT}
-      # - IND_ENDPOINT=${IND_ENDPOINT}
+      # - INDEXER_ENDPOINTS=${INDEXER_ENDPOINTS}
       # - DEACTIVATE_RECORDER=${DEACTIVATE_RECORDER}
       # - MNEMONIC=${MNEMONIC}
       # - COORDINATOR_PRI_KEY=${COORDINATOR_PRI_KEY}
